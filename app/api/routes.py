@@ -1,11 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.profile_agent import ProfileAgent
-from app.api.schemas import EvaluateRequest, LearningRequest
+from app.api.schemas import EvaluateRequest, LearningRequest, ProfileChatRequest, SiliconFlowConfig
 from app.graph.workflow import run_agent_workflow, workflow_description
+from app.profiles.service import DynamicProfileService
 
 router = APIRouter()
+profile_service = DynamicProfileService()
 
 
 @router.post("/analyze")
@@ -33,7 +35,9 @@ def generate(request: LearningRequest) -> dict:
 
 @router.post("/evaluate")
 def evaluate(request: EvaluateRequest) -> dict:
-    return EvaluatorAgent().run(request.model_dump())
+    result = EvaluatorAgent().run(request.model_dump())
+    result["dynamic_profile"] = profile_service.update_from_evaluation(user_id=request.user_id, result=result)
+    return result
 
 
 @router.get("/courses")
@@ -52,3 +56,25 @@ def courses() -> dict:
 @router.get("/workflow")
 def workflow() -> dict:
     return workflow_description()
+
+
+@router.get("/profiles/{user_id}")
+def get_dynamic_profile(user_id: str) -> dict:
+    return {"profile": profile_service.get_profile(user_id)}
+
+
+@router.post("/profiles/chat")
+def chat_dynamic_profile(request: ProfileChatRequest) -> dict:
+    if not request.message.strip():
+        raise HTTPException(status_code=400, detail="对话内容不能为空")
+    return profile_service.update_from_chat(**request.model_dump())
+
+
+@router.post("/settings/siliconflow/test")
+def test_siliconflow(request: SiliconFlowConfig) -> dict:
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="请输入硅基流动 API Key")
+    try:
+        return profile_service.test_connection(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

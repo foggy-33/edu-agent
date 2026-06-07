@@ -802,27 +802,293 @@ textarea:focus {
   box-shadow: 0 16px 34px rgb(67 58 168 / 14%);
 }
 
-.app-content [class*="from-green-"],
-.app-content [class*="from-amber-"],
-.app-content [class*="from-blue-"],
-.app-content [class*="from-pink-"],
-.app-content [class*="from-purple-"],
-.app-content [class*="from-indigo-"] {
-  --tw-gradient-from: #5146cf var(--tw-gradient-from-position) !important;
-  --tw-gradient-to: rgb(81 70 207 / 0) var(--tw-gradient-to-position) !important;
+/* Production-safe dark gradient for KPI cards and primary actions. */
+.app-content [class*="bg-gradient-to-"][class*="text-white"] {
+  color: #fff !important;
+  background-color: #433aa8 !important;
+  background-image: linear-gradient(135deg, #303466 0%, #5146cf 58%, #6d5de7 100%) !important;
 }
 
-.app-content [class*="to-emerald-"],
-.app-content [class*="to-orange-"],
-.app-content [class*="to-indigo-"],
-.app-content [class*="to-pink-"],
-.app-content [class*="to-purple-"],
-.app-content [class*="to-rose-"] {
-  --tw-gradient-to: #6d5de7 var(--tw-gradient-to-position) !important;
+.app-content [class*="bg-gradient-to-"][class*="text-white"] .text-white\/80 {
+  color: rgb(255 255 255 / 78%) !important;
+}
+
+.app-content [class*="bg-gradient-to-"][class*="text-white"] > .text-3xl,
+.app-content [class*="bg-gradient-to-"][class*="text-white"] .text-6xl {
+  color: #fff !important;
+  font-weight: 800;
+  text-shadow: 0 2px 12px rgb(24 22 72 / 28%);
 }
 
 .app-content table tbody tr:hover {
   background: #f8f7ff;
+}
+
+.settings-layout,
+.profile-builder {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-layout {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.settings-card h2,
+.settings-note h2,
+.profile-chat h2 {
+  margin: 0;
+  color: #252c3d;
+  font-size: 19px;
+}
+
+.settings-intro,
+.settings-note p {
+  color: #7c8495;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.settings-form {
+  display: grid;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 7px;
+  color: #4f5668;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.settings-form input,
+.profile-user-fields input,
+.chat-composer textarea {
+  width: 100%;
+  border: 1px solid #e3e5ee;
+  border-radius: 11px;
+  color: #30384a;
+  background: #fafafe;
+}
+
+.settings-form input,
+.profile-user-fields input {
+  padding: 11px 12px;
+}
+
+.settings-form small {
+  color: #929aaa;
+  font-weight: 400;
+}
+
+.secret-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.secret-input input {
+  border-radius: 11px 0 0 11px;
+}
+
+.secret-input button {
+  padding: 0 14px;
+  border: 1px solid #e3e5ee;
+  border-left: 0;
+  border-radius: 0 11px 11px 0;
+  color: #5146cf;
+  background: #f1efff;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.settings-message,
+.profile-warning {
+  margin: 16px 0 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  color: #433aa8;
+  background: #f1efff;
+  font-size: 12px;
+}
+
+.settings-message-error,
+.profile-warning {
+  color: #9f3030;
+  background: #fff2f2;
+}
+
+.settings-note {
+  align-content: start;
+}
+
+.settings-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 13px;
+  border-radius: 12px;
+  background: #f8f7ff;
+}
+
+.settings-fact b {
+  color: #5146cf;
+  font-size: 22px;
+}
+
+.settings-fact span {
+  color: #8b95a7;
+  font-size: 11px;
+}
+
+.profile-builder {
+  grid-template-columns: minmax(360px, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
+}
+
+.profile-chat {
+  position: sticky;
+  top: 104px;
+}
+
+.profile-chat-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.profile-user-fields {
+  width: 150px;
+  display: grid;
+  gap: 7px;
+}
+
+.profile-user-fields input {
+  padding: 7px 9px;
+  font-size: 10px;
+}
+
+.chat-stream {
+  height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid #ececf4;
+  border-radius: 14px;
+  background: #f8f9fc;
+}
+
+.chat-bubble {
+  max-width: 88%;
+  padding: 11px 13px;
+  border-radius: 13px;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.chat-assistant {
+  align-self: flex-start;
+  color: #4c5264;
+  background: #fff;
+  border: 1px solid #e8e8f1;
+}
+
+.chat-user {
+  align-self: flex-end;
+  color: #fff;
+  background: linear-gradient(135deg, #303466, #5146cf);
+}
+
+.chat-composer {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.chat-composer textarea {
+  padding: 12px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.profile-board {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.profile-summary > div {
+  min-height: 96px;
+  display: grid;
+  align-content: center;
+  padding: 18px;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(135deg, #303466, #5146cf 65%, #6d5de7);
+  box-shadow: 0 14px 30px rgb(67 58 168 / 16%);
+}
+
+.profile-summary span {
+  color: rgb(255 255 255 / 72%);
+  font-size: 10px;
+}
+
+.profile-summary strong {
+  margin-top: 5px;
+  font-size: 25px;
+}
+
+.profile-dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dimension-card {
+  min-height: 155px;
+}
+
+.dimension-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #343b4d;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dimension-head b {
+  color: #5146cf;
+  font-size: 10px;
+}
+
+.dimension-card p {
+  margin: 20px 0 8px;
+  color: #303466;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.dimension-card small {
+  display: block;
+  color: #9aa2b1;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1100px) {
@@ -832,6 +1098,15 @@ textarea:focus {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .settings-layout,
+  .profile-builder {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-chat {
+    position: static;
   }
 }
 
@@ -876,5 +1151,10 @@ textarea:focus {
 
   .course-progress {
     grid-column: 1 / -1;
+  }
+
+  .profile-summary,
+  .profile-dimension-grid {
+    grid-template-columns: 1fr;
   }
 }

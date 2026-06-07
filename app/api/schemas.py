@@ -11,6 +11,18 @@ class LearningRequest(BaseModel):
     message: str = Field(..., examples=["我对函数依赖、候选码和范式判断不太会，希望通过例题准备考试。"])
 
 
+class SiliconFlowConfig(BaseModel):
+    api_key: str = ""
+    base_url: str = "https://api.siliconflow.cn/v1"
+    model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
+
+
+class ProfileChatRequest(SiliconFlowConfig):
+    user_id: str = "demo_user_001"
+    course: str = "数据库系统"
+    message: str
+
+
 class AnswerRecord(BaseModel):
     question_id: str | None = None
     question: str

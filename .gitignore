@@ -10,6 +10,7 @@ __pycache__/
 # Local data and secrets
 .env
 chroma_db/
+data/
 
 # Frontend dependencies and builds
 frontend/node_modules/

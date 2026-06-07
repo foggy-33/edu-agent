@@ -71,7 +71,23 @@ git pull
 docker compose up -d --build
 ```
 
-Chroma 数据存储在 Docker 命名卷 `chroma_data` 中。执行 `docker compose down` 不会删除数据；只有执行 `docker compose down -v` 才会删除该数据卷。
+Chroma 数据存储在 Docker 命名卷 `chroma_data` 中，动态学生画像存储在 `profile_data` 中。执行 `docker compose down` 不会删除数据；只有执行 `docker compose down -v` 才会删除数据卷。
+
+## 硅基流动与动态画像
+
+部署后进入“设置”页面，填写硅基流动 API Key、Base URL 与模型标识并测试连接。API Key 只保存在当前浏览器中。
+
+当前官方文档可确认的 Pro DeepSeek 模型标识为：
+
+```text
+Pro/deepseek-ai/DeepSeek-V3.2
+```
+
+如果账户中已开放 DeepSeek-V4-Pro，请在设置页填写硅基流动控制台显示的实际模型标识。
+
+“画像共建”页面通过自然语言对话持续更新 8 个画像维度；学习评估结果也会自动回写易错点和知识基础。
+
+当前画像使用轻量 JSON 文件持久化，因此后端默认使用单 worker 保证更新原子性。需要多实例部署时，应将画像存储替换为 PostgreSQL、Redis 或其他支持并发事务的数据库。
 
 ## 生产服务器建议
 

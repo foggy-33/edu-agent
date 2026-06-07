@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from typing import Any
+
+import httpx
 
 from app.core.config import get_settings
 
@@ -13,6 +16,8 @@ class LLMClient:
         self.mode = self.settings.llm_mode.lower()
 
     def generate(self, prompt: str, task: str = "general", **kwargs: Any) -> str:
+        if self.mode == "siliconflow":
+            return self.siliconflow_generate(prompt=prompt, task=task, **kwargs)
         if self.mode == "mock":
             return self.mock_generate(prompt=prompt, task=task, **kwargs)
         if self.mode == "spark":
@@ -56,3 +61,56 @@ class LLMClient:
 
     def spark_generate(self, prompt: str, task: str = "general", **kwargs: Any) -> str:
         raise NotImplementedError("Spark API adapter is reserved. Configure keys in .env before implementation.")
+
+    def siliconflow_generate(
+        self,
+        prompt: str,
+        task: str = "general",
+        *,
+        api_key: str = "",
+        base_url: str = "",
+        model: str = "",
+        system_prompt: str = "你是一个严谨的智能学习助手。",
+        response_format: dict[str, Any] | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1800,
+        messages: list[dict[str, str]] | None = None,
+        **_: Any,
+    ) -> str:
+        key = api_key or self.settings.siliconflow_api_key
+        if not key:
+            raise ValueError("未配置硅基流动 API Key")
+
+        url = f"{(base_url or self.settings.siliconflow_base_url).rstrip('/')}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": model or self.settings.siliconflow_model,
+            "messages": messages or [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if response_format:
+            payload["response_format"] = response_format
+
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                response = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500]
+            raise ValueError(f"硅基流动请求失败 ({exc.response.status_code}): {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise ValueError(f"无法连接硅基流动 API: {exc}") from exc
+
+        data = response.json()
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"硅基流动返回格式异常: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
