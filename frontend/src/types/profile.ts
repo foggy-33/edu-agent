@@ -28,3 +28,10 @@ export interface ProfileChatResponse {
   provider: 'siliconflow' | 'rule-fallback'
   warning?: string
 }
+
+export interface ProfileInterviewResponse {
+  question: string
+  profile: DynamicProfile
+  provider: 'siliconflow' | 'rule-fallback'
+  warning?: string
+}

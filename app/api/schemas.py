@@ -23,6 +23,11 @@ class ProfileChatRequest(SiliconFlowConfig):
     message: str
 
 
+class ProfileInterviewRequest(SiliconFlowConfig):
+    user_id: str = "demo_user_001"
+    course: str = "数据库系统"
+
+
 class AnswerRecord(BaseModel):
     question_id: str | None = None
     question: str

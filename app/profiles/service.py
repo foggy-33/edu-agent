@@ -57,7 +57,10 @@ class DynamicProfileService:
             provider = "siliconflow"
         except ValueError as exc:
             extracted = self._extract_with_rules(course=course, message=message)
-            reply = self._fallback_reply(extracted)
+            known = set(current.get("dimensions", {})) | set(extracted)
+            missing = [name for name in PROFILE_DIMENSIONS if name not in known]
+            updated = "、".join(extracted.keys())
+            reply = f"我已经根据这次回答更新了：{updated}。{self._fallback_question(course, missing, current)}"
             warning = str(exc)
 
         merged = self._merge_latest(user_id, extracted, message)
@@ -68,6 +71,42 @@ class DynamicProfileService:
             "provider": provider,
             "warning": warning,
         }
+
+    def next_question(
+        self,
+        *,
+        user_id: str,
+        course: str,
+        api_key: str = "",
+        base_url: str = "",
+        model: str = "",
+    ) -> dict[str, Any]:
+        current = self.get_profile(user_id)
+        missing = [name for name in PROFILE_DIMENSIONS if name not in current.get("dimensions", {})]
+        provider = "rule-fallback"
+        warning = ""
+        try:
+            prompt = (
+                "你是主动式学习画像访谈助手。请基于所选科目和现有画像，只提出一个简短、自然、容易回答的问题。"
+                "优先询问缺失维度，也可以询问学生对该科目的基础、目标、困难和偏好。不要解释，不要一次问多个问题。\n"
+                f"科目：{course}\n缺失维度：{missing}\n"
+                f"现有画像：{json.dumps(current.get('dimensions', {}), ensure_ascii=False)}"
+            )
+            question = self.llm.siliconflow_generate(
+                prompt,
+                task="profile_interview",
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                system_prompt="你是善于主动提问的学习画像访谈助手。",
+                temperature=0.45,
+                max_tokens=160,
+            ).strip()
+            provider = "siliconflow"
+        except ValueError as exc:
+            question = self._fallback_question(course, missing, current)
+            warning = str(exc)
+        return {"question": question, "profile": current, "provider": provider, "warning": warning}
 
     def test_connection(self, *, api_key: str, base_url: str, model: str) -> dict[str, Any]:
         content = self.llm.siliconflow_generate(
@@ -209,6 +248,18 @@ class DynamicProfileService:
             return json.loads(match.group(0))
 
     @staticmethod
-    def _fallback_reply(extracted: dict[str, Any]) -> str:
-        updated = "、".join(extracted.keys())
-        return f"我已经根据这次交流更新了：{updated}。你通常在什么时间学习，每次能持续多久？"
+    def _fallback_question(course: str, missing: list[str], current: dict[str, Any]) -> str:
+        target = missing[0] if missing else "当前最需要提升的方面"
+        questions = {
+            "专业与年级": "先认识一下你：你的专业和当前年级是什么？",
+            "学习目标": f"你学习《{course}》最想达成什么目标，是考试、项目实践还是能力提升？",
+            "知识基础": f"你觉得自己目前对《{course}》掌握到什么程度？哪些内容已经比较熟悉？",
+            "认知风格": "遇到新知识时，你更容易通过概念讲解、图示、例题还是动手实践理解？",
+            "易错点": f"学习《{course}》时，你最容易在哪些知识点或题型上出错？",
+            "资源偏好": "你更喜欢视频、讲义、思维导图、练习题还是项目案例？",
+            "学习节奏": "你通常在什么时间学习，每次大约能专注多久？",
+            "学习动机": f"是什么促使你现在重点学习《{course}》？",
+        }
+        if not missing:
+            return f"关于《{course}》，最近有什么新的困难、目标或学习习惯需要我更新进画像？"
+        return questions[target]

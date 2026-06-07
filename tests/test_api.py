@@ -84,3 +84,21 @@ def test_evaluation_updates_dynamic_profile() -> None:
     assert profile["version"] >= 1
     assert "易错点" in profile["dimensions"]
     assert "知识基础" in profile["dimensions"]
+
+
+def test_profile_interview_asks_course_question_without_api_key() -> None:
+    response = client.post(
+        "/api/profiles/interview/next",
+        json={
+            "user_id": "pytest_interview_user",
+            "course": "数据结构",
+            "api_key": "",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "model": "Pro/deepseek-ai/DeepSeek-V3.2",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["provider"] == "rule-fallback"
+    assert data["question"]
+    assert len(data["profile"]["dimension_catalog"]) >= 6

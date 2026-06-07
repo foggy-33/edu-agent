@@ -6,7 +6,7 @@ import type {
   Course,
   StudentProfile
 } from '../types'
-import type { DynamicProfile, ProfileChatResponse, SiliconFlowConfig } from '../types/profile'
+import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig } from '../types/profile'
 
 const API_BASE = '/api'
 
@@ -73,6 +73,16 @@ export async function chatDynamicProfile(payload: SiliconFlowConfig & {
   message: string
 }): Promise<ProfileChatResponse> {
   return httpRequest(`${API_BASE}/profiles/chat`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function getNextProfileQuestion(payload: SiliconFlowConfig & {
+  user_id: string
+  course: string
+}): Promise<ProfileInterviewResponse> {
+  return httpRequest(`${API_BASE}/profiles/interview/next`, {
     method: 'POST',
     body: JSON.stringify(payload)
   })

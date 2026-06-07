@@ -884,6 +884,7 @@ textarea:focus {
 
 .settings-form input,
 .profile-user-fields input,
+.profile-user-fields select,
 .chat-composer textarea {
   width: 100%;
   border: 1px solid #e3e5ee;
@@ -893,7 +894,8 @@ textarea:focus {
 }
 
 .settings-form input,
-.profile-user-fields input {
+.profile-user-fields input,
+.profile-user-fields select {
   padding: 11px 12px;
 }
 
@@ -1031,6 +1033,12 @@ textarea:focus {
   display: grid;
   gap: 10px;
   margin-top: 12px;
+}
+
+.chat-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .chat-composer textarea {

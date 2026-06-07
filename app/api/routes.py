@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.profile_agent import ProfileAgent
-from app.api.schemas import EvaluateRequest, LearningRequest, ProfileChatRequest, SiliconFlowConfig
+from app.api.schemas import EvaluateRequest, LearningRequest, ProfileChatRequest, ProfileInterviewRequest, SiliconFlowConfig
 from app.graph.workflow import run_agent_workflow, workflow_description
 from app.profiles.service import DynamicProfileService
 
@@ -68,6 +68,11 @@ def chat_dynamic_profile(request: ProfileChatRequest) -> dict:
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="对话内容不能为空")
     return profile_service.update_from_chat(**request.model_dump())
+
+
+@router.post("/profiles/interview/next")
+def next_profile_interview_question(request: ProfileInterviewRequest) -> dict:
+    return profile_service.next_question(**request.model_dump())
 
 
 @router.post("/settings/siliconflow/test")
