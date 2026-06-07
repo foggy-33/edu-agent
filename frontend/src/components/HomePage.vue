@@ -6,10 +6,10 @@ const emit = defineEmits<{
 }>()
 
 const stats = ref([
-  { label: '已完成课程', value: 12, icon: '📚', color: 'bg-gradient-to-br from-green-400 to-emerald-600' },
-  { label: '学习时长', value: '86小时', icon: '⏰', color: 'bg-gradient-to-br from-blue-400 to-indigo-600' },
-  { label: '评估得分', value: '92分', icon: '🏆', color: 'bg-gradient-to-br from-amber-400 to-orange-600' },
-  { label: '薄弱环节', value: '3个', icon: '💡', color: 'bg-gradient-to-br from-purple-400 to-pink-600' },
+  { label: '已完成课程', value: 12, icon: '📚', trend: '+2 本月' },
+  { label: '学习时长', value: '86小时', icon: '⏱', trend: '+12% 本周' },
+  { label: '评估得分', value: '92分', icon: '↗', trend: '+5 分' },
+  { label: '薄弱环节', value: '3个', icon: '◎', trend: '待加强' },
 ])
 
 const recentCourses = ref([
@@ -19,12 +19,12 @@ const recentCourses = ref([
   { name: '操作系统', progress: 30, lastAccess: '1周前', icon: '💻' },
 ])
 
-const quickActions: { label: string; icon: string; action: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise'; color: string }[] = [
-  { label: '学习分析', icon: '📊', action: 'analyze', color: 'from-indigo-500 to-purple-600' },
-  { label: '资源生成', icon: '✨', action: 'generate', color: 'from-green-500 to-emerald-600' },
-  { label: '学习评估', icon: '📝', action: 'evaluate', color: 'from-amber-500 to-orange-600' },
-  { label: '课程管理', icon: '📚', action: 'courses', color: 'from-blue-500 to-cyan-600' },
-  { label: '习题练习', icon: '✏️', action: 'exercise', color: 'from-pink-500 to-rose-600' },
+const quickActions: { label: string; description: string; icon: string; action: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' }[] = [
+  { label: '学习分析', description: '查看学习画像', icon: '⌁', action: 'analyze' },
+  { label: '资源生成', description: '创建专属资料', icon: '✦', action: 'generate' },
+  { label: '学习评估', description: '检验掌握程度', icon: '✓', action: 'evaluate' },
+  { label: '课程管理', description: '跟踪课程进度', icon: '▤', action: 'courses' },
+  { label: '习题练习', description: '开始专项训练', icon: '✎', action: 'exercise' },
 ]
 
 const learningTips = ref([
@@ -35,120 +35,89 @@ const learningTips = ref([
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div
-        v-for="stat in stats"
-        :key="stat.label"
-        :class="['p-6 rounded-2xl text-white shadow-lg shadow-black/10', stat.color]"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-white/80 text-sm">{{ stat.label }}</p>
-            <p class="text-3xl font-bold mt-2">{{ stat.value }}</p>
-          </div>
-          <div class="w-14 h-14 bg-white/20 rounded-xl flex items-center justify-center text-3xl">
-            {{ stat.icon }}
-          </div>
+  <div class="dashboard">
+    <section class="welcome-panel">
+      <div>
+        <span class="eyebrow">今日学习计划</span>
+        <h2>下午好，继续保持你的学习节奏</h2>
+        <p>今天建议完成数据库系统第 5 章，并进行一次针对性评估。</p>
+        <div class="welcome-actions">
+          <button class="primary-action" @click="emit('navigate', 'generate')">生成学习资源</button>
+          <button class="secondary-action" @click="emit('navigate', 'analyze')">查看学习分析</button>
         </div>
       </div>
-    </div>
+      <div class="goal-ring">
+        <div class="goal-value">72%</div>
+        <div class="goal-label">今日目标</div>
+      </div>
+    </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 bg-white rounded-2xl shadow-lg p-6">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-bold text-gray-800">📚 我的课程</h2>
-          <button @click="emit('navigate', 'courses')" class="text-indigo-600 hover:text-indigo-700 font-medium text-sm">
-            查看全部 →
-          </button>
+    <section class="stats-grid">
+      <article v-for="stat in stats" :key="stat.label" class="stat-card">
+        <div class="stat-icon">{{ stat.icon }}</div>
+        <div class="stat-label">{{ stat.label }}</div>
+        <div class="stat-row">
+          <strong>{{ stat.value }}</strong>
+          <span>{{ stat.trend }}</span>
         </div>
-        <div class="space-y-4">
-          <div
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <div class="surface courses-panel">
+        <div class="section-heading">
+          <div>
+            <span class="section-kicker">持续学习</span>
+            <h2>我的课程</h2>
+          </div>
+          <button @click="emit('navigate', 'courses')">查看全部 →</button>
+        </div>
+        <div class="course-list">
+          <button
             v-for="course in recentCourses"
             :key="course.name"
-            class="flex items-center gap-4 p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+            class="course-row"
+            @click="emit('navigate', 'courses')"
           >
-            <div class="w-12 h-12 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center text-2xl">
-              {{ course.icon }}
-            </div>
-            <div class="flex-1">
-              <div class="font-medium text-gray-800">{{ course.name }}</div>
-              <div class="text-sm text-gray-500">{{ course.lastAccess }}</div>
-            </div>
-            <div class="w-32">
-              <div class="flex items-center justify-between text-sm mb-1">
-                <span class="text-gray-600">进度</span>
-                <span class="font-medium text-indigo-600">{{ course.progress }}%</span>
-              </div>
-              <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all duration-500"
-                  :style="{ width: course.progress + '%' }"
-                ></div>
-              </div>
-            </div>
-          </div>
+            <span class="course-icon">{{ course.icon }}</span>
+            <span class="course-copy">
+              <strong>{{ course.name }}</strong>
+              <small>{{ course.lastAccess }}继续学习</small>
+            </span>
+            <span class="course-progress">
+              <span><b>{{ course.progress }}%</b> 完成</span>
+              <span class="progress-track"><i :style="{ width: course.progress + '%' }"></i></span>
+            </span>
+          </button>
         </div>
       </div>
 
-      <div class="space-y-6">
-        <div class="bg-white rounded-2xl shadow-lg p-6">
-          <h2 class="text-xl font-bold text-gray-800 mb-4">⚡ 快捷操作</h2>
-          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <button
-              v-for="action in quickActions"
-              :key="action.label"
-              @click="emit('navigate', action.action)"
-              :class="['p-4 rounded-xl bg-gradient-to-br text-white hover:shadow-lg transition-all hover:scale-105', action.color]"
-            >
-              <div class="text-2xl mb-2">{{ action.icon }}</div>
-              <div class="text-sm font-medium">{{ action.label }}</div>
+      <div class="right-column">
+        <div class="surface">
+          <div class="section-heading compact">
+            <div><span class="section-kicker">快速开始</span><h2>常用功能</h2></div>
+          </div>
+          <div class="quick-grid">
+            <button v-for="action in quickActions" :key="action.label" @click="emit('navigate', action.action)" class="quick-action">
+              <span class="quick-icon">{{ action.icon }}</span>
+              <span><strong>{{ action.label }}</strong><small>{{ action.description }}</small></span>
+              <b>→</b>
             </button>
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl shadow-lg p-6">
-          <h2 class="text-xl font-bold text-gray-800 mb-4">📢 学习动态</h2>
-          <div class="space-y-4">
-            <div
-              v-for="(tip, index) in learningTips"
-              :key="index"
-              class="flex items-start gap-3"
-            >
-              <div class="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-xs text-indigo-600 flex-shrink-0">
-                {{ index + 1 }}
-              </div>
-              <div class="flex-1">
-                <div class="text-sm text-gray-800">{{ tip.tip }}</div>
-                <div class="text-xs text-gray-400 mt-1">{{ tip.time }}</div>
-              </div>
+        <div class="surface activity-panel">
+          <div class="section-heading compact">
+            <div><span class="section-kicker">最近动态</span><h2>学习记录</h2></div>
+          </div>
+          <div class="activity-list">
+            <div v-for="(tip, index) in learningTips" :key="index" class="activity-row">
+              <span>{{ index + 1 }}</span>
+              <div><strong>{{ tip.tip }}</strong><small>{{ tip.time }}</small></div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-2xl shadow-lg p-8 text-white">
-      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
-        <div>
-          <h2 class="text-2xl font-bold mb-2">🎯 今日学习目标</h2>
-          <p class="text-white/80">完成数据库系统第5章的学习和练习</p>
-        </div>
-        <div class="flex gap-4">
-          <button 
-            @click="emit('navigate', 'generate')"
-            class="px-6 py-3 bg-white text-indigo-600 font-medium rounded-xl hover:bg-gray-50 transition-colors shadow-lg"
-          >
-            生成学习资源
-          </button>
-          <button 
-            @click="emit('navigate', 'analyze')"
-            class="px-6 py-3 bg-white/20 text-white font-medium rounded-xl hover:bg-white/30 transition-colors backdrop-blur"
-          >
-            分析学习情况
-          </button>
-        </div>
-      </div>
-    </div>
+    </section>
   </div>
 </template>

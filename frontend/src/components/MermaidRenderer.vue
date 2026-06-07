@@ -78,12 +78,12 @@ watch(() => props.chart, async () => {
 <style scoped>
 .mermaid-container {
   width: 100%;
-  background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
-  border: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f7ff 100%);
+  border: 1px solid #e9e7f5;
   border-radius: 1rem;
   padding: 2rem;
   overflow: auto;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 10px 30px rgb(30 41 75 / 5%);
 }
 
 .mermaid-chart {
@@ -99,24 +99,24 @@ watch(() => props.chart, async () => {
 }
 
 .mermaid-chart :deep(.node rect) {
-  fill: #6366f1;
-  stroke: #4f46e5;
+  fill: #5146cf;
+  stroke: #433aa8;
   stroke-width: 2px;
-  filter: drop-shadow(0 2px 4px rgba(99, 102, 241, 0.3));
+  filter: drop-shadow(0 2px 4px rgb(81 70 207 / 24%));
 }
 
 .mermaid-chart :deep(.node polygon) {
-  fill: #8b5cf6;
-  stroke: #7c3aed;
+  fill: #6d5de7;
+  stroke: #5146cf;
   stroke-width: 2px;
-  filter: drop-shadow(0 2px 4px rgba(139, 92, 246, 0.3));
+  filter: drop-shadow(0 2px 4px rgb(81 70 207 / 24%));
 }
 
 .mermaid-chart :deep(.node circle) {
-  fill: #ec4899;
-  stroke: #db2777;
+  fill: #303466;
+  stroke: #252848;
   stroke-width: 2px;
-  filter: drop-shadow(0 2px 4px rgba(236, 72, 153, 0.3));
+  filter: drop-shadow(0 2px 4px rgb(48 52 102 / 24%));
 }
 
 .mermaid-chart :deep(.node text) {
@@ -126,19 +126,19 @@ watch(() => props.chart, async () => {
 }
 
 .mermaid-chart :deep(.edgePath path) {
-  stroke: #6b7280;
+  stroke: #77758d;
   stroke-width: 2px;
   fill: none;
 }
 
 .mermaid-chart :deep(.arrowhead) {
-  fill: #6b7280;
-  stroke: #6b7280;
+  fill: #77758d;
+  stroke: #77758d;
 }
 
 .mermaid-chart :deep(.edgeLabel) {
   background: #ffffff;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #e9e7f5;
   border-radius: 4px;
   padding: 2px 8px;
 }

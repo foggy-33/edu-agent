@@ -27,63 +27,67 @@ function navigate(page: Page) {
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-50 overflow-hidden">
+  <div class="app-shell">
     <aside 
       :class="[
-        'bg-white border-r border-gray-200 transition-all duration-300 flex flex-col',
-        sidebarCollapsed ? 'w-16' : 'w-64'
+        'app-sidebar',
+        sidebarCollapsed ? 'app-sidebar-collapsed' : ''
       ]"
     >
-      <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+      <div class="app-brand">
         <div :class="['flex items-center gap-3', sidebarCollapsed ? 'justify-center w-full' : '']">
-          <div class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white text-xl font-bold">
-            S
+          <div class="brand-mark">
+            AI
           </div>
-          <span v-if="!sidebarCollapsed" class="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-            智能学习助手
-          </span>
+          <div v-if="!sidebarCollapsed">
+            <div class="brand-name">StudyFlow</div>
+            <div class="brand-caption">智能学习工作台</div>
+          </div>
         </div>
       </div>
 
-      <nav class="flex-1 p-3 space-y-1">
+      <nav class="app-nav">
+        <div v-if="!sidebarCollapsed" class="nav-caption">工作台</div>
         <button
           v-for="item in navItems"
           :key="item.key"
           @click="navigate(item.key)"
           :class="[
-            'w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200',
-            currentPage === item.key
-              ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30'
-              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            'nav-item',
+            currentPage === item.key ? 'nav-item-active' : ''
           ]"
+          :title="sidebarCollapsed ? item.label : undefined"
         >
-          <span class="text-lg">{{ item.icon }}</span>
+          <span class="nav-icon">{{ item.icon }}</span>
           <span v-if="!sidebarCollapsed" class="font-medium">{{ item.label }}</span>
-          <span 
-            v-if="!sidebarCollapsed && currentPage === item.key" 
-            class="ml-auto w-2 h-2 bg-white rounded-full"
-          ></span>
         </button>
       </nav>
 
-      <div class="p-3 border-t border-gray-200">
+      <div class="sidebar-footer">
+        <div v-if="!sidebarCollapsed" class="profile-card">
+          <div class="profile-avatar">U</div>
+          <div class="min-w-0">
+            <div class="profile-name">演示用户</div>
+            <div class="profile-id">demo_user_001</div>
+          </div>
+        </div>
         <button 
           @click="sidebarCollapsed = !sidebarCollapsed"
-          class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-gray-600 hover:bg-gray-100 transition-all"
+          class="collapse-button"
         >
-          <span class="text-lg">{{ sidebarCollapsed ? '▶' : '◀' }}</span>
+          <span>{{ sidebarCollapsed ? '→' : '←' }}</span>
           <span v-if="!sidebarCollapsed" class="font-medium">收起菜单</span>
         </button>
       </div>
     </aside>
 
-    <main class="flex-1 overflow-auto">
-      <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
+    <main class="app-main">
+      <header class="app-header">
         <div>
-          <h1 class="text-xl font-bold text-gray-800">
+          <h1 class="page-title">
             {{ navItems.find(n => n.key === currentPage)?.label }}
           </h1>
-          <p class="text-sm text-gray-500 mt-1">
+          <p class="page-subtitle">
             {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
                currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
                currentPage === 'generate' ? '生成个性化学习资源' :
@@ -92,32 +96,22 @@ function navigate(page: Page) {
                '通过习题练习巩固知识，提升技能' }}
           </p>
         </div>
-        <div class="flex items-center gap-4">
-          <div class="relative">
+        <div class="header-actions">
+          <div class="search-box">
+            <span>⌕</span>
             <input 
               type="text" 
-              placeholder="搜索..." 
-              class="w-64 px-4 py-2 pl-10 bg-gray-100 border-none rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="搜索课程、资源..."
             />
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
           </div>
-          <button class="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-colors">
+          <button class="header-icon-button">
             🔔
-            <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+            <span class="notification-dot"></span>
           </button>
-          <div class="flex items-center gap-3 pl-4 border-l border-gray-200">
-            <div class="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white font-bold">
-              U
-            </div>
-            <div class="text-sm">
-              <div class="font-medium text-gray-800">用户</div>
-              <div class="text-gray-500">demo_user_001</div>
-            </div>
-          </div>
         </div>
       </header>
 
-      <div class="p-6">
+      <div class="app-content">
         <HomePage v-if="currentPage === 'home'" @navigate="navigate" />
         <AnalyzePage v-else-if="currentPage === 'analyze'" />
         <GeneratePage v-else-if="currentPage === 'generate'" />
