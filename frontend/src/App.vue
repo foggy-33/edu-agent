@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HomePage from './components/HomePage.vue'
 import AnalyzePage from './components/AnalyzePage.vue'
 import GeneratePage from './components/GeneratePage.vue'
@@ -8,11 +8,16 @@ import CoursePage from './components/CoursePage.vue'
 import ExercisePage from './components/ExercisePage.vue'
 import ProfileChatPage from './components/ProfileChatPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
+import UserCenterPage from './components/UserCenterPage.vue'
+import { loadUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
+import type { UserProfile } from './types/user'
 
-type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' | 'settings'
+type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' | 'settings' | 'account'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
+const userProfile = ref(loadUserProfile())
+const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 
 const navItems = [
   { key: 'home' as const, label: '首页', icon: '🏠' },
@@ -28,6 +33,13 @@ const navItems = [
 function navigate(page: Page) {
   currentPage.value = page
 }
+
+function handleUserProfileUpdate(event: Event) {
+  userProfile.value = (event as CustomEvent<UserProfile>).detail
+}
+
+onMounted(() => window.addEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate))
+onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate))
 </script>
 
 <template>
@@ -68,13 +80,16 @@ function navigate(page: Page) {
       </nav>
 
       <div class="sidebar-footer">
-        <div v-if="!sidebarCollapsed" class="profile-card">
-          <div class="profile-avatar">U</div>
-          <div class="min-w-0">
-            <div class="profile-name">演示用户</div>
-            <div class="profile-id">demo_user_001</div>
+        <button v-if="!sidebarCollapsed" class="profile-card" @click="navigate('account')" title="进入个人中心">
+          <div class="profile-avatar">
+            <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
+            <span v-else>{{ userInitial }}</span>
           </div>
-        </div>
+          <div class="min-w-0">
+            <div class="profile-name">{{ userProfile.name }}</div>
+            <div class="profile-id">{{ userProfile.userId }}</div>
+          </div>
+        </button>
         <button 
           @click="sidebarCollapsed = !sidebarCollapsed"
           class="collapse-button"
@@ -99,6 +114,7 @@ function navigate(page: Page) {
                currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
                currentPage === 'courses' ? '管理您的课程和学习进度' :
                currentPage === 'settings' ? '配置模型服务与接口连接' :
+               currentPage === 'account' ? '管理你的名称与头像' :
                '通过习题练习巩固知识，提升技能' }}
           </p>
         </div>
@@ -126,6 +142,7 @@ function navigate(page: Page) {
         <CoursePage v-else-if="currentPage === 'courses'" />
         <ExercisePage v-else-if="currentPage === 'exercise'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
+        <UserCenterPage v-else-if="currentPage === 'account'" />
       </div>
     </main>
   </div>
