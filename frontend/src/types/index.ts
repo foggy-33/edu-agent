@@ -76,6 +76,16 @@ export interface EvaluateResponse {
   next_steps: string[]
 }
 
+export interface Question {
+  id: number
+  type: 'single' | 'multiple' | 'judge'
+  chapter: string
+  question: string
+  options?: { label: string; text: string }[]
+  answer: string | string[] | boolean
+  analysis: string
+}
+
 export interface Course {
   id: number
   name: string
@@ -86,4 +96,5 @@ export interface Course {
   status: 'in-progress' | 'completed' | 'not-started' | string
   lastAccess: string
   difficulty: '简单' | '中等' | '困难' | string
+  questions: Question[]
 }

@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 
 const emit = defineEmits<{
-  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise']
+  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses']
 }>()
 
 const stats = ref([
@@ -19,12 +19,11 @@ const recentCourses = ref([
   { name: '操作系统', progress: 30, lastAccess: '1周前', icon: '💻' },
 ])
 
-const quickActions: { label: string; description: string; icon: string; action: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' }[] = [
+const quickActions: { label: string; description: string; icon: string; action: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' }[] = [
   { label: '学习分析', description: '查看学习画像', icon: '⌁', action: 'analyze' },
   { label: '资源生成', description: '创建专属资料', icon: '✦', action: 'generate' },
   { label: '学习评估', description: '检验掌握程度', icon: '✓', action: 'evaluate' },
-  { label: '课程管理', description: '跟踪课程进度', icon: '▤', action: 'courses' },
-  { label: '习题练习', description: '开始专项训练', icon: '✎', action: 'exercise' },
+  { label: '课程管理', description: '跟踪课程进度和习题', icon: '▤', action: 'courses' },
 ]
 
 const learningTips = ref([

@@ -5,14 +5,14 @@ import AnalyzePage from './components/AnalyzePage.vue'
 import GeneratePage from './components/GeneratePage.vue'
 import EvaluatePage from './components/EvaluatePage.vue'
 import CoursePage from './components/CoursePage.vue'
-import ExercisePage from './components/ExercisePage.vue'
+
 import ProfileChatPage from './components/ProfileChatPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import UserCenterPage from './components/UserCenterPage.vue'
 import { loadUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 
-type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' | 'settings' | 'account'
+type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'settings' | 'account'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -26,7 +26,6 @@ const navItems = [
   { key: 'generate' as const, label: '资源生成', icon: '✨' },
   { key: 'evaluate' as const, label: '学习评估', icon: '📝' },
   { key: 'courses' as const, label: '课程管理', icon: '📚' },
-  { key: 'exercise' as const, label: '习题练习', icon: '✏️' },
   { key: 'settings' as const, label: '设置', icon: '⚙' },
 ]
 
@@ -107,16 +106,15 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
             {{ navItems.find(n => n.key === currentPage)?.label }}
           </h1>
           <p class="page-subtitle">
-            {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
-               currentPage === 'profile' ? '通过自然语言对话持续构建动态学生画像' :
-               currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
-               currentPage === 'generate' ? '生成个性化学习资源' :
-               currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
-               currentPage === 'courses' ? '管理您的课程和学习进度' :
-               currentPage === 'settings' ? '配置模型服务与接口连接' :
-               currentPage === 'account' ? '管理你的名称与头像' :
-               '通过习题练习巩固知识，提升技能' }}
-          </p>
+                {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
+                   currentPage === 'profile' ? '通过自然语言对话持续构建动态学生画像' :
+                   currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
+                   currentPage === 'generate' ? '生成个性化学习资源' :
+                   currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
+                   currentPage === 'courses' ? '管理您的课程、学习进度和习题练习' :
+                   currentPage === 'settings' ? '配置模型服务与接口连接' :
+                   '管理你的名称与头像' }}
+              </p>
         </div>
         <div class="header-actions">
           <div class="search-box">
@@ -140,7 +138,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
         <GeneratePage v-else-if="currentPage === 'generate'" />
         <EvaluatePage v-else-if="currentPage === 'evaluate'" />
         <CoursePage v-else-if="currentPage === 'courses'" />
-        <ExercisePage v-else-if="currentPage === 'exercise'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
         <UserCenterPage v-else-if="currentPage === 'account'" />
       </div>
