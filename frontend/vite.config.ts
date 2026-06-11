@@ -7,9 +7,10 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     port: 5173,
+    host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: (import.meta as any).env.VITE_API_TARGET || 'http://localhost:8000',
         changeOrigin: true
       }
     }

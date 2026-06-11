@@ -70,7 +70,7 @@ const generateRadarPoints = () => {
   const centerY = 100
   const radius = 70
   const numPoints = radarData.value.length
-  const points = []
+  const points: string[] = []
   
   radarData.value.forEach((item, index) => {
     const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
@@ -87,11 +87,11 @@ const generateGridLines = () => {
   const centerX = 100
   const centerY = 100
   const numPoints = radarData.value.length
-  const lines = []
+  const lines: string[] = []
   
   for (let level = 1; level <= 5; level++) {
     const radius = (level * 70) / 5
-    const levelPoints = []
+    const levelPoints: string[] = []
     for (let i = 0; i < numPoints; i++) {
       const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2
       const x = centerX + radius * Math.cos(angle)
@@ -108,7 +108,7 @@ const generateAxisLines = () => {
   const centerX = 100
   const centerY = 100
   const numPoints = radarData.value.length
-  const lines = []
+  const lines: { x: number; y: number }[] = []
   
   radarData.value.forEach((_, index) => {
     const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
@@ -124,7 +124,7 @@ const generateLabelPositions = () => {
   const centerX = 100
   const centerY = 100
   const numPoints = radarData.value.length
-  const positions = []
+  const positions: { x: number; y: number; textAnchor: string; dominantBaseline: string; label: string }[] = []
   
   radarData.value.forEach((item, index) => {
     const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
@@ -132,8 +132,8 @@ const generateLabelPositions = () => {
     const x = centerX + r * Math.cos(angle)
     const y = centerY + r * Math.sin(angle)
     
-    let textAnchor = 'middle'
-    let dominantBaseline = 'middle'
+    let textAnchor: string = 'middle'
+    let dominantBaseline: string = 'middle'
     
     if (x < centerX - 15) textAnchor = 'end'
     else if (x > centerX + 15) textAnchor = 'start'

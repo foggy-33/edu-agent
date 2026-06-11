@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { Course, Question } from '../types'
+import type { Course } from '../types'
 
 const props = defineProps<{
   course: Course
@@ -30,14 +30,6 @@ const accuracy = computed(() => {
     ? Math.round((correctCount.value / answeredCount.value) * 100) 
     : 0
 })
-
-function resetExercise() {
-  currentQuestionIndex.value = 0
-  selectedAnswers.value = {}
-  showResult.value = false
-  answeredCount.value = 0
-  correctCount.value = 0
-}
 
 function selectAnswer(answer: string) {
   if (showResult.value || !currentQuestion.value) return
