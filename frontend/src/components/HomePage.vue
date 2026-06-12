@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { loadUserProfile } from './../api/userProfile'
+import { getDynamicProfile } from './../api/client'
+import type { DynamicProfile } from './../types/profile'
 
 const emit = defineEmits<{
-  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses']
+  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'account']
 }>()
 
 const getGreeting = () => {
@@ -21,6 +24,7 @@ const getTimeTheme = () => {
 
 const greeting = ref(getGreeting())
 const timeTheme = ref(getTimeTheme())
+const showSplash = ref(true)
 
 const timeThemeClass = computed(() => {
   switch (timeTheme.value) {
@@ -31,26 +35,10 @@ const timeThemeClass = computed(() => {
   }
 })
 
-const stats = ref([
-  { label: '已完成课程', value: '12', unit: '门', icon: '📚', trend: '+2 本月', color: 'text-indigo-600' },
-  { label: '学习时长', value: '86', unit: '小时', icon: '⏱', trend: '+12% 本周', color: 'text-blue-600' },
-  { label: '评估得分', value: '92', unit: '分', icon: '🎯', trend: '+5 分', color: 'text-green-600' },
-  { label: '薄弱环节', value: '3', unit: '个', icon: '◎', trend: '待加强', color: 'text-amber-600' },
-])
-
 const learningTips = ref([
   { tip: '今日推荐：复习函数依赖和范式判断', time: '刚刚' },
   { tip: '完成了数据库系统章节测试', time: '2小时前' },
   { tip: '生成了新的学习路径', time: '昨天' },
-])
-
-const radarData = ref([
-  { label: '记忆力', value: 85 },
-  { label: '逻辑推理', value: 78 },
-  { label: '创造力', value: 72 },
-  { label: '注意力', value: 88 },
-  { label: '理解力', value: 82 },
-  { label: '应用能力', value: 76 },
 ])
 
 const weeklyStudyData = ref([
@@ -65,220 +53,197 @@ const weeklyStudyData = ref([
 
 const maxStudyHours = computed(() => Math.max(...weeklyStudyData.value.map(d => d.hours)))
 
-const generateRadarPoints = () => {
-  const centerX = 100
-  const centerY = 100
-  const radius = 70
-  const numPoints = radarData.value.length
-  const points: string[] = []
-  
-  radarData.value.forEach((item, index) => {
-    const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
-    const r = (item.value / 100) * radius
-    const x = centerX + r * Math.cos(angle)
-    const y = centerY + r * Math.sin(angle)
-    points.push(`${x},${y}`)
-  })
-  
-  return points.join(' ')
-}
-
-const generateGridLines = () => {
-  const centerX = 100
-  const centerY = 100
-  const numPoints = radarData.value.length
-  const lines: string[] = []
-  
-  for (let level = 1; level <= 5; level++) {
-    const radius = (level * 70) / 5
-    const levelPoints: string[] = []
-    for (let i = 0; i < numPoints; i++) {
-      const angle = (Math.PI * 2 * i) / numPoints - Math.PI / 2
-      const x = centerX + radius * Math.cos(angle)
-      const y = centerY + radius * Math.sin(angle)
-      levelPoints.push(`${x},${y}`)
-    }
-    lines.push(levelPoints.join(' '))
-  }
-  
-  return lines
-}
-
-const generateAxisLines = () => {
-  const centerX = 100
-  const centerY = 100
-  const numPoints = radarData.value.length
-  const lines: { x: number; y: number }[] = []
-  
-  radarData.value.forEach((_, index) => {
-    const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
-    const x = centerX + 70 * Math.cos(angle)
-    const y = centerY + 70 * Math.sin(angle)
-    lines.push({ x, y })
-  })
-  
-  return lines
-}
-
-const generateLabelPositions = () => {
-  const centerX = 100
-  const centerY = 100
-  const numPoints = radarData.value.length
-  const positions: { x: number; y: number; textAnchor: string; dominantBaseline: string; label: string }[] = []
-  
-  radarData.value.forEach((item, index) => {
-    const angle = (Math.PI * 2 * index) / numPoints - Math.PI / 2
-    const r = 85
-    const x = centerX + r * Math.cos(angle)
-    const y = centerY + r * Math.sin(angle)
-    
-    let textAnchor: string = 'middle'
-    let dominantBaseline: string = 'middle'
-    
-    if (x < centerX - 15) textAnchor = 'end'
-    else if (x > centerX + 15) textAnchor = 'start'
-    
-    if (y < centerY - 15) dominantBaseline = 'hanging'
-    else if (y > centerY + 15) dominantBaseline = 'baseline'
-    
-    positions.push({ x, y, textAnchor, dominantBaseline, label: item.label })
-  })
-  
-  return positions
-}
-
 const studyStreak = ref(7)
 const todayProgress = ref(72)
+
+const portrait = ref<DynamicProfile | null>(null)
+const portraitLoading = ref(false)
+
+interface AvatarTag {
+  label: string
+  value: string
+  icon: string
+  color: string
+  category: string
+}
+
+const avatarTags = computed<AvatarTag[]>(() => {
+  if (!portrait.value) return []
+  
+  const tags: AvatarTag[] = []
+  const dims = portrait.value.dimension_values || {}
+  const conf = portrait.value.dimension_confidence || {}
+  
+  const iconMap: Record<string, string> = {
+    '专业与年级': '🎓',
+    '学习目标': '🎯',
+    '知识基础': '📚',
+    '认知风格': '🧠',
+    '学习偏好': '⚡',
+    '时间安排': '⏰',
+    '学习动机': '🔥',
+    '能力水平': '💪'
+  }
+  
+  const colorMap = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#3b82f6', '#f59e0b', '#14b8a6']
+  
+  Object.entries(dims).forEach(([key, value], index) => {
+    if (value) {
+      const displayValue = Array.isArray(value) ? value.slice(0, 2).join('、') : String(value)
+      const confidence = conf[key] || 0
+      
+      tags.push({
+        label: key,
+        value: displayValue.length > 10 ? displayValue.slice(0, 10) + '…' : displayValue,
+        icon: iconMap[key] || '📊',
+        color: colorMap[index % colorMap.length],
+        category: confidence >= 0.8 ? '核心' : confidence >= 0.5 ? '重要' : '基础'
+      })
+    }
+  })
+  
+  return tags
+})
+
+const coreTags = computed(() => avatarTags.value.filter(t => t.category === '核心'))
+const importantTags = computed(() => avatarTags.value.filter(t => t.category === '重要'))
+const basicTags = computed(() => avatarTags.value.filter(t => t.category === '基础'))
+
+async function loadPortrait() {
+  portraitLoading.value = true
+  try {
+    const userProfile = loadUserProfile()
+    const result = await getDynamicProfile(userProfile.userId)
+    portrait.value = result.profile
+  } catch (err) {
+    console.error('加载画像失败', err)
+    portrait.value = null
+  } finally {
+    portraitLoading.value = false
+  }
+}
+
+onMounted(() => {
+  setTimeout(() => {
+    showSplash.value = false
+  }, 2500)
+  loadPortrait()
+})
 </script>
 
 <template>
   <div class="dashboard">
-    <div class="dashboard-top-row">
-      <div class="dashboard-top-left">
-        <section :class="['welcome-panel-small', timeThemeClass]">
-          <div>
-            <h2>{{ greeting }}，欢迎继续学习</h2>
-            <p>今天建议完成数据库系统第 5 章，并进行一次针对性评估。</p>
+    <Transition name="splash">
+      <div v-if="showSplash" class="splash-screen">
+        <div class="splash-content">
+          <div class="splash-logo">
+            <span class="logo-icon">AI</span>
           </div>
-          <div class="goal-ring-small">
-            <div class="goal-value">{{ todayProgress }}%</div>
-            <div class="goal-label">今日目标</div>
+          <div class="splash-text">
+            <h1>{{ greeting }}，欢迎回来</h1>
+            <p>正在准备您的学习环境...</p>
           </div>
-        </section>
-
-        <div class="stats-row">
-          <article v-for="stat in stats" :key="stat.label" class="stat-card">
-            <div class="stat-icon">{{ stat.icon }}</div>
-            <div class="stat-label">{{ stat.label }}</div>
-            <div class="stat-row-inner">
-              <strong :class="stat.color">{{ stat.value }}<span class="stat-unit">{{ stat.unit }}</span></strong>
-              <span>{{ stat.trend }}</span>
-            </div>
-          </article>
-        </div>
-      </div>
-
-      <div class="surface activity-panel-tall">
-        <div class="section-heading-small">
-          <span class="section-kicker">最近动态</span>
-          <h2>学习记录</h2>
-        </div>
-        <div class="activity-list-tall">
-          <div v-for="(tip, index) in learningTips" :key="index" class="activity-row-tall">
-            <span class="activity-number">{{ index + 1 }}</span>
-            <div class="activity-content">
-              <strong>{{ tip.tip }}</strong>
-              <small>{{ tip.time }}</small>
+          <div class="splash-progress">
+            <div class="progress-bar-full">
+              <div class="progress-fill-full"></div>
             </div>
           </div>
         </div>
-        <button class="activity-more-btn" @click="emit('navigate', 'analyze')">查看更多 →</button>
       </div>
-    </div>
+    </Transition>
 
-    <div class="dashboard-middle">
-      <div class="surface study-panel-wide">
-        <div class="section-heading-small">
-          <span class="section-kicker">学习习惯</span>
-          <h2>本周学习趋势</h2>
+    <div class="dashboard-main">
+      <div class="surface study-panel-full">
+        <div class="study-header-row">
+          <div class="section-heading-small">
+            <span class="section-kicker">学习习惯</span>
+            <h2>本周学习趋势</h2>
+          </div>
+          <div class="study-stats-row">
+            <div class="streak-badge">
+              <span class="streak-icon">🔥</span>
+              <span class="streak-text">连续学习 <strong>{{ studyStreak }}</strong> 天</span>
+            </div>
+            <div class="daily-progress">
+              <span class="progress-label">今日目标</span>
+              <div class="mini-progress-bar">
+                <div class="mini-progress-fill" :style="{ width: todayProgress + '%' }"></div>
+              </div>
+              <span class="progress-value">{{ todayProgress }}%</span>
+            </div>
+          </div>
         </div>
-        <div class="chart-container-wide">
-          <div class="chart-bars-wide">
+        <div class="chart-container-full">
+          <div class="chart-bars-full">
             <div
               v-for="data in weeklyStudyData"
               :key="data.day"
-              class="bar-wrapper-wide"
+              class="bar-wrapper-full"
             >
               <div
-                class="bar-wide"
-                :style="{ height: (data.hours / maxStudyHours * 100) + '%' }"
+                class="bar-full"
+                :style="{ height: (Math.max(data.hours / maxStudyHours * 100, 20)) + '%' }"
               >
-                <span class="bar-value-wide">{{ data.hours }}h</span>
+                <span class="bar-value-full">{{ data.hours }}h</span>
               </div>
-              <span class="bar-label-wide">{{ data.day.slice(1) }}</span>
+              <span class="bar-label-full">{{ data.day.slice(1) }}</span>
             </div>
           </div>
         </div>
-        <div class="streak-badge-wide">
-          <span class="streak-icon">🔥</span>
-          <span class="streak-text">连续学习 <strong>{{ studyStreak }}</strong> 天</span>
-        </div>
       </div>
 
-      <div class="surface radar-panel-wide">
+      <div class="surface portrait-panel-home">
         <div class="section-heading-small">
-          <span class="section-kicker">学习特质</span>
-          <h2>能力雷达图</h2>
+          <span class="section-kicker">学习画像</span>
+          <h2>我的标签</h2>
+          <button class="view-portrait-btn" @click="emit('navigate', 'account')">查看详情 →</button>
         </div>
-        <div class="radar-container-wide">
-          <svg viewBox="0 0 200 200" class="radar-svg-wide">
-            <polygon
-              v-for="(line, idx) in generateGridLines()"
-              :key="`grid-${idx}`"
-              :points="line"
-              fill="none"
-              stroke="#e2e8f0"
-              stroke-width="1"
-            />
-            <line
-              v-for="(axis, idx) in generateAxisLines()"
-              :key="`axis-${idx}`"
-              x1="100"
-              y1="100"
-              :x2="axis.x"
-              :y2="axis.y"
-              stroke="#cbd5e1"
-              stroke-width="1"
-            />
-            <polygon
-              :points="generateRadarPoints()"
-              fill="rgba(99, 102, 241, 0.3)"
-              stroke="#6366f1"
-              stroke-width="2"
-            />
-            <circle
-              v-for="(point, idx) in generateRadarPoints().split(' ')"
-              :key="`point-${idx}`"
-              :cx="point.split(',')[0]"
-              :cy="point.split(',')[1]"
-              r="3"
-              fill="#6366f1"
-            />
-            <text
-              v-for="(pos, idx) in generateLabelPositions()"
-              :key="`label-${idx}`"
-              :x="pos.x"
-              :y="pos.y"
-              :text-anchor="pos.textAnchor"
-              :dominant-baseline="pos.dominantBaseline"
-              class="radar-label-wide"
-            >{{ pos.label }}</text>
-          </svg>
+        <div v-if="portraitLoading" class="portrait-loading">
+          <div class="loading-spinner"></div>
+          <p>加载画像中...</p>
         </div>
-        <div class="radar-legend-wide">
-          <div v-for="item in radarData" :key="item.label" class="legend-item-wide">
-            <span class="legend-label-wide">{{ item.label }}</span>
-            <span class="legend-value-wide">{{ item.value }}</span>
+        <div v-else class="portrait-tags-container">
+          <div v-if="coreTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">✨ 核心</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in coreTags" 
+                :key="tag.label"
+                class="portrait-tag-home core-tag-home"
+                :style="{ '--tag-color': tag.color }"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="importantTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">📌 重要</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in importantTags" 
+                :key="tag.label"
+                class="portrait-tag-home important-tag-home"
+                :style="{ '--tag-color': tag.color }"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="basicTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">📋 基础</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in basicTags" 
+                :key="tag.label"
+                class="portrait-tag-home basic-tag-home"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="avatarTags.length === 0" class="empty-tags-home">
+            <p>暂无画像数据</p>
+            <small>开始学习后会自动生成</small>
           </div>
         </div>
       </div>

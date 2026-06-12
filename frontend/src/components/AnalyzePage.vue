@@ -273,7 +273,7 @@ const maxWeeklyHours = computed(() => {
                 class="flex items-start gap-4 p-4 bg-green-50 rounded-xl"
               >
                 <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-green-600 font-bold">
-                  {{ index + 1 }}
+                  {{ Number(index) + 1 }}
                 </div>
                 <div>
                   <div class="font-medium text-gray-800">{{ suggestion }}</div>

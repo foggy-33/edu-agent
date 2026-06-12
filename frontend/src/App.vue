@@ -9,29 +9,42 @@ import CourseDetailPage from './components/CourseDetailPage.vue'
 import CourseExercisePage from './components/CourseExercisePage.vue'
 import ResourceLibrary from './components/ResourceLibrary.vue'
 
-import ProfileChatPage from './components/ProfileChatPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import UserCenterPage from './components/UserCenterPage.vue'
+import PortraitPage from './components/PortraitPage.vue'
 import { loadUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'resources' | 'settings' | 'account'
+type Page = 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'resources' | 'settings' | 'account' | 'portrait'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
 const userProfile = ref(loadUserProfile())
+const dropdownOpen = ref<string | null>(null)
+
+function toggleDropdown(key: string) {
+  dropdownOpen.value = dropdownOpen.value === key ? null : key
+}
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const selectedCourse = ref<Course | null>(null)
 
-const navItems = [
-  { key: 'home' as const, label: '首页', icon: '🏠' },
-  { key: 'profile' as const, label: '画像共建', icon: '◎' },
-  { key: 'analyze' as const, label: '学习分析', icon: '📊' },
-  { key: 'resources' as const, label: '资源库', icon: '📦' },
-  { key: 'evaluate' as const, label: '学习评估', icon: '📝' },
-  { key: 'courses' as const, label: '课程管理', icon: '📚' },
-  { key: 'settings' as const, label: '设置', icon: '⚙' },
+interface NavItem {
+  key: Page | string
+  label: string
+  icon: string
+  children?: { key: Page; label: string; icon: string }[]
+}
+
+const navItems: NavItem[] = [
+  { key: 'home', label: '首页', icon: '🏠' },
+  { key: 'analyze', label: '学习分析', icon: '📊' },
+  { key: 'resources', label: '资源库', icon: '📦' },
+  { key: 'evaluate', label: '学习评估', icon: '📝' },
+  { key: 'courses', label: '课程管理', icon: '📚' },
+  { key: 'account', label: '个人中心', icon: '👤' },
+  { key: 'portrait', label: '画像对话', icon: '🎯' },
+  { key: 'settings', label: '设置', icon: '⚙' },
 ]
 
 function navigate(page: Page, course?: Course) {
@@ -117,7 +130,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           </h1>
           <p class="page-subtitle">
                 {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
-                   currentPage === 'profile' ? '通过自然语言对话持续构建动态学生画像' :
                    currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
                    currentPage === 'generate' ? '生成个性化学习资源' :
                    currentPage === 'resources' ? '管理和查阅所有学习资料' :
@@ -125,8 +137,10 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
                    currentPage === 'courses' ? '管理您的课程、学习进度和习题练习' :
                    currentPage === 'detail' ? '查看课程详情、章节和练习' :
                    currentPage === 'exercise' ? '完成习题练习，检验学习成果' :
+                   currentPage === 'account' ? '查看个人资料和学习画像' :
+                   currentPage === 'portrait' ? '与AI对话构建和完善学习画像' :
                    currentPage === 'settings' ? '配置模型服务与接口连接' :
-                   '管理你的名称与头像' }}
+                   '' }}
               </p>
         </div>
         <div class="header-actions">
@@ -146,7 +160,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
 
       <div class="app-content">
         <HomePage v-if="currentPage === 'home'" @navigate="navigate" />
-        <ProfileChatPage v-else-if="currentPage === 'profile'" />
         <AnalyzePage v-else-if="currentPage === 'analyze'" />
         <GeneratePage v-else-if="currentPage === 'generate'" @navigate="navigate" />
         <ResourceLibrary v-else-if="currentPage === 'resources'" @navigate="navigate" />
@@ -162,8 +175,9 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           :course="selectedCourse" 
           @navigate="navigate" 
         />
+        <UserCenterPage v-else-if="currentPage === 'account'" @navigate="navigate" />
+        <PortraitPage v-else-if="currentPage === 'portrait'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
-        <UserCenterPage v-else-if="currentPage === 'account'" />
       </div>
     </main>
   </div>

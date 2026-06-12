@@ -6,7 +6,11 @@ export const USER_PROFILE_EVENT = 'studyflow-user-profile-updated'
 export const defaultUserProfile: UserProfile = {
   name: '演示用户',
   userId: 'demo_user_001',
-  avatar: ''
+  avatar: '',
+  phone: '',
+  email: '',
+  school: '',
+  major: ''
 }
 
 export function loadUserProfile(): UserProfile {

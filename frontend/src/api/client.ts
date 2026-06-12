@@ -87,3 +87,46 @@ export async function getNextProfileQuestion(payload: SiliconFlowConfig & {
     body: JSON.stringify(payload)
   })
 }
+
+export async function smartEvaluate(payload: { user_id: string; course: string }): Promise<any> {
+  return httpRequest(`${API_BASE}/evaluate/smart`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function startQuiz(payload: { user_id: string; course: string }): Promise<any> {
+  return httpRequest(`${API_BASE}/evaluate/quiz/start`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function answerQuiz(payload: { user_id: string; course: string; question_id: string; answer: string }): Promise<any> {
+  return httpRequest(`${API_BASE}/evaluate/quiz/answer`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function finishQuiz(payload: { user_id: string; course: string }): Promise<any> {
+  return httpRequest(`${API_BASE}/evaluate/quiz/finish`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export interface PracticeRecord {
+  record_id: string
+  date: string
+  chapter: string
+  question: string
+  user_answer: string
+  correct_answer: string
+  is_correct: boolean
+}
+
+export async function getPracticeRecords(userId: string, course?: string): Promise<{ records: PracticeRecord[] }> {
+  const params = course ? `?course=${encodeURIComponent(course)}` : ''
+  return httpRequest<{ records: PracticeRecord[] }>(`${API_BASE}/practice/records/${encodeURIComponent(userId)}${params}`)
+}
