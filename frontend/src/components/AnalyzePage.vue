@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { analyze } from '../api/client'
+import type { Course } from '../types'
+
+const props = defineProps<{
+  course: Course | null
+}>()
+
+const emit = defineEmits<{
+  navigate: [page: 'detail']
+}>()
 
 const user_id = ref('demo_user_001')
-const course = ref('数据库系统')
-const message = ref('')
 const loading = ref(false)
 const analysis = ref<any>(null)
 const error = ref('')
@@ -17,10 +24,7 @@ const analysisTabs = [
 const activeTab = ref('overview')
 
 async function handleAnalyze() {
-  if (!message.value.trim()) {
-    error.value = '请输入学习需求'
-    return
-  }
+  if (!props.course) return
 
   loading.value = true
   error.value = ''
@@ -29,8 +33,8 @@ async function handleAnalyze() {
   try {
     const response = await analyze({
       user_id: user_id.value,
-      course: course.value,
-      message: message.value
+      course: props.course.name,
+      message: '分析我的学习情况'
     })
     analysis.value = {
       ...response.profile,
@@ -59,7 +63,7 @@ async function handleAnalyze() {
 
 const mockAnalysisData = {
   major: '计算机科学与技术',
-  course: '数据库系统',
+  course: props.course?.name || '数据库系统',
   grade_level: '大三',
   learning_goal: '准备期末考试',
   knowledge_level: '中等',
@@ -84,59 +88,39 @@ const mockAnalysisData = {
 const maxWeeklyHours = computed(() => {
   return Math.max(...(analysis.value?.weeklyData || [0]))
 })
+
+onMounted(() => {
+  handleAnalyze()
+})
 </script>
 
 <template>
   <div class="space-y-6">
     <div class="bg-white rounded-2xl shadow-lg p-6">
-      <h2 class="text-lg font-bold text-gray-800 mb-4">🔍 学习分析设置</h2>
-      <form @submit.prevent="handleAnalyze" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="flex items-center justify-between mb-4">
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">用户ID</label>
-          <input
-            v-model="user_id"
-            type="text"
-            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-            placeholder="输入用户ID"
-          />
+          <h2 class="text-lg font-bold text-gray-800">🔍 学习分析</h2>
+          <div class="text-sm text-gray-500 mt-1">当前课程：{{ course?.name || '未知课程' }}</div>
         </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">课程</label>
-          <select
-            v-model="course"
-            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-          >
-            <option value="数据库系统">数据库系统</option>
-            <option value="数据结构">数据结构</option>
-            <option value="算法设计">算法设计</option>
-          </select>
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">需求描述</label>
-          <input
-            v-model="message"
-            type="text"
-            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-            placeholder="描述您的学习需求..."
-          />
-        </div>
-        <div class="md:col-span-3">
-          <button
-            type="submit"
-            :disabled="loading"
-            class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl hover:from-indigo-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            <span v-if="loading" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            {{ loading ? '分析中...' : '开始分析' }}
-          </button>
-        </div>
-      </form>
-      <div v-if="error" class="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+        <button
+          @click="emit('navigate', 'detail')"
+          class="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all flex items-center gap-2"
+        >
+          ← 返回课程详情
+        </button>
+      </div>
+
+      <div v-if="loading" class="flex flex-col items-center justify-center py-12">
+        <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <span class="text-gray-600">正在分析学习数据...</span>
+      </div>
+
+      <div v-if="error" class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
         ❌ {{ error }}
       </div>
     </div>
 
-    <div v-if="analysis" class="space-y-6">
+    <div v-if="analysis && !loading" class="space-y-6">
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
           <div class="text-white/80 text-sm">总学习时长</div>

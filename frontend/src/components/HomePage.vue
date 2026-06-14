@@ -16,7 +16,7 @@ const getGreeting = () => {
 }
 
 const greeting = ref(getGreeting())
-const showSplash = ref(true)
+const showSplash = ref(false)
 
 const weeklyStudyData = ref([
   { day: '周一', hours: 3.5 },
@@ -100,9 +100,14 @@ async function loadPortrait() {
 }
 
 onMounted(() => {
-  setTimeout(() => {
-    showSplash.value = false
-  }, 2500)
+  const justLoggedIn = localStorage.getItem('justLoggedIn')
+  if (justLoggedIn === 'true') {
+    showSplash.value = true
+    localStorage.removeItem('justLoggedIn')
+    setTimeout(() => {
+      showSplash.value = false
+    }, 2500)
+  }
   loadPortrait()
 })
 </script>

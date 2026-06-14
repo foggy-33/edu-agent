@@ -38,8 +38,6 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { key: 'home', label: '首页', icon: '🏠' },
-  { key: 'analyze', label: '学习分析', icon: '📊' },
-  { key: 'generate', label: '资源生成', icon: '✨' },
   { key: 'collaborative', label: '个性化资源生成', icon: '协' },
   { key: 'resources', label: '资源库', icon: '📦' },
   { key: 'evaluate', label: '学习评估', icon: '📝' },
@@ -167,6 +165,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           <h1 class="page-title">
             {{ currentPage === 'detail' ? (selectedCourse?.name || '课程详情') :
                currentPage === 'exercise' ? (selectedCourse?.name + ' - 习题练习' || '习题练习') :
+               currentPage === 'analyze' ? (selectedCourse?.name + ' - 学习分析' || '学习分析') :
                navItems.find(n => n.key === currentPage)?.label }}
           </h1>
           <p class="page-subtitle">
@@ -202,7 +201,11 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
 
       <div class="app-content">
         <HomePage v-if="currentPage === 'home'" @navigate="navigate" />
-        <AnalyzePage v-else-if="currentPage === 'analyze'" />
+        <AnalyzePage 
+          v-else-if="currentPage === 'analyze'" 
+          :course="selectedCourse"
+          @navigate="navigate"
+        />
         <GeneratePage v-else-if="currentPage === 'generate'" @navigate="navigate" />
         <CollaborativeGeneratePage v-else-if="currentPage === 'collaborative'" />
         <ResourceLibrary v-else-if="currentPage === 'resources'" @navigate="navigate" />

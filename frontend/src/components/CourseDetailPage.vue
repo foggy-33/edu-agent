@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: 'courses' | 'exercise']
+  navigate: [page: 'courses' | 'exercise' | 'analyze']
 }>()
 
 const getStatusClass = (status: string) => {
@@ -105,7 +105,10 @@ const courseSummary = ref([
               <button class="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-xl font-medium transition-all whitespace-nowrap shadow-lg">
                 🎬 继续学习
               </button>
-              <button class="px-5 py-2.5 bg-white/20 hover:bg-white/30 rounded-xl font-medium transition-all whitespace-nowrap">
+              <button 
+                @click="emit('navigate', 'analyze')"
+                class="px-5 py-2.5 bg-white/20 hover:bg-white/30 rounded-xl font-medium transition-all whitespace-nowrap"
+              >
                 📊 分析
               </button>
             </div>

@@ -32,6 +32,7 @@ async function submit() {
     const user = mode.value === 'login'
       ? await login(username.value, password.value)
       : await register(username.value, displayName.value, password.value)
+    localStorage.setItem('justLoggedIn', 'true')
     emit('authenticated', user)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '操作失败，请稍后重试'
