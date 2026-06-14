@@ -37,7 +37,7 @@ async function testConnection() {
     <section class="surface settings-card">
       <span class="section-kicker">模型服务</span>
       <h2>硅基流动 API 设置</h2>
-      <p class="settings-intro">用于对话式学习画像构建。API Key 仅保存在当前浏览器，后端不会持久化密钥。</p>
+      <p class="settings-intro">用于画像对话和多智能体资源生成。API Key 仅保存在当前浏览器，请求时临时发送，后端不会持久化密钥。</p>
       <div class="settings-form">
         <label><span>API Key</span><div class="secret-input"><input v-model="config.api_key" :type="showKey ? 'text' : 'password'" placeholder="sk-..." /><button type="button" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button></div></label>
         <label><span>Base URL</span><input v-model="config.base_url" type="url" /></label>

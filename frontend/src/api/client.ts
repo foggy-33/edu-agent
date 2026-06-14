@@ -5,6 +5,8 @@ import type {
   EvaluateResponse,
   Course,
   StudentProfile
+  , CollaborativeLearningRequest
+  , CollaborativeLearningResponse
 } from '../types'
 import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig } from '../types/profile'
 
@@ -54,6 +56,13 @@ export async function getCourses(): Promise<{ courses: Course[] }> {
 
 export async function getWorkflow(): Promise<Record<string, unknown>> {
   return httpRequest<Record<string, unknown>>(`${API_BASE}/workflow`)
+}
+
+export async function generateCollaborativeLearning(payload: CollaborativeLearningRequest): Promise<CollaborativeLearningResponse> {
+  return httpRequest<CollaborativeLearningResponse>(`${API_BASE}/learning/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }
 
 export async function testSiliconFlow(config: SiliconFlowConfig): Promise<{ status: string; model: string; message: string }> {

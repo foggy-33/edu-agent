@@ -11,10 +11,30 @@ class LearningRequest(BaseModel):
     message: str = Field(..., examples=["我对函数依赖、候选码和范式判断不太会，希望通过例题准备考试。"])
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    display_name: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class SiliconFlowConfig(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.siliconflow.cn/v1"
     model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
+
+
+class CollaborativeLearningRequest(SiliconFlowConfig):
+    major: str
+    course: str
+    chapter: str
+    weakness: str
+    goal: str
+    resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "video"]]
 
 
 class ProfileChatRequest(SiliconFlowConfig):

@@ -9,14 +9,20 @@ import ExercisePage from './components/ExercisePage.vue'
 import ProfileChatPage from './components/ProfileChatPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import UserCenterPage from './components/UserCenterPage.vue'
-import { loadUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
+import AuthPage from './components/AuthPage.vue'
+import CollaborativeGeneratePage from './components/CollaborativeGeneratePage.vue'
+import { getCurrentUser, logout, type AuthUser } from './api/auth'
+import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 
-type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' | 'settings' | 'account'
+type Page = 'home' | 'profile' | 'analyze' | 'generate' | 'collaborative' | 'evaluate' | 'courses' | 'exercise' | 'settings' | 'account'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
 const userProfile = ref(loadUserProfile())
+const authUser = ref<AuthUser | null>(null)
+const authChecking = ref(true)
+const loggingOut = ref(false)
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 
 const navItems = [
@@ -24,6 +30,7 @@ const navItems = [
   { key: 'profile' as const, label: '画像共建', icon: '◎' },
   { key: 'analyze' as const, label: '学习分析', icon: '📊' },
   { key: 'generate' as const, label: '资源生成', icon: '✨' },
+  { key: 'collaborative' as const, label: '个性化资源生成', icon: '协' },
   { key: 'evaluate' as const, label: '学习评估', icon: '📝' },
   { key: 'courses' as const, label: '课程管理', icon: '📚' },
   { key: 'exercise' as const, label: '习题练习', icon: '✏️' },
@@ -38,12 +45,38 @@ function handleUserProfileUpdate(event: Event) {
   userProfile.value = (event as CustomEvent<UserProfile>).detail
 }
 
-onMounted(() => window.addEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate))
+function handleAuthenticated(user: AuthUser) {
+  authUser.value = user
+  const profile = { name: user.display_name, userId: user.username, avatar: '' }
+  saveUserProfile(profile)
+  userProfile.value = profile
+}
+
+async function handleLogout() {
+  if (!window.confirm('确定要退出当前账号吗？')) return
+  loggingOut.value = true
+  try {
+    await logout()
+    authUser.value = null
+    currentPage.value = 'home'
+  } finally {
+    loggingOut.value = false
+  }
+}
+
+onMounted(async () => {
+  window.addEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate)
+  const user = await getCurrentUser()
+  if (user) handleAuthenticated(user)
+  authChecking.value = false
+})
 onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate))
 </script>
 
 <template>
-  <div class="app-shell">
+  <div v-if="authChecking" class="auth-loading"><div class="brand-mark">AI</div><span>正在进入智学空间...</span></div>
+  <AuthPage v-else-if="!authUser" @authenticated="handleAuthenticated" />
+  <div v-else class="app-shell">
     <aside 
       :class="[
         'app-sidebar',
@@ -56,7 +89,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
             AI
           </div>
           <div v-if="!sidebarCollapsed">
-            <div class="brand-name">StudyFlow</div>
+            <div class="brand-name">智学空间</div>
             <div class="brand-caption">智能学习工作台</div>
           </div>
         </div>
@@ -97,6 +130,15 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           <span>{{ sidebarCollapsed ? '→' : '←' }}</span>
           <span v-if="!sidebarCollapsed" class="font-medium">收起菜单</span>
         </button>
+        <button
+          class="sidebar-logout-button"
+          :disabled="loggingOut"
+          :title="sidebarCollapsed ? '退出登录' : undefined"
+          @click="handleLogout"
+        >
+          <span>⇥</span>
+          <span v-if="!sidebarCollapsed" class="font-medium">{{ loggingOut ? '正在退出...' : '退出登录' }}</span>
+        </button>
       </div>
     </aside>
 
@@ -111,6 +153,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
                currentPage === 'profile' ? '通过自然语言对话持续构建动态学生画像' :
                currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
                currentPage === 'generate' ? '生成个性化学习资源' :
+               currentPage === 'collaborative' ? '多智能体协作生成完整个性化学习资源包' :
                currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
                currentPage === 'courses' ? '管理您的课程和学习进度' :
                currentPage === 'settings' ? '配置模型服务与接口连接' :
@@ -138,11 +181,12 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
         <ProfileChatPage v-else-if="currentPage === 'profile'" />
         <AnalyzePage v-else-if="currentPage === 'analyze'" />
         <GeneratePage v-else-if="currentPage === 'generate'" />
+        <CollaborativeGeneratePage v-else-if="currentPage === 'collaborative'" />
         <EvaluatePage v-else-if="currentPage === 'evaluate'" />
         <CoursePage v-else-if="currentPage === 'courses'" />
         <ExercisePage v-else-if="currentPage === 'exercise'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
-        <UserCenterPage v-else-if="currentPage === 'account'" />
+        <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" />
       </div>
     </main>
   </div>

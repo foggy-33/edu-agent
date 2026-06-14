@@ -87,3 +87,36 @@ export interface Course {
   lastAccess: string
   difficulty: '简单' | '中等' | '困难' | string
 }
+
+export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'video'
+
+export interface CollaborativeLearningRequest {
+  major: string
+  course: string
+  chapter: string
+  weakness: string
+  goal: string
+  resourceTypes: CollaborativeResourceType[]
+  api_key: string
+  base_url: string
+  model: string
+}
+
+export interface AgentTraceItem {
+  order: number
+  agent: string
+  status: string
+  summary: string
+  timestamp: string
+}
+
+export interface CollaborativeLearningResponse {
+  lectureDoc: string
+  mindmap: string
+  exercises: string
+  reading: string
+  codeCase: string
+  videoScript: string
+  review: string
+  agentTrace: AgentTraceItem[]
+}

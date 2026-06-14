@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
 
+const emit = defineEmits<{ logout: [] }>()
 const profile = ref(loadUserProfile())
 const message = ref('')
 const error = ref('')
@@ -71,6 +72,7 @@ function reset() {
       <label><span>显示名称</span><input v-model="profile.name" maxlength="30" placeholder="请输入显示名称" /></label>
       <label><span>用户 ID</span><input :value="profile.userId" disabled /><small>用户 ID 用于关联动态学习画像，当前不可修改。</small></label>
       <div class="user-profile-actions"><button class="btn-secondary" @click="reset">恢复默认</button><button class="btn-primary" @click="save">保存资料</button></div>
+      <button class="logout-button" @click="emit('logout')">退出当前账号</button>
       <div v-if="message" class="settings-message">{{ message }}</div>
       <div v-if="error" class="settings-message settings-message-error">{{ error }}</div>
     </section>
