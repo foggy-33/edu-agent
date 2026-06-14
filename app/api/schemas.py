@@ -64,6 +64,26 @@ class EvaluateRequest(BaseModel):
     message: str | None = None
 
 
+class SmartEvaluateRequest(BaseModel):
+    user_id: str
+    course: str = "数据库系统"
+
+
+class QuizQuestion(BaseModel):
+    question_id: str
+    question: str
+    options: list[str] | None = None
+    type: Literal["single", "multiple", "judge", "fill", "essay"]
+    topic: str
+
+
+class QuizAnswerRequest(BaseModel):
+    user_id: str
+    course: str = "数据库系统"
+    question_id: str
+    answer: str | list[str]
+
+
 class StudentProfile(BaseModel):
     major: str
     course: str

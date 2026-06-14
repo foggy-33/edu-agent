@@ -1,123 +1,315 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { loadUserProfile } from './../api/userProfile'
+import { getDynamicProfile } from './../api/client'
+import type { DynamicProfile } from './../types/profile'
 
 const emit = defineEmits<{
-  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise']
+  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'account']
 }>()
 
-const stats = ref([
-  { label: '已完成课程', value: 12, icon: '📚', trend: '+2 本月' },
-  { label: '学习时长', value: '86小时', icon: '⏱', trend: '+12% 本周' },
-  { label: '评估得分', value: '92分', icon: '↗', trend: '+5 分' },
-  { label: '薄弱环节', value: '3个', icon: '◎', trend: '待加强' },
+const getGreeting = () => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) return '上午好'
+  if (hour >= 12 && hour < 18) return '下午好'
+  return '晚上好'
+}
+
+const greeting = ref(getGreeting())
+const showSplash = ref(true)
+
+const weeklyStudyData = ref([
+  { day: '周一', hours: 3.5 },
+  { day: '周二', hours: 2.8 },
+  { day: '周三', hours: 4.2 },
+  { day: '周四', hours: 1.5 },
+  { day: '周五', hours: 3.0 },
+  { day: '周六', hours: 5.5 },
+  { day: '周日', hours: 4.0 },
 ])
 
-const recentCourses = ref([
-  { name: '数据库系统', progress: 75, lastAccess: '2小时前', icon: '🗄️' },
-  { name: '数据结构', progress: 60, lastAccess: '1天前', icon: '📊' },
-  { name: '算法设计', progress: 45, lastAccess: '3天前', icon: '🧮' },
-  { name: '操作系统', progress: 30, lastAccess: '1周前', icon: '💻' },
-])
+const maxStudyHours = computed(() => Math.max(...weeklyStudyData.value.map(d => d.hours)))
 
-const quickActions: { label: string; description: string; icon: string; action: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'exercise' }[] = [
-  { label: '学习分析', description: '查看学习画像', icon: '⌁', action: 'analyze' },
-  { label: '资源生成', description: '创建专属资料', icon: '✦', action: 'generate' },
-  { label: '学习评估', description: '检验掌握程度', icon: '✓', action: 'evaluate' },
-  { label: '课程管理', description: '跟踪课程进度', icon: '▤', action: 'courses' },
-  { label: '习题练习', description: '开始专项训练', icon: '✎', action: 'exercise' },
-]
+const studyStreak = ref(7)
+const todayProgress = ref(72)
 
-const learningTips = ref([
-  { tip: '今日推荐：复习函数依赖和范式判断', time: '刚刚' },
-  { tip: '完成了数据库系统章节测试', time: '2小时前' },
-  { tip: '生成了新的学习路径', time: '昨天' },
-])
+const portrait = ref<DynamicProfile | null>(null)
+const portraitLoading = ref(false)
+
+interface AvatarTag {
+  label: string
+  value: string
+  icon: string
+  color: string
+  category: string
+}
+
+const avatarTags = computed<AvatarTag[]>(() => {
+  if (!portrait.value) return []
+  
+  const tags: AvatarTag[] = []
+  const dims = portrait.value.dimensions || {}
+  
+  const iconMap: Record<string, string> = {
+    '专业与年级': '🎓',
+    '学习目标': '🎯',
+    '知识基础': '📚',
+    '认知风格': '🧠',
+    '学习偏好': '⚡',
+    '时间安排': '⏰',
+    '学习动机': '🔥',
+    '能力水平': '💪'
+  }
+  
+  const colorMap = ['#6366f1', '#8b5cf6', '#ec4899', '#f97316', '#10b981', '#3b82f6', '#f59e0b', '#14b8a6']
+  
+  Object.entries(dims).forEach(([key, dimension], index) => {
+    if (dimension.value) {
+      const displayValue = Array.isArray(dimension.value) ? dimension.value.slice(0, 2).join('、') : String(dimension.value)
+      const confidence = dimension.confidence || 0
+      
+      tags.push({
+        label: key,
+        value: displayValue.length > 10 ? displayValue.slice(0, 10) + '…' : displayValue,
+        icon: iconMap[key] || '📊',
+        color: colorMap[index % colorMap.length],
+        category: confidence >= 0.8 ? '核心' : confidence >= 0.5 ? '重要' : '基础'
+      })
+    }
+  })
+  
+  return tags
+})
+
+const coreTags = computed(() => avatarTags.value.filter(t => t.category === '核心'))
+const importantTags = computed(() => avatarTags.value.filter(t => t.category === '重要'))
+const basicTags = computed(() => avatarTags.value.filter(t => t.category === '基础'))
+
+async function loadPortrait() {
+  portraitLoading.value = true
+  try {
+    const userProfile = loadUserProfile()
+    const result = await getDynamicProfile(userProfile.userId)
+    portrait.value = result.profile
+  } catch (err) {
+    console.error('加载画像失败', err)
+    portrait.value = null
+  } finally {
+    portraitLoading.value = false
+  }
+}
+
+onMounted(() => {
+  setTimeout(() => {
+    showSplash.value = false
+  }, 2500)
+  loadPortrait()
+})
 </script>
 
 <template>
   <div class="dashboard">
-    <section class="welcome-panel">
-      <div>
-        <span class="eyebrow">今日学习计划</span>
-        <h2>下午好，继续保持你的学习节奏</h2>
-        <p>今天建议完成数据库系统第 5 章，并进行一次针对性评估。</p>
-        <div class="welcome-actions">
-          <button class="primary-action" @click="emit('navigate', 'generate')">生成学习资源</button>
-          <button class="secondary-action" @click="emit('navigate', 'analyze')">查看学习分析</button>
-        </div>
-      </div>
-      <div class="goal-ring">
-        <div class="goal-value">72%</div>
-        <div class="goal-label">今日目标</div>
-      </div>
-    </section>
-
-    <section class="stats-grid">
-      <article v-for="stat in stats" :key="stat.label" class="stat-card">
-        <div class="stat-icon">{{ stat.icon }}</div>
-        <div class="stat-label">{{ stat.label }}</div>
-        <div class="stat-row">
-          <strong>{{ stat.value }}</strong>
-          <span>{{ stat.trend }}</span>
-        </div>
-      </article>
-    </section>
-
-    <section class="dashboard-grid">
-      <div class="surface courses-panel">
-        <div class="section-heading">
-          <div>
-            <span class="section-kicker">持续学习</span>
-            <h2>我的课程</h2>
+    <Transition name="splash">
+      <div v-if="showSplash" class="splash-screen">
+        <div class="splash-content">
+          <div class="splash-logo">
+            <span class="logo-icon">AI</span>
           </div>
-          <button @click="emit('navigate', 'courses')">查看全部 →</button>
-        </div>
-        <div class="course-list">
-          <button
-            v-for="course in recentCourses"
-            :key="course.name"
-            class="course-row"
-            @click="emit('navigate', 'courses')"
-          >
-            <span class="course-icon">{{ course.icon }}</span>
-            <span class="course-copy">
-              <strong>{{ course.name }}</strong>
-              <small>{{ course.lastAccess }}继续学习</small>
-            </span>
-            <span class="course-progress">
-              <span><b>{{ course.progress }}%</b> 完成</span>
-              <span class="progress-track"><i :style="{ width: course.progress + '%' }"></i></span>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <div class="right-column">
-        <div class="surface">
-          <div class="section-heading compact">
-            <div><span class="section-kicker">快速开始</span><h2>常用功能</h2></div>
+          <div class="splash-text">
+            <h1>{{ greeting }}，欢迎回来</h1>
+            <p>正在准备您的学习环境...</p>
           </div>
-          <div class="quick-grid">
-            <button v-for="action in quickActions" :key="action.label" @click="emit('navigate', action.action)" class="quick-action">
-              <span class="quick-icon">{{ action.icon }}</span>
-              <span><strong>{{ action.label }}</strong><small>{{ action.description }}</small></span>
-              <b>→</b>
-            </button>
-          </div>
-        </div>
-
-        <div class="surface activity-panel">
-          <div class="section-heading compact">
-            <div><span class="section-kicker">最近动态</span><h2>学习记录</h2></div>
-          </div>
-          <div class="activity-list">
-            <div v-for="(tip, index) in learningTips" :key="index" class="activity-row">
-              <span>{{ index + 1 }}</span>
-              <div><strong>{{ tip.tip }}</strong><small>{{ tip.time }}</small></div>
+          <div class="splash-progress">
+            <div class="progress-bar-full">
+              <div class="progress-fill-full"></div>
             </div>
           </div>
         </div>
       </div>
-    </section>
+    </Transition>
+
+    <div class="dashboard-main">
+      <div class="surface study-panel-full">
+        <div class="study-header-row">
+          <div class="section-heading-small">
+            <span class="section-kicker">学习习惯</span>
+            <h2>本周学习趋势</h2>
+          </div>
+          <div class="study-stats-row">
+            <div class="streak-badge">
+              <span class="streak-icon">🔥</span>
+              <span class="streak-text">连续学习 <strong>{{ studyStreak }}</strong> 天</span>
+            </div>
+            <div class="daily-progress">
+              <span class="progress-label">今日目标</span>
+              <div class="mini-progress-bar">
+                <div class="mini-progress-fill" :style="{ width: todayProgress + '%' }"></div>
+              </div>
+              <span class="progress-value">{{ todayProgress }}%</span>
+            </div>
+          </div>
+        </div>
+        <div class="chart-container-full">
+          <div class="chart-bars-full">
+            <div
+              v-for="data in weeklyStudyData"
+              :key="data.day"
+              class="bar-wrapper-full"
+            >
+              <div
+                class="bar-full"
+                :style="{ height: (Math.max(data.hours / maxStudyHours * 100, 20)) + '%' }"
+              >
+                <span class="bar-value-full">{{ data.hours }}h</span>
+              </div>
+              <span class="bar-label-full">{{ data.day.slice(1) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="surface portrait-panel-home">
+        <div class="section-heading-small">
+          <span class="section-kicker">学习画像</span>
+          <h2>我的标签</h2>
+          <button class="view-portrait-btn" @click="emit('navigate', 'account')">查看详情 →</button>
+        </div>
+        <div v-if="portraitLoading" class="portrait-loading">
+          <div class="loading-spinner"></div>
+          <p>加载画像中...</p>
+        </div>
+        <div v-else class="portrait-tags-container">
+          <div v-if="coreTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">✨ 核心</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in coreTags" 
+                :key="tag.label"
+                class="portrait-tag-home core-tag-home"
+                :style="{ '--tag-color': tag.color }"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="importantTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">📌 重要</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in importantTags" 
+                :key="tag.label"
+                class="portrait-tag-home important-tag-home"
+                :style="{ '--tag-color': tag.color }"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="basicTags.length > 0" class="tags-group-home">
+            <div class="tags-label-home">📋 基础</div>
+            <div class="tags-row-home">
+              <span 
+                v-for="tag in basicTags" 
+                :key="tag.label"
+                class="portrait-tag-home basic-tag-home"
+              >
+                {{ tag.icon }} {{ tag.value }}
+              </span>
+            </div>
+          </div>
+          <div v-if="avatarTags.length === 0" class="empty-tags-home">
+            <p>暂无画像数据</p>
+            <small>开始学习后会自动生成</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-bottom">
+      <div class="surface assessment-panel-new">
+        <div class="section-heading-bottom">
+          <div>
+            <span class="section-kicker">评估概览</span>
+            <h2>最近评估记录</h2>
+          </div>
+          <button @click="emit('navigate', 'evaluate')">查看详情 →</button>
+        </div>
+        <div class="assessment-list-new">
+          <div class="assessment-item-new">
+            <div class="assessment-info">
+              <span class="assessment-course">数据库系统</span>
+              <span class="assessment-date">2小时前</span>
+            </div>
+            <div class="assessment-score high">95分</div>
+          </div>
+          <div class="assessment-item-new">
+            <div class="assessment-info">
+              <span class="assessment-course">数据结构</span>
+              <span class="assessment-date">1天前</span>
+            </div>
+            <div class="assessment-score medium">78分</div>
+          </div>
+          <div class="assessment-item-new">
+            <div class="assessment-info">
+              <span class="assessment-course">算法设计</span>
+              <span class="assessment-date">3天前</span>
+            </div>
+            <div class="assessment-score low">65分</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="surface progress-panel-new">
+        <div class="section-heading-bottom">
+          <div>
+            <span class="section-kicker">学习进度</span>
+            <h2>课程完成情况</h2>
+          </div>
+          <button @click="emit('navigate', 'courses')">查看全部 →</button>
+        </div>
+        <div class="progress-list-new">
+          <div class="progress-item-new">
+            <div class="progress-header">
+              <span class="progress-icon">🗄️</span>
+              <span class="progress-name">数据库系统</span>
+              <span class="progress-percent">75%</span>
+            </div>
+            <div class="progress-bar-new">
+              <div class="progress-fill" style="width: 75%"></div>
+            </div>
+          </div>
+          <div class="progress-item-new">
+            <div class="progress-header">
+              <span class="progress-icon">📊</span>
+              <span class="progress-name">数据结构</span>
+              <span class="progress-percent">60%</span>
+            </div>
+            <div class="progress-bar-new">
+              <div class="progress-fill" style="width: 60%"></div>
+            </div>
+          </div>
+          <div class="progress-item-new">
+            <div class="progress-header">
+              <span class="progress-icon">🧮</span>
+              <span class="progress-name">算法设计</span>
+              <span class="progress-percent">45%</span>
+            </div>
+            <div class="progress-bar-new">
+              <div class="progress-fill" style="width: 45%"></div>
+            </div>
+          </div>
+          <div class="progress-item-new">
+            <div class="progress-header">
+              <span class="progress-icon">💻</span>
+              <span class="progress-name">操作系统</span>
+              <span class="progress-percent">30%</span>
+            </div>
+            <div class="progress-bar-new">
+              <div class="progress-fill" style="width: 30%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
