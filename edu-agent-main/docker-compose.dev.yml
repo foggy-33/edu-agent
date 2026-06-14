@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      LLM_MODE: ${LLM_MODE:-mock}
+      SPARK_APP_ID: ${SPARK_APP_ID:-}
+      SPARK_API_KEY: ${SPARK_API_KEY:-}
+      SPARK_API_SECRET: ${SPARK_API_SECRET:-}
+      SPARK_API_URL: ${SPARK_API_URL:-}
+      CHROMA_PERSIST_DIR: /app/chroma_db
+      KNOWLEDGE_BASE_DIR: /app/knowledge_base
+      PROFILE_DATA_DIR: /app/data/profiles
+    volumes:
+      - chroma_data:/app/chroma_db
+      - profile_data:/app/data/profiles
+      - ./app:/app/app:ro
+      - ./knowledge_base:/app/knowledge_base:ro
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload"]
+
+  frontend:
+    image: node:22-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:5173"
+    volumes:
+      - ./frontend:/app:ro
+      - /app/node_modules
+    working_dir: /app
+    command: ["sh", "-c", "npm ci && npm run dev"]
+    environment:
+      - NODE_ENV=development
+      - VITE_API_TARGET=http://backend:8000
+
+volumes:
+  chroma_data:
+  profile_data:

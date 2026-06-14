@@ -1,0 +1,25 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    llm_mode: str = "mock"
+    openai_api_key: str = ""
+    spark_app_id: str = ""
+    spark_api_key: str = ""
+    spark_api_secret: str = ""
+    spark_api_url: str = ""
+    siliconflow_api_key: str = ""
+    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
+    siliconflow_model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
+    chroma_persist_dir: str = "./chroma_db"
+    knowledge_base_dir: str = "./knowledge_base"
+    profile_data_dir: str = "./data/profiles"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
