@@ -8,7 +8,7 @@ import type {
   , CollaborativeLearningRequest
   , CollaborativeLearningResponse
 } from '../types'
-import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig } from '../types/profile'
+import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig, SubjectProfileSummary } from '../types/profile'
 
 const API_BASE = '/api'
 
@@ -72,8 +72,13 @@ export async function testSiliconFlow(config: SiliconFlowConfig): Promise<{ stat
   })
 }
 
-export async function getDynamicProfile(userId: string): Promise<{ profile: DynamicProfile }> {
-  return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}`)
+export async function getDynamicProfile(userId: string, course?: string): Promise<{ profile: DynamicProfile }> {
+  const params = course ? `?course=${encodeURIComponent(course)}` : ''
+  return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}${params}`)
+}
+
+export async function listDynamicProfiles(userId: string): Promise<{ profiles: SubjectProfileSummary[] }> {
+  return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}/subjects`)
 }
 
 export async function chatDynamicProfile(payload: SiliconFlowConfig & {

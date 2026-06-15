@@ -16,22 +16,82 @@ class ProfileStore:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
 
-    def get(self, user_id: str) -> dict[str, Any] | None:
-        path = self._path(user_id)
-        if not path.exists():
-            return None
-        with self._lock:
-            return json.loads(path.read_text(encoding="utf-8"))
+    def get(self, user_id: str, course: str | None = None) -> dict[str, Any] | None:
+        if course:
+            path = self._subject_path(user_id, course)
+            if path.exists():
+                return self._read(path)
 
-    def save(self, user_id: str, profile: dict[str, Any]) -> dict[str, Any]:
-        path = self._path(user_id)
+            legacy = self._legacy_path(user_id)
+            if legacy.exists():
+                profile = self._read(legacy)
+                if profile.get("course") == course or (course == "未分类画像" and not profile.get("course")):
+                    profile.setdefault("course", "未分类画像")
+                    return profile
+            return None
+
+        profiles = self.list(user_id)
+        if not profiles:
+            return None
+        latest = self.get(user_id, profiles[0]["course"])
+        if latest:
+            return latest
+        legacy = self._legacy_path(user_id)
+        return self._read(legacy) if legacy.exists() else None
+
+    def list(self, user_id: str) -> list[dict[str, Any]]:
+        profiles: list[dict[str, Any]] = []
+        user_dir = self._user_dir(user_id)
+        if user_dir.exists():
+            for path in user_dir.glob("*.json"):
+                profile = self._read(path)
+                profiles.append(self._summary(profile))
+
+        legacy = self._legacy_path(user_id)
+        if legacy.exists():
+            profile = self._read(legacy)
+            course = str(profile.get("course") or "未分类画像")
+            if not any(item["course"] == course for item in profiles):
+                profile["course"] = course
+                profiles.append(self._summary(profile))
+
+        return sorted(profiles, key=lambda item: item.get("updated_at") or "", reverse=True)
+
+    def save(self, user_id: str, course: str, profile: dict[str, Any]) -> dict[str, Any]:
+        path = self._subject_path(user_id, course)
+        path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
             path.write_text(json.dumps(profile, ensure_ascii=False, indent=2), encoding="utf-8")
         return profile
 
-    def _path(self, user_id: str) -> Path:
-        safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", user_id)[:80] or "anonymous"
-        return self.base_dir / f"{safe_id}.json"
+    @staticmethod
+    def _summary(profile: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "course": profile.get("course", "未分类画像"),
+            "version": profile.get("version", 0),
+            "completion": profile.get("completion", 0),
+            "updated_at": profile.get("updated_at"),
+            "summary": profile.get("llm_context", {}).get("summary", ""),
+            "radar_metrics": profile.get("radar_metrics", {}),
+        }
+
+    def _read(self, path: Path) -> dict[str, Any]:
+        with self._lock:
+            return json.loads(path.read_text(encoding="utf-8"))
+
+    def _user_dir(self, user_id: str) -> Path:
+        return self.base_dir / self._safe_name(user_id)
+
+    def _subject_path(self, user_id: str, course: str) -> Path:
+        return self._user_dir(user_id) / f"{self._safe_name(course)}.json"
+
+    def _legacy_path(self, user_id: str) -> Path:
+        return self.base_dir / f"{self._safe_name(user_id)}.json"
+
+    @staticmethod
+    def _safe_name(value: str) -> str:
+        safe = re.sub(r"[^\w-]", "_", value, flags=re.UNICODE).strip("_")
+        return safe[:80] or "unknown"
 
 
 def utc_now() -> str:

@@ -96,7 +96,9 @@ def generate_collaborative_learning_resources(request: CollaborativeLearningRequ
 @router.post("/evaluate")
 def evaluate(request: EvaluateRequest) -> dict:
     result = EvaluatorAgent().run(request.model_dump())
-    result["dynamic_profile"] = profile_service.update_from_evaluation(user_id=request.user_id, result=result)
+    result["dynamic_profile"] = profile_service.update_from_evaluation(
+        user_id=request.user_id, course=request.course, result=result
+    )
     return result
 
 
@@ -118,9 +120,14 @@ def workflow() -> dict:
     return workflow_description()
 
 
+@router.get("/profiles/{user_id}/subjects")
+def list_dynamic_profiles(user_id: str) -> dict:
+    return {"profiles": profile_service.list_profiles(user_id)}
+
+
 @router.get("/profiles/{user_id}")
-def get_dynamic_profile(user_id: str) -> dict:
-    return {"profile": profile_service.get_profile(user_id)}
+def get_dynamic_profile(user_id: str, course: str | None = None) -> dict:
+    return {"profile": profile_service.get_profile(user_id, course)}
 
 
 @router.post("/profiles/chat")
@@ -137,14 +144,15 @@ def next_profile_interview_question(request: ProfileInterviewRequest) -> dict:
 
 @router.post("/evaluate/smart")
 def smart_evaluate(request: SmartEvaluateRequest) -> dict:
-    profile = profile_service.get_profile(request.user_id)
+    profile = profile_service.get_profile(request.user_id, request.course)
     if not profile:
         raise HTTPException(status_code=404, detail="学生画像不存在，请先进行学习分析")
     
     recent_evaluations = profile.get("recent_evaluations", [])
     learning_progress = profile.get("learning_progress", {})
     
-    weak_points = profile.get("weak_points", [])
+    dimensions = profile.get("dimensions", {})
+    weak_points = dimensions.get("易错点", {}).get("value", [])
     if not weak_points:
         weak_points = ["函数依赖", "范式判断"]
     
@@ -160,9 +168,9 @@ def smart_evaluate(request: SmartEvaluateRequest) -> dict:
         "user_id": request.user_id,
         "course": request.course,
         "profile_summary": {
-            "knowledge_level": profile.get("knowledge_level", "初级"),
-            "learning_style": profile.get("learning_style", "视觉型"),
-            "learning_goal": profile.get("learning_goal", "考试准备"),
+            "knowledge_level": dimensions.get("知识基础", {}).get("value", "初级"),
+            "learning_style": dimensions.get("认知风格", {}).get("value", "视觉型"),
+            "learning_goal": dimensions.get("学习目标", {}).get("value", "考试准备"),
         },
         "score_summary": {
             "total": len(recent_evaluations) + 1,
@@ -243,8 +251,10 @@ current_quizzes: dict[str, dict] = {}
 
 @router.post("/evaluate/quiz/start")
 def start_quiz(request: SmartEvaluateRequest) -> dict:
-    profile = profile_service.get_profile(request.user_id)
-    weak_points = profile.get("weak_points", ["函数依赖", "范式判断"]) if profile else []
+    profile = profile_service.get_profile(request.user_id, request.course)
+    weak_points = profile.get("dimensions", {}).get("易错点", {}).get("value", []) if profile else []
+    if not weak_points:
+        weak_points = ["函数依赖", "范式判断"]
     
     questions = []
     for q in quiz_question_bank:
@@ -347,7 +357,9 @@ def finish_quiz(request: SmartEvaluateRequest) -> dict:
         ],
     }
     
-    result["dynamic_profile"] = profile_service.update_from_evaluation(user_id=request.user_id, result=result)
+    result["dynamic_profile"] = profile_service.update_from_evaluation(
+        user_id=request.user_id, course=quiz["course"], result=result
+    )
     del current_quizzes[request.user_id]
     
     return result

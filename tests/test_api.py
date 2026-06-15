@@ -184,3 +184,35 @@ def test_profile_interview_asks_course_question_without_api_key() -> None:
     assert data["provider"] == "rule-fallback"
     assert data["question"]
     assert len(data["profile"]["dimension_catalog"]) >= 6
+
+
+def test_dynamic_profiles_are_stored_by_subject() -> None:
+    user_id = "pytest_subject_profile_user"
+    for course, message in [
+        ("数据库系统", "我在准备数据库期末考试，范式判断容易出错，喜欢通过例题学习。"),
+        ("操作系统", "我想深入学习操作系统，进程调度比较薄弱，喜欢视频和练习题。"),
+    ]:
+        response = client.post(
+            "/api/profiles/chat",
+            json={
+                "user_id": user_id,
+                "course": course,
+                "message": message,
+                "api_key": "",
+                "base_url": "https://api.siliconflow.cn/v1",
+                "model": "Pro/deepseek-ai/DeepSeek-V3.2",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["profile"]["course"] == course
+
+    listed = client.get(f"/api/profiles/{user_id}/subjects")
+    assert listed.status_code == 200
+    assert {item["course"] for item in listed.json()["profiles"]} >= {"数据库系统", "操作系统"}
+
+    database_profile = client.get(f"/api/profiles/{user_id}", params={"course": "数据库系统"}).json()["profile"]
+    os_profile = client.get(f"/api/profiles/{user_id}", params={"course": "操作系统"}).json()["profile"]
+    assert "范式判断" in database_profile["dimensions"]["易错点"]["value"]
+    assert "进程调度" in os_profile["dimensions"]["易错点"]["value"]
+    assert database_profile["llm_context"]["schema_version"] == "subject-profile-v1"
+    assert len(database_profile["radar_metrics"]) == 6

@@ -13,12 +13,37 @@ export interface ProfileDimension {
 
 export interface DynamicProfile {
   user_id: string
+  course: string
   version: number
   dimensions: Record<string, ProfileDimension>
   history: { role: string; content: string; created_at: string }[]
   updated_at: string | null
   completion: number
   dimension_catalog: string[]
+  radar_catalog: Record<string, string>
+  radar_metrics: Record<string, number>
+  llm_context: {
+    schema_version: string
+    instruction: string
+    user_id: string
+    course: string
+    summary: string
+    facts: Record<string, string | string[]>
+    weak_points: string[]
+    resource_preferences: string[]
+    radar_metrics: Record<string, number>
+    completion: number
+    updated_at: string | null
+  }
+}
+
+export interface SubjectProfileSummary {
+  course: string
+  version: number
+  completion: number
+  updated_at: string | null
+  summary: string
+  radar_metrics: Record<string, number>
 }
 
 export interface ProfileChatResponse {
