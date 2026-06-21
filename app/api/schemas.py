@@ -34,7 +34,7 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     chapter: str
     weakness: str
     goal: str
-    resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "video"]]
+    resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading"]]
 
 
 class ProfileChatRequest(SiliconFlowConfig):

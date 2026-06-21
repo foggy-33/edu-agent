@@ -76,7 +76,7 @@ def test_collaborative_learning_generate() -> None:
             "chapter": "进程调度",
             "weakness": "不会区分 FCFS、SJF 和时间片轮转",
             "goal": "期末复习",
-            "resourceTypes": ["lecture", "mindmap", "exercise", "reading", "code", "video"],
+            "resourceTypes": ["lecture", "mindmap", "exercise", "reading"],
             "api_key": "",
             "base_url": "https://api.siliconflow.cn/v1",
             "model": "Pro/deepseek-ai/DeepSeek-V3.2",
@@ -88,10 +88,8 @@ def test_collaborative_learning_generate() -> None:
     assert data["mindmap"].startswith("mindmap")
     assert "选择题" in data["exercises"]
     assert data["reading"]
-    assert data["codeCase"]
-    assert data["videoScript"]
     assert "质量审核" in data["review"]
-    assert len(data["agentTrace"]) == 10
+    assert len(data["agentTrace"]) == 8
     assert data["agentTrace"][0]["agent"] == "学情分析 Agent"
     assert data["agentTrace"][-1]["agent"] == "资源整合 Agent"
 

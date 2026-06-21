@@ -56,14 +56,14 @@ def planner_agent(state: LearningState) -> dict[str, Any]:
         "mindmap": "知识点思维导图",
         "exercise": "分层练习题",
         "reading": "拓展阅读材料",
-        "code": "代码实操案例",
-        "video": "教学视频脚本",
     }
     plan = [{"resourceType": item, "task": labels[item]} for item in state["resourceTypes"] if item in labels]
     return {"taskPlan": plan, "agentTrace": _trace(state, "任务规划 Agent", f"已规划 {len(plan)} 类资源生成任务")}
 
 
 def lecture_agent(state: LearningState) -> dict[str, Any]:
+    if "lecture" not in state["resourceTypes"]:
+        return {}
     value = _generate(
         state,
         "生成 Markdown 课程讲解文档，必须包含概念解释、原理说明、例子、易错点和复习建议。",
@@ -81,6 +81,8 @@ def lecture_agent(state: LearningState) -> dict[str, Any]:
 
 
 def mindmap_agent(state: LearningState) -> dict[str, Any]:
+    if "mindmap" not in state["resourceTypes"]:
+        return {}
     value = _generate(
         state,
         "只输出 Mermaid mindmap 源码，展示章节概念、原理、对比、应用与易错点。",
@@ -106,6 +108,8 @@ def mindmap_agent(state: LearningState) -> dict[str, Any]:
 
 
 def exercise_agent(state: LearningState) -> dict[str, Any]:
+    if "exercise" not in state["resourceTypes"]:
+        return {}
     value = _generate(
         state,
         "生成 Markdown 练习题，包含选择题、判断题、填空题、简答题和综合题；包含答案解析，并按基础、提高、挑战分层。",
@@ -127,6 +131,8 @@ def exercise_agent(state: LearningState) -> dict[str, Any]:
 
 
 def reading_agent(state: LearningState) -> dict[str, Any]:
+    if "reading" not in state["resourceTypes"]:
+        return {}
     value = _generate(
         state,
         "生成 Markdown 拓展阅读，包含相关知识延伸、实际应用场景和递进学习路径。",
@@ -140,54 +146,20 @@ def reading_agent(state: LearningState) -> dict[str, Any]:
     return {"reading": value, "agentTrace": _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")}
 
 
-def code_agent(state: LearningState) -> dict[str, Any]:
-    value = _generate(
-        state,
-        "生成 Markdown 代码实操案例；若课程不适合代码，生成可操作模拟实验或伪代码。包含步骤与观察问题。",
-        lambda: (
-            f"# {state['chapter']} 模拟实验\n\n"
-            "使用下列 Python 伪代码模拟方案执行过程：\n\n"
-            "```python\n"
-            "tasks = [{'name': 'P1', 'arrival': 0, 'duration': 5},\n"
-            "         {'name': 'P2', 'arrival': 1, 'duration': 3}]\n\n"
-            "def simulate(tasks, strategy):\n"
-            "    # 按 strategy 选择下一个任务并记录时间线\n"
-            "    timeline = []\n"
-            "    return timeline\n"
-            "```\n\n"
-            "## 实验步骤\n1. 补全选择规则。2. 输出执行时间线。3. 计算等待时间。4. 比较不同策略。\n\n"
-            "## 观察问题\n哪种方案更符合当前目标？它牺牲了什么？"
-        ),
-    )
-    return {"codeCase": value, "agentTrace": _trace(state, "代码实操 Agent", "可操作模拟实验生成完成")}
-
-
-def video_agent(state: LearningState) -> dict[str, Any]:
-    value = _generate(
-        state,
-        "生成 Markdown 教学短视频脚本，包含标题、分镜、画面说明、旁白和动画提示。",
-        lambda: (
-            f"# 视频标题：5 分钟看懂 {state['chapter']}\n\n"
-            "| 分镜 | 画面说明 | 旁白 | 动画提示 |\n"
-            "|---|---|---|---|\n"
-            f"| 1 | 展示学习困惑 | 今天解决：{state['weakness']} | 关键词依次弹出 |\n"
-            "| 2 | 绘制统一输入时间线 | 先用同一组输入观察不同规则 | 时间线逐步点亮 |\n"
-            "| 3 | 并排展示方案 | 比较规则、优势、局限与指标 | 对比表高亮变化 |\n"
-            "| 4 | 展示真实场景 | 方法没有绝对最优，只有是否适配目标 | 场景图标切换 |\n"
-            f"| 5 | 总结卡片 | 面向“{state['goal']}”，记住规则、推演、对比三步法 | 三步法收束成卡片 |"
-        ),
-    )
-    return {"videoScript": value, "agentTrace": _trace(state, "视频脚本 Agent", "教学短视频脚本生成完成")}
-
-
 def review_agent(state: LearningState) -> dict[str, Any]:
-    fields = ["lectureDoc", "mindmap", "exercises", "reading", "codeCase", "videoScript"]
-    complete = sum(bool(state.get(field)) for field in fields)
+    field_map = {
+        "lecture": "lectureDoc",
+        "mindmap": "mindmap",
+        "exercise": "exercises",
+        "reading": "reading",
+    }
+    selected_fields = [field_map[item] for item in state["resourceTypes"] if item in field_map]
+    complete = sum(bool(state.get(field)) for field in selected_fields)
     value = (
         "# 质量审核结果\n\n"
         f"- **短板覆盖**：通过，所有资源均围绕“{state['weakness']}”组织。\n"
         f"- **目标匹配**：通过，内容面向“{state['goal']}”。\n"
-        f"- **内容完整性**：通过，已生成 {complete}/6 类核心资源。\n"
+        f"- **内容完整性**：通过，已生成 {complete}/{len(selected_fields)} 类所选资源。\n"
         "- **难度匹配**：通过，采用基础、提高、挑战的递进结构。\n"
         "- **审核结论**：资源包可用于当前阶段学习与复习。"
     )

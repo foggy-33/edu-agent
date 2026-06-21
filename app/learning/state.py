@@ -19,7 +19,5 @@ class LearningState(TypedDict, total=False):
     mindmap: str
     exercises: str
     reading: str
-    codeCase: str
-    videoScript: str
     review: str
     agentTrace: list[dict[str, Any]]

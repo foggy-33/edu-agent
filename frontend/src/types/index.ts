@@ -99,7 +99,7 @@ export interface Course {
   questions: Question[]
 }
 
-export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'video'
+export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading'
 
 export interface CollaborativeLearningRequest {
   major: string
@@ -126,8 +126,6 @@ export interface CollaborativeLearningResponse {
   mindmap: string
   exercises: string
   reading: string
-  codeCase: string
-  videoScript: string
   review: string
   agentTrace: AgentTraceItem[]
 }
