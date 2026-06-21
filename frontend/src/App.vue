@@ -180,7 +180,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
                currentPage === 'exercise' ? '完成习题练习，检验学习成果' :
                currentPage === 'portrait' ? '与AI对话构建和完善学习画像' :
                currentPage === 'settings' ? '配置模型服务与接口连接' :
-               currentPage === 'account' ? '查看个人资料和学习画像' :
+               currentPage === 'account' ? '查看和维护个人资料' :
                '' }}
           </p>
         </div>
@@ -221,7 +221,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           :course="selectedCourse"
           @navigate="navigate"
         />
-        <UserCenterPage v-else-if="currentPage === 'account'" @navigate="navigate" @logout="handleLogout" />
+        <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" />
         <PortraitPage v-else-if="currentPage === 'portrait'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>
