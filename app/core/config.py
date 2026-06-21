@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./chroma_db"
     knowledge_base_dir: str = "./knowledge_base"
     profile_data_dir: str = "./data/profiles"
+    resource_data_dir: str = "./data/resources"
     user_data_file: str = "./data/auth/users.json"
 
 

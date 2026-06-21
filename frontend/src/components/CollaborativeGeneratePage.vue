@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { generateCollaborativeLearning } from '../api/client'
+import { computed, onMounted, ref } from 'vue'
+import { generateCollaborativeLearning, listResources } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
-import type { CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType } from '../types'
+import { loadUserProfile } from '../api/userProfile'
+import type { CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 
@@ -15,163 +16,122 @@ const resourceOptions: {
   description: string
   icon: string
 }[] = [
-  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '概念、原理与例子', icon: '📄' },
-  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '梳理知识结构', icon: '🧠' },
-  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '分层题目与解析', icon: '✍️' },
-  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '延伸知识与路径', icon: '📚' },
+  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: '▤' },
+  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: '◇' },
+  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: '✓' },
+  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '◉' },
 ]
 
-const apiConfig = ref(loadSiliconFlowConfig())
-const form = ref<CollaborativeLearningRequest>({
-  major: '计算机科学与技术',
-  course: '操作系统',
-  chapter: '进程调度',
-  weakness: '不会区分 FCFS、SJF 和时间片轮转',
-  goal: '期末复习',
-  resourceTypes: ['lecture', 'mindmap', 'exercise'],
-  ...apiConfig.value,
-})
+const prompt = ref('')
+const userProfile = ref(loadUserProfile())
+const resources = ref<UploadedResource[]>([])
+const selectedTypes = ref<CollaborativeResourceType[]>(['lecture'])
+const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
+const menuOpen = ref(false)
 const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
 const activeTab = ref<ResultKey>('lectureDoc')
 
-const availableTabs = computed(() => {
-  const selected = submittedTypes.value.length ? submittedTypes.value : form.value.resourceTypes
-  return [
-    ...resourceOptions
-      .filter(item => selected.includes(item.key))
-      .map(item => ({ key: item.resultKey, label: item.label })),
-    { key: 'review' as ResultKey, label: '审核结果' },
-  ]
-})
+const availableTabs = computed(() => [
+  ...resourceOptions
+    .filter(item => submittedTypes.value.includes(item.key))
+    .map(item => ({ key: item.resultKey, label: item.label })),
+  { key: 'review' as ResultKey, label: '审核结果' },
+])
 
-const expectedAgents = computed(() => {
-  const selected = submittedTypes.value.length ? submittedTypes.value : form.value.resourceTypes
-  const resourceAgents: Record<CollaborativeResourceType, string> = {
-    lecture: '课程讲解',
-    mindmap: '思维导图',
-    exercise: '练习题',
-    reading: '拓展阅读',
-  }
-  return ['学情分析', '任务规划', ...selected.map(item => resourceAgents[item]), '质量审核', '资源整合']
-})
-
+const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
+const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const activeContent = computed(() => result.value?.[activeTab.value] || '')
-const selectedSummary = computed(() => resourceOptions
-  .filter(item => form.value.resourceTypes.includes(item.key))
-  .map(item => item.label)
-  .join('、'))
 
 function toggleResource(key: CollaborativeResourceType) {
-  form.value.resourceTypes = form.value.resourceTypes.includes(key)
-    ? form.value.resourceTypes.filter(item => item !== key)
-    : [...form.value.resourceTypes, key]
+  selectedTypes.value = selectedTypes.value.includes(key)
+    ? selectedTypes.value.filter(item => item !== key)
+    : [...selectedTypes.value, key]
+}
+
+function removeResource(key: CollaborativeResourceType) {
+  selectedTypes.value = selectedTypes.value.filter(item => item !== key)
+}
+
+function toggleFile(fileId: string) {
+  selectedFileIds.value = selectedFileIds.value.includes(fileId)
+    ? selectedFileIds.value.filter(item => item !== fileId)
+    : [...selectedFileIds.value, fileId]
+}
+
+async function loadUploadedResources() {
+  try {
+    resources.value = (await listResources(userProfile.value.userId)).resources
+  } catch {
+    resources.value = []
+  }
 }
 
 async function submit() {
-  if (!form.value.weakness.trim()) {
-    error.value = '请描述你想学习或解决的问题'
+  const question = prompt.value.trim()
+  if (!question) {
+    error.value = '请输入你想学习的内容'
     return
   }
-  if (!form.value.resourceTypes.length) {
-    error.value = '请至少选择一种资源类型'
+  if (!selectedTypes.value.length) {
+    error.value = '请至少选择一种生成内容'
+    menuOpen.value = true
     return
+  }
+
+  const config = loadSiliconFlowConfig()
+  const payload: CollaborativeLearningRequest = {
+    user_id: userProfile.value.userId,
+    major: '未指定',
+    course: '自定义学习主题',
+    chapter: '用户当前问题',
+    weakness: question,
+    goal: '理解并掌握相关知识',
+    resourceTypes: [...selectedTypes.value],
+    fileIds: [...selectedFileIds.value],
+    ...config,
   }
 
   loading.value = true
-  apiConfig.value = loadSiliconFlowConfig()
-  form.value = { ...form.value, ...apiConfig.value }
-  submittedTypes.value = [...form.value.resourceTypes]
   error.value = ''
   result.value = null
+  menuOpen.value = false
+  submittedTypes.value = [...selectedTypes.value]
   activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'review'
 
   try {
-    result.value = await generateCollaborativeLearning(form.value)
+    result.value = await generateCollaborativeLearning(payload)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '资源生成失败'
   } finally {
     loading.value = false
   }
 }
+
+onMounted(loadUploadedResources)
 </script>
 
 <template>
-  <div class="resource-page">
-    <section class="resource-hero">
-      <span class="hero-badge">AI 学习资源生成器</span>
+  <div :class="['generate-page', { 'has-result': result || loading }]">
+    <section v-if="!result && !loading" class="empty-state">
       <h2>今天想学点什么？</h2>
-      <p>描述你的学习问题，并选择需要生成的资源。AI 会结合课程、目标和知识短板组织内容。</p>
     </section>
 
-    <section class="composer-card">
-      <div class="context-grid">
-        <label><span>专业</span><input v-model.trim="form.major" /></label>
-        <label><span>课程</span><input v-model.trim="form.course" /></label>
-        <label><span>章节</span><input v-model.trim="form.chapter" /></label>
-        <label><span>学习目标</span><input v-model.trim="form.goal" /></label>
-      </div>
-
-      <div class="prompt-box">
-        <textarea
-          v-model.trim="form.weakness"
-          rows="5"
-          placeholder="例如：我总是分不清 FCFS、SJF 和时间片轮转，希望用对比案例讲清楚，并生成一份思维导图和练习题。"
-          @keydown.ctrl.enter="submit"
-        />
-
-        <div class="prompt-footer">
-          <div class="resource-chips">
-            <button
-              v-for="item in resourceOptions"
-              :key="item.key"
-              type="button"
-              :class="{ selected: form.resourceTypes.includes(item.key) }"
-              :title="item.description"
-              @click="toggleResource(item.key)"
-            >
-              <span>{{ item.icon }}</span>{{ item.label }}
-              <i v-if="form.resourceTypes.includes(item.key)">✓</i>
-            </button>
-          </div>
-          <button class="send-button" :disabled="loading" title="生成资源（Ctrl + Enter）" @click="submit">
-            {{ loading ? '…' : '↑' }}
-          </button>
-        </div>
-      </div>
-
-      <div class="composer-meta">
-        <span>{{ selectedSummary || '尚未选择资源类型' }}</span>
-        <span :class="{ configured: apiConfig.api_key }">
-          {{ apiConfig.api_key ? `模型：${apiConfig.model}` : '未配置 API Key，将使用 Mock' }}
-        </span>
-      </div>
-      <div v-if="error" class="composer-error">{{ error }}</div>
-    </section>
-
-    <section v-if="loading || result" class="surface trace-card">
-      <div class="section-heading">
-        <div><span class="section-kicker">执行流程</span><h2>多智能体协作轨迹</h2></div>
-        <strong>{{ result?.agentTrace.length || 0 }}/{{ expectedAgents.length }}</strong>
-      </div>
-      <div class="trace-grid">
-        <article
-          v-for="(agent, index) in expectedAgents"
-          :key="agent"
-          :class="{ done: result?.agentTrace[index], running: loading && index === 0 }"
-        >
-          <span>{{ result?.agentTrace[index] ? '✓' : index + 1 }}</span>
-          <div>
-            <b>{{ result?.agentTrace[index]?.agent || `${agent} Agent` }}</b>
-            <small>{{ result?.agentTrace[index]?.summary || (loading ? '正在组织生成任务...' : '等待执行') }}</small>
-          </div>
-        </article>
+    <section v-if="loading" class="generating-state">
+      <span class="generating-mark">✦</span>
+      <div>
+        <strong>正在生成学习资源</strong>
+        <p>正在理解问题并组织所选内容……</p>
       </div>
     </section>
 
-    <section v-if="result" class="surface result-card">
+    <section v-if="result" class="result-card">
+      <div v-if="result.sources.length" class="result-sources">
+        <span>参考资料</span>
+        <b v-for="source in result.sources" :key="source.id">{{ source.name }}</b>
+      </div>
       <div class="result-tabs">
         <button
           v-for="tab in availableTabs"
@@ -187,61 +147,154 @@ async function submit() {
         <MarkdownRenderer v-else :content="activeContent" />
       </div>
     </section>
+
+    <section class="composer-section">
+      <div v-if="error" class="composer-error">{{ error }}</div>
+
+      <div class="composer">
+        <textarea
+          v-model="prompt"
+          rows="1"
+          :disabled="loading"
+          placeholder="有问题，尽管问"
+          @keydown.enter.exact.prevent="submit"
+        ></textarea>
+
+        <div v-if="selectedOptions.length || selectedFiles.length" class="selected-tools">
+          <button
+            v-for="file in selectedFiles"
+            :key="file.id"
+            type="button"
+            class="selected-file"
+            :disabled="loading"
+            @click="toggleFile(file.id)"
+          >
+            <span>PDF</span>{{ file.name }}<i>×</i>
+          </button>
+          <button
+            v-for="item in selectedOptions"
+            :key="item.key"
+            type="button"
+            :disabled="loading"
+            @click="removeResource(item.key)"
+          >
+            <span>{{ item.icon }}</span>{{ item.label }}<i>×</i>
+          </button>
+        </div>
+
+        <div class="composer-actions">
+          <div class="tool-picker">
+            <button
+              class="add-button"
+              type="button"
+              :disabled="loading"
+              aria-label="选择生成内容"
+              @click="menuOpen = !menuOpen"
+            >
+              +
+            </button>
+
+            <div v-if="menuOpen" class="tool-menu">
+              <div class="menu-title">引用资源库文件</div>
+              <div v-if="resources.length" class="file-options">
+                <button
+                  v-for="file in resources"
+                  :key="file.id"
+                  type="button"
+                  :class="{ selected: selectedFileIds.includes(file.id) }"
+                  @click="toggleFile(file.id)"
+                >
+                  <span class="tool-icon pdf">PDF</span>
+                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
+                  <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
+                </button>
+              </div>
+              <div v-else class="no-files">资源库暂无 PDF，请先上传文件</div>
+              <div class="menu-divider"></div>
+              <div class="menu-title">选择生成内容</div>
+              <button
+                v-for="item in resourceOptions"
+                :key="item.key"
+                type="button"
+                :class="{ selected: selectedTypes.includes(item.key) }"
+                @click="toggleResource(item.key)"
+              >
+                <span class="tool-icon">{{ item.icon }}</span>
+                <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
+                <i>{{ selectedTypes.includes(item.key) ? '✓' : '' }}</i>
+              </button>
+            </div>
+          </div>
+
+          <span class="selection-label">
+            {{ selectedFileIds.length ? `已引用 ${selectedFileIds.length} 份 PDF` : selectedTypes.length ? `已选 ${selectedTypes.length} 项` : '选择生成内容' }}
+          </span>
+
+          <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">
+            {{ loading ? '…' : '↑' }}
+          </button>
+        </div>
+      </div>
+
+      <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.resource-page { display: grid; gap: 22px; max-width: 1080px; margin: 0 auto; }
-.resource-hero { padding: 18px 12px 2px; text-align: center; }
-.hero-badge { display: inline-flex; padding: 6px 11px; border-radius: 999px; color: #5146cf; background: #efedff; font-size: 12px; font-weight: 750; }
-.resource-hero h2 { margin: 14px 0 8px; color: #172033; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.04em; }
-.resource-hero p { max-width: 680px; margin: 0 auto; color: #7a8495; line-height: 1.7; }
-.composer-card { padding: 18px; border: 1px solid #e2e5ec; border-radius: 24px; background: #fff; box-shadow: 0 18px 55px rgba(31, 42, 68, .1); }
-.context-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
-.context-grid label { display: grid; gap: 5px; }
-.context-grid span { color: #7c8495; font-size: 11px; font-weight: 700; }
-.context-grid input { min-width: 0; padding: 9px 10px; border: 1px solid #e6e8ee; border-radius: 10px; color: #30384a; background: #fafbfc; }
-.prompt-box { overflow: hidden; border: 1px solid #dfe3ea; border-radius: 18px; background: #fff; transition: border-color .2s, box-shadow .2s; }
-.prompt-box:focus-within { border-color: #7769e8; box-shadow: 0 0 0 4px rgba(109, 93, 231, .1); }
-.prompt-box textarea { width: 100%; padding: 18px 18px 10px; border: 0; outline: 0; resize: none; color: #202939; background: transparent; font-size: 15px; line-height: 1.65; }
-.prompt-footer { display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 10px 12px 12px; }
-.resource-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.resource-chips button { display: flex; align-items: center; gap: 6px; padding: 8px 11px; border: 1px solid #e2e5eb; border-radius: 999px; color: #60697a; background: #fff; font-size: 12px; font-weight: 650; }
-.resource-chips button:hover { background: #f7f7fb; }
-.resource-chips button.selected { border-color: #c9c3ff; color: #473daf; background: #f1efff; }
-.resource-chips i { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #fff; background: #6254d8; font-size: 10px; font-style: normal; }
-.send-button { width: 42px; height: 42px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 24px; line-height: 1; }
-.send-button:hover { background: #5146cf; }
-.send-button:disabled { cursor: wait; opacity: .5; }
-.composer-meta { display: flex; justify-content: space-between; gap: 12px; padding: 11px 3px 0; color: #8b93a3; font-size: 11px; }
-.composer-meta .configured { color: #15803d; }
-.composer-error { margin-top: 12px; padding: 11px 13px; border-radius: 10px; color: #a33333; background: #fff1f1; font-size: 13px; }
-.trace-card { padding: 24px; }
-.section-heading { display: flex; align-items: start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
-.section-heading h2 { margin: 5px 0 0; color: #172033; font-size: 21px; }
-.section-heading strong { color: #5146cf; }
-.trace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.trace-grid article { display: flex; gap: 10px; padding: 12px; border: 1px solid #e7eaf1; border-radius: 11px; background: #fafbfc; }
-.trace-grid article > span { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 50%; color: #8b93a3; background: #eef0f4; font-size: 12px; font-weight: 800; }
-.trace-grid article div { display: grid; gap: 3px; }
-.trace-grid article b { color: #444d5f; font-size: 13px; }
-.trace-grid article small { color: #969ead; }
-.trace-grid article.done { border-color: #d8d4ff; background: #f8f7ff; }
-.trace-grid article.done > span { color: #fff; background: #5146cf; }
-.trace-grid article.running { animation: pulse 1.2s infinite; }
-.result-card { padding: 0; overflow: hidden; }
-.result-tabs { display: flex; gap: 4px; padding: 12px 12px 0; overflow-x: auto; border-bottom: 1px solid #e7eaf1; }
-.result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #697386; background: transparent; white-space: nowrap; font-weight: 650; }
-.result-tabs button.active { color: #5146cf; background: #efedff; }
-.result-content { padding: 24px; }
-@keyframes pulse { 50% { opacity: .55; } }
-@media (max-width: 800px) {
-  .context-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .trace-grid { grid-template-columns: 1fr; }
-}
-@media (max-width: 520px) {
-  .context-grid { grid-template-columns: 1fr; }
-  .prompt-footer, .composer-meta { align-items: stretch; flex-direction: column; }
-  .send-button { align-self: flex-end; }
+.generate-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 210px); margin: 0 auto; color: #202123; }
+.generate-page.has-result { gap: 24px; }
+.empty-state { display: grid; place-items: end center; padding-bottom: 42px; }
+.empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: -.035em; }
+.generating-state { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 320px; }
+.generating-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #202123; animation: pulse 1.2s infinite; }
+.generating-state strong { font-size: 16px; }
+.generating-state p { margin: 5px 0 0; color: #8a8a8a; font-size: 13px; }
+.result-card { min-height: 320px; overflow: hidden; border: 1px solid #e5e5e5; border-radius: 18px; background: #fff; }
+.result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 12px 16px 0; color: #858585; font-size: 10px; }
+.result-sources b { padding: 5px 8px; border-radius: 999px; color: #7d3434; background: #fff0f0; font-weight: 650; }
+.result-tabs { display: flex; gap: 4px; padding: 12px 16px 0; overflow-x: auto; border-bottom: 1px solid #ececec; }
+.result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
+.result-tabs button.active { color: #202123; background: #f2f2f2; }
+.result-content { padding: 26px; }
+.composer-section { position: sticky; bottom: 0; z-index: 5; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
+.composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
+.composer textarea { width: 100%; min-height: 34px; max-height: 170px; padding: 5px 5px 10px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.55; }
+.composer textarea::placeholder { color: #929292; }
+.selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 9px; }
+.selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
+.selected-tools button i { color: #929292; font-style: normal; font-size: 14px; }
+.selected-tools button.selected-file { max-width: 260px; border-color: #f1caca; color: #8d3434; background: #fff5f5; }
+.selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
+.composer-actions { display: flex; align-items: center; gap: 9px; }
+.tool-picker { position: relative; }
+.add-button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; font-size: 25px; font-weight: 300; }
+.add-button:hover { background: #e6e6e6; }
+.tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); }
+.menu-title { padding: 8px 10px 6px; color: #888; font-size: 11px; font-weight: 700; }
+.file-options { display: grid; max-height: 190px; overflow-y: auto; }
+.no-files { padding: 10px; color: #969696; font-size: 11px; }
+.menu-divider { height: 1px; margin: 7px 5px; background: #ececec; }
+.tool-menu button { display: grid; grid-template-columns: 32px 1fr 20px; align-items: center; gap: 9px; width: 100%; padding: 10px; border: 0; border-radius: 10px; color: #282828; text-align: left; background: transparent; }
+.tool-menu button:hover, .tool-menu button.selected { background: #f2f2f2; }
+.tool-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #dedede; border-radius: 9px; font-size: 13px; }
+.tool-icon.pdf { color: #b83838; background: #fff1f1; font-size: 9px; font-weight: 850; }
+.tool-menu button > span:nth-child(2) { display: grid; gap: 2px; }
+.tool-menu b { font-size: 13px; }
+.tool-menu small { color: #8a8a8a; font-size: 10px; }
+.tool-menu i { color: #202123; text-align: center; font-style: normal; }
+.selection-label { flex: 1; color: #8b8b8b; font-size: 12px; }
+.send-button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 21px; }
+.send-button:disabled { background: #d0d0d0; cursor: default; }
+.composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
+.composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .65; }
+@keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
+@media (max-width: 620px) {
+  .generate-page { min-height: calc(100vh - 170px); }
+  .tool-menu { width: min(310px, calc(100vw - 60px)); }
+  .result-content { padding: 18px; }
 }
 </style>

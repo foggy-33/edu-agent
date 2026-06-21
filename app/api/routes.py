@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.profile_agent import ProfileAgent
@@ -19,10 +20,12 @@ from app.auth.service import AuthError, AuthService
 from app.graph.workflow import run_agent_workflow, workflow_description
 from app.learning.workflow import generate_learning_resources
 from app.profiles.service import DynamicProfileService
+from app.resources.service import ResourceError, ResourceService
 
 router = APIRouter()
 profile_service = DynamicProfileService()
 auth_service = AuthService()
+resource_service = ResourceService()
 
 
 def bearer_token(authorization: str | None) -> str:
@@ -88,9 +91,53 @@ def generate_collaborative_learning_resources(request: CollaborativeLearningRequ
     if not request.resourceTypes:
         raise HTTPException(status_code=400, detail="请至少选择一种资源类型")
     try:
-        return generate_learning_resources(request.model_dump())
+        payload = request.model_dump()
+        source_context, sources = resource_service.build_context(request.user_id, request.fileIds)
+        payload["source_context"] = source_context
+        payload["sources"] = sources
+        return generate_learning_resources(payload)
+    except ResourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/resources/upload", status_code=201)
+def upload_resource(user_id: str = Form(...), file: UploadFile = File(...)) -> dict:
+    if file.content_type not in {"application/pdf", "application/x-pdf"}:
+        raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件")
+    try:
+        return {"resource": resource_service.upload_pdf(user_id=user_id, filename=file.filename or "document.pdf", stream=file.file)}
+    except ResourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        file.file.close()
+
+
+@router.get("/resources")
+def list_resources(user_id: str) -> dict:
+    return {"resources": resource_service.list_resources(user_id)}
+
+
+@router.get("/resources/{file_id}/download")
+def download_resource(file_id: str, user_id: str) -> FileResponse:
+    try:
+        metadata = resource_service.get_metadata(user_id, file_id)
+        return FileResponse(
+            resource_service.get_pdf_path(user_id, file_id),
+            media_type="application/pdf",
+            filename=metadata["name"],
+        )
+    except ResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/resources/{file_id}", status_code=204)
+def delete_resource(file_id: str, user_id: str) -> None:
+    try:
+        resource_service.delete(user_id, file_id)
+    except ResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/evaluate")

@@ -5,7 +5,7 @@ import { getDynamicProfile } from './../api/client'
 import type { DynamicProfile } from './../types/profile'
 
 const emit = defineEmits<{
-  navigate: [page: 'home' | 'analyze' | 'generate' | 'evaluate' | 'courses' | 'account']
+  navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account']
 }>()
 
 const getGreeting = () => {

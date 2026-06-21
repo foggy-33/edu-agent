@@ -123,6 +123,55 @@ def test_collaborative_learning_uses_user_api_settings(monkeypatch) -> None:
     assert all(item["model"] == "user-model" for item in captured)
 
 
+def test_pdf_resource_upload_and_generate(monkeypatch) -> None:
+    user_id = "pytest_pdf_resource_user"
+    monkeypatch.setattr(
+        "app.api.routes.resource_service._extract_pages",
+        lambda _: [
+            {"page": 1, "text": "操作系统进程调度包含先来先服务、短作业优先和时间片轮转。"},
+            {"page": 2, "text": "时间片轮转需要在响应速度和上下文切换开销之间权衡。"},
+        ],
+    )
+    uploaded = client.post(
+        "/api/resources/upload",
+        data={"user_id": user_id},
+        files={"file": ("scheduling.pdf", b"%PDF-test", "application/pdf")},
+    )
+    assert uploaded.status_code == 201
+    resource = uploaded.json()["resource"]
+    assert resource["name"] == "scheduling.pdf"
+    assert resource["page_count"] == 2
+
+    listed = client.get("/api/resources", params={"user_id": user_id})
+    assert listed.status_code == 200
+    assert any(item["id"] == resource["id"] for item in listed.json()["resources"])
+
+    generated = client.post(
+        "/api/learning/generate",
+        json={
+            "user_id": user_id,
+            "major": "未指定",
+            "course": "自定义学习主题",
+            "chapter": "用户当前问题",
+            "weakness": "根据上传资料生成复习内容",
+            "goal": "理解并掌握相关知识",
+            "resourceTypes": ["lecture", "mindmap", "exercise"],
+            "fileIds": [resource["id"]],
+            "api_key": "",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "model": "Pro/deepseek-ai/DeepSeek-V3.2",
+        },
+    )
+    assert generated.status_code == 200
+    data = generated.json()
+    assert data["sources"][0]["name"] == "scheduling.pdf"
+    assert "进程调度" in data["lectureDoc"]
+    assert "进程调度" in data["mindmap"]
+
+    deleted = client.delete(f"/api/resources/{resource['id']}", params={"user_id": user_id})
+    assert deleted.status_code == 204
+
+
 def test_dynamic_profile_chat_falls_back_without_api_key() -> None:
     response = client.post(
         "/api/profiles/chat",

@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import HomePage from './components/HomePage.vue'
 import AnalyzePage from './components/AnalyzePage.vue'
-import GeneratePage from './components/GeneratePage.vue'
 import EvaluatePage from './components/EvaluatePage.vue'
 import CoursePage from './components/CoursePage.vue'
 import CourseDetailPage from './components/CourseDetailPage.vue'
@@ -19,7 +18,7 @@ import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/user
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'analyze' | 'generate' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'resources' | 'settings' | 'account' | 'portrait'
+type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'resources' | 'settings' | 'account' | 'portrait'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -171,7 +170,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           <p class="page-subtitle">
             {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
                currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
-               currentPage === 'generate' ? '生成个性化学习资源' :
                currentPage === 'collaborative' ? '多智能体协作生成完整个性化学习资源包' :
                currentPage === 'resources' ? '管理和查阅所有学习资料' :
                currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
@@ -206,7 +204,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           :course="selectedCourse"
           @navigate="navigate"
         />
-        <GeneratePage v-else-if="currentPage === 'generate'" @navigate="navigate" />
         <CollaborativeGeneratePage v-else-if="currentPage === 'collaborative'" />
         <ResourceLibrary v-else-if="currentPage === 'resources'" @navigate="navigate" />
         <EvaluatePage v-else-if="currentPage === 'evaluate'" />

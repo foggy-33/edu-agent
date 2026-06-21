@@ -13,10 +13,12 @@ services:
       CHROMA_PERSIST_DIR: /app/chroma_db
       KNOWLEDGE_BASE_DIR: /app/knowledge_base
       PROFILE_DATA_DIR: /app/data/profiles
+      RESOURCE_DATA_DIR: /app/data/resources
       USER_DATA_FILE: /app/data/auth/users.json
     volumes:
       - chroma_data:/app/chroma_db
       - profile_data:/app/data/profiles
+      - resource_data:/app/data/resources
       - auth_data:/app/data/auth
     expose:
       - "8000"
@@ -51,4 +53,5 @@ services:
 volumes:
   chroma_data:
   profile_data:
+  resource_data:
   auth_data:

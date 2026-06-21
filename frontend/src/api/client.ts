@@ -7,16 +7,18 @@ import type {
   StudentProfile
   , CollaborativeLearningRequest
   , CollaborativeLearningResponse
+  , UploadedResource
 } from '../types'
 import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig, SubjectProfileSummary } from '../types/profile'
 
 const API_BASE = '/api'
 
 async function httpRequest<T>(url: string, options?: RequestInit): Promise<T> {
+  const isFormData = options?.body instanceof FormData
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options?.headers || {})
     }
   })
@@ -26,6 +28,7 @@ async function httpRequest<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(data?.detail || `请求失败: ${response.status} ${response.statusText}`)
   }
 
+  if (response.status === 204) return undefined as T
   return response.json()
 }
 
@@ -75,6 +78,30 @@ export async function testSiliconFlow(config: SiliconFlowConfig): Promise<{ stat
 export async function getDynamicProfile(userId: string, course?: string): Promise<{ profile: DynamicProfile }> {
   const params = course ? `?course=${encodeURIComponent(course)}` : ''
   return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}${params}`)
+}
+
+export async function uploadResource(userId: string, file: File): Promise<{ resource: UploadedResource }> {
+  const body = new FormData()
+  body.append('user_id', userId)
+  body.append('file', file)
+  return httpRequest<{ resource: UploadedResource }>(`${API_BASE}/resources/upload`, {
+    method: 'POST',
+    body,
+  })
+}
+
+export async function listResources(userId: string): Promise<{ resources: UploadedResource[] }> {
+  return httpRequest<{ resources: UploadedResource[] }>(`${API_BASE}/resources?user_id=${encodeURIComponent(userId)}`)
+}
+
+export async function deleteResource(userId: string, fileId: string): Promise<void> {
+  return httpRequest<void>(`${API_BASE}/resources/${encodeURIComponent(fileId)}?user_id=${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function resourceDownloadUrl(userId: string, fileId: string): string {
+  return `${API_BASE}/resources/${encodeURIComponent(fileId)}/download?user_id=${encodeURIComponent(userId)}`
 }
 
 export async function listDynamicProfiles(userId: string): Promise<{ profiles: SubjectProfileSummary[] }> {

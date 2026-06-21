@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any, Callable
 
 from app.learning.llm import call_llm
@@ -8,10 +9,18 @@ from app.learning.state import LearningState
 
 
 def _context(state: LearningState) -> str:
-    return (
+    context = (
         f"专业：{state['major']}\n课程：{state['course']}\n章节：{state['chapter']}\n"
         f"知识短板：{state['weakness']}\n学习目标：{state['goal']}"
     )
+    source_context = state.get("source_context", "").strip()
+    if source_context:
+        context += (
+            "\n\n以下是用户选定 PDF 中提取的原文。生成内容必须优先依据这些资料；"
+            "资料未提及的内容要明确标注为补充说明，不得伪造页码或原文：\n"
+            f"{source_context}"
+        )
+    return context
 
 
 def _trace(state: LearningState, agent: str, summary: str, status: str = "completed") -> list[dict[str, Any]]:
@@ -35,6 +44,31 @@ def _generate(state: LearningState, task: str, mock_builder: Callable[[], str]) 
         base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
         model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
     ) or mock_builder()
+
+
+def _source_points(state: LearningState, limit: int = 5) -> list[str]:
+    points: list[str] = []
+    for line in state.get("source_context", "").splitlines():
+        cleaned = re.sub(r"\s+", " ", line).strip(" #*-")
+        if not cleaned or cleaned.startswith(("【文件：", "[第 ")):
+            continue
+        cleaned = cleaned[:60]
+        if cleaned not in points:
+            points.append(cleaned)
+        if len(points) >= limit:
+            break
+    return points
+
+
+def _source_note(state: LearningState) -> str:
+    points = _source_points(state, 3)
+    if not points:
+        return ""
+    return "\n\n## PDF 资料要点\n" + "\n".join(f"- {item}" for item in points)
+
+
+def _mindmap_label(value: str) -> str:
+    return re.sub(r"[:：()\[\]{}]", " ", value)
 
 
 def profile_agent(state: LearningState) -> dict[str, Any]:
@@ -75,6 +109,7 @@ def lecture_agent(state: LearningState) -> dict[str, Any]:
             "## 对比例子\n使用同一组输入分别执行各方案，记录执行顺序、等待时间和响应时间，观察差异。\n\n"
             f"## 易错点\n- 混淆概念名称与实际执行规则。\n- 忽略题目给出的边界条件。\n- 没有结合“{state['weakness']}”进行对比。\n\n"
             "## 复习建议\n制作对比表，完成一次手工推演，再用练习题检验迁移能力。"
+            f"{_source_note(state)}"
         ),
     )
     return {"lectureDoc": value, "agentTrace": _trace(state, "课程讲解 Agent", "课程讲解文档生成完成")}
@@ -85,23 +120,14 @@ def mindmap_agent(state: LearningState) -> dict[str, Any]:
         return {}
     value = _generate(
         state,
-        "只输出 Mermaid mindmap 源码，展示章节概念、原理、对比、应用与易错点。",
-        lambda: (
-            "mindmap\n"
-            f"  root(({state['chapter']}))\n"
-            "    核心概念\n"
-            "      定义与目标\n"
-            "      关键指标\n"
-            "    原理与流程\n"
-            "      输入条件\n"
-            "      执行规则\n"
-            "      输出结果\n"
-            "    方法对比\n"
-            f"      {state['weakness']}\n"
-            "      适用场景\n"
-            "    复习路径\n"
-            "      手工推演\n"
-            "      分层练习\n"
+        "只输出 Mermaid mindmap 源码，提炼所选 PDF 或用户问题中的主题、核心概念、层级关系、应用与易错点。",
+        lambda: "mindmap\n"
+        f"  root(({state['chapter']}))\n"
+        + (
+            "\n".join(f"    {_mindmap_label(item)}" for item in _source_points(state))
+            if _source_points(state)
+            else
+            "    核心概念\n      定义与目标\n      关键指标\n    原理与流程\n      输入条件\n      执行规则\n    复习路径\n      分层练习"
         ),
     )
     return {"mindmap": value, "agentTrace": _trace(state, "思维导图 Agent", "Mermaid 思维导图生成完成")}
@@ -112,7 +138,7 @@ def exercise_agent(state: LearningState) -> dict[str, Any]:
         return {}
     value = _generate(
         state,
-        "生成 Markdown 练习题，包含选择题、判断题、填空题、简答题和综合题；包含答案解析，并按基础、提高、挑战分层。",
+        "依据所选 PDF 或用户问题生成 Markdown 练习题，包含选择题、判断题、填空题、简答题和综合题；包含答案解析，并按基础、提高、挑战分层。",
         lambda: (
             f"# {state['chapter']} 分层练习\n\n"
             "## 基础层\n"
@@ -125,6 +151,7 @@ def exercise_agent(state: LearningState) -> dict[str, Any]:
             "## 挑战层\n"
             "5. **综合题**：设计一组输入，分别推演三种方案并解释差异。\n"
             "   - 答案与解析：应给出完整步骤、结果指标和方案选择理由。"
+            f"{_source_note(state)}"
         ),
     )
     return {"exercises": value, "agentTrace": _trace(state, "练习题 Agent", "五类分层练习题生成完成")}
@@ -141,6 +168,7 @@ def reading_agent(state: LearningState) -> dict[str, Any]:
             "## 知识延伸\n从本章方法继续学习性能评价、资源权衡与复杂系统中的决策机制。\n\n"
             "## 实际应用场景\n- 操作系统与云平台资源管理\n- 在线服务的任务队列\n- 实时系统的响应保障\n\n"
             f"## 学习路径\n1. 补齐“{state['weakness']}”基础概念。\n2. 完成可视化推演。\n3. 阅读真实系统案例。\n4. 尝试解释方案权衡。"
+            f"{_source_note(state)}"
         ),
     )
     return {"reading": value, "agentTrace": _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")}

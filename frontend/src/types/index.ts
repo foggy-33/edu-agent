@@ -102,12 +102,14 @@ export interface Course {
 export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading'
 
 export interface CollaborativeLearningRequest {
+  user_id: string
   major: string
   course: string
   chapter: string
   weakness: string
   goal: string
   resourceTypes: CollaborativeResourceType[]
+  fileIds: string[]
   api_key: string
   base_url: string
   model: string
@@ -127,5 +129,18 @@ export interface CollaborativeLearningResponse {
   exercises: string
   reading: string
   review: string
+  sources: Pick<UploadedResource, 'id' | 'name' | 'page_count'>[]
   agentTrace: AgentTraceItem[]
+}
+
+export interface UploadedResource {
+  id: string
+  user_id: string
+  name: string
+  type: 'pdf'
+  size: number
+  page_count: number
+  text_length: number
+  status: 'ready'
+  created_at: string
 }

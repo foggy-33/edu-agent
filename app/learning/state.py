@@ -10,6 +10,9 @@ class LearningState(TypedDict, total=False):
     weakness: str
     goal: str
     resourceTypes: list[str]
+    fileIds: list[str]
+    source_context: str
+    sources: list[dict[str, Any]]
     api_key: str
     base_url: str
     model: str

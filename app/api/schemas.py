@@ -29,12 +29,14 @@ class SiliconFlowConfig(BaseModel):
 
 
 class CollaborativeLearningRequest(SiliconFlowConfig):
+    user_id: str = "demo_user_001"
     major: str
     course: str
     chapter: str
     weakness: str
     goal: str
     resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading"]]
+    fileIds: list[str] = Field(default_factory=list)
 
 
 class ProfileChatRequest(SiliconFlowConfig):

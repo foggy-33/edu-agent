@@ -57,5 +57,6 @@ def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
         "exercises": state.get("exercises", ""),
         "reading": state.get("reading", ""),
         "review": state.get("review", ""),
+        "sources": state.get("sources", []),
         "agentTrace": state.get("agentTrace", []),
     }
