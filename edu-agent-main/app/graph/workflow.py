@@ -26,20 +26,28 @@ def _build_langgraph_app() -> Callable[[dict[str, Any]], AgentState] | None:
     graph.add_node("retriever", lambda s: RetrieverAgent().run(s))
     graph.add_node("planner", lambda s: PlannerAgent().run(s))
     graph.add_node("document", lambda s: DocumentAgent().run(s))
+    graph.add_node("document_safety", lambda s: _check_document_safety(s))
     graph.add_node("mindmap", lambda s: MindMapAgent().run(s))
+    graph.add_node("mindmap_safety", lambda s: _check_mindmap_safety(s))
     graph.add_node("quiz", lambda s: QuizAgent().run(s))
+    graph.add_node("quiz_safety", lambda s: _check_quiz_safety(s))
     graph.add_node("practice", lambda s: PracticeAgent().run(s))
-    graph.add_node("safety", lambda s: SafetyCheckAgent().run(s))
+    graph.add_node("practice_safety", lambda s: _check_practice_safety(s))
+    graph.add_node("final_safety", lambda s: SafetyCheckAgent().run(s))
 
     graph.set_entry_point("profile")
     graph.add_edge("profile", "retriever")
     graph.add_edge("retriever", "planner")
     graph.add_edge("planner", "document")
-    graph.add_edge("document", "mindmap")
-    graph.add_edge("mindmap", "quiz")
-    graph.add_edge("quiz", "practice")
-    graph.add_edge("practice", "safety")
-    graph.add_edge("safety", END)
+    graph.add_edge("document", "document_safety")
+    graph.add_conditional_edges("document_safety", _should_continue, {"continue": "mindmap", "block": END})
+    graph.add_edge("mindmap", "mindmap_safety")
+    graph.add_conditional_edges("mindmap_safety", _should_continue, {"continue": "quiz", "block": END})
+    graph.add_edge("quiz", "quiz_safety")
+    graph.add_conditional_edges("quiz_safety", _should_continue, {"continue": "practice", "block": END})
+    graph.add_edge("practice", "practice_safety")
+    graph.add_conditional_edges("practice_safety", _should_continue, {"continue": "final_safety", "block": END})
+    graph.add_edge("final_safety", END)
 
     app = graph.compile()
 
@@ -49,6 +57,61 @@ def _build_langgraph_app() -> Callable[[dict[str, Any]], AgentState] | None:
         return state
 
     return invoke
+
+
+def _check_document_safety(state: dict[str, Any]) -> dict[str, Any]:
+    """检查文档内容安全"""
+    agent = SafetyCheckAgent()
+    result = agent.run({"document": state.get("document", "")})
+    report = result["safety_report"]
+    if report["status"] == "fail":
+        state["safety_blocked"] = True
+        state["blocked_by"] = "document"
+        state["block_reason"] = report
+    return {"safety_check": report}
+
+
+def _check_mindmap_safety(state: dict[str, Any]) -> dict[str, Any]:
+    """检查思维导图内容安全"""
+    agent = SafetyCheckAgent()
+    result = agent.run({"mindmap": state.get("mindmap", "")})
+    report = result["safety_report"]
+    if report["status"] == "fail":
+        state["safety_blocked"] = True
+        state["blocked_by"] = "mindmap"
+        state["block_reason"] = report
+    return {"safety_check": report}
+
+
+def _check_quiz_safety(state: dict[str, Any]) -> dict[str, Any]:
+    """检查测验内容安全"""
+    agent = SafetyCheckAgent()
+    result = agent.run({"quiz": state.get("quiz", "")})
+    report = result["safety_report"]
+    if report["status"] == "fail":
+        state["safety_blocked"] = True
+        state["blocked_by"] = "quiz"
+        state["block_reason"] = report
+    return {"safety_check": report}
+
+
+def _check_practice_safety(state: dict[str, Any]) -> dict[str, Any]:
+    """检查练习内容安全"""
+    agent = SafetyCheckAgent()
+    result = agent.run({"practice_case": state.get("practice_case", "")})
+    report = result["safety_report"]
+    if report["status"] == "fail":
+        state["safety_blocked"] = True
+        state["blocked_by"] = "practice_case"
+        state["block_reason"] = report
+    return {"safety_check": report}
+
+
+def _should_continue(state: dict[str, Any]) -> str:
+    """判断是否继续执行"""
+    if state.get("safety_blocked"):
+        return "block"
+    return "continue"
 
 
 def _build_extended_reading(state: dict[str, Any]) -> list[dict[str, str]]:
@@ -66,6 +129,28 @@ def run_agent_workflow(input_state: dict[str, Any]) -> dict[str, Any]:
     langgraph_app = _build_langgraph_app()
     state = langgraph_app(input_state) if langgraph_app else run_sequential_workflow(input_state)
     state["extended_reading"] = _build_extended_reading(state)
+    
+    # 检查是否被安全拦截
+    if state.get("safety_blocked"):
+        return {
+            "profile": state.get("profile", {}),
+            "learning_path": state.get("learning_path", []),
+            "resources": {
+                "document": state.get("document", ""),
+                "mindmap": state.get("mindmap", ""),
+                "quiz": state.get("quiz", []),
+                "practice_case": state.get("practice_case", ""),
+                "extended_reading": state.get("extended_reading", []),
+            },
+            "safety_report": {
+                "status": "blocked",
+                "risk_level": "high",
+                "blocked_by": state.get("blocked_by", ""),
+                "block_reason": state.get("block_reason", {}),
+                "message": "内容生成被安全检查拦截，请根据以下建议修改内容："
+            },
+        }
+    
     return {
         "profile": state.get("profile", {}),
         "learning_path": state.get("learning_path", []),

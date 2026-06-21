@@ -7,7 +7,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     llm_mode: str = "mock"
-    openai_api_key: str = ""
     spark_app_id: str = ""
     spark_api_key: str = ""
     spark_api_secret: str = ""
@@ -15,6 +14,7 @@ class Settings(BaseSettings):
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     siliconflow_model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
+    openai_api_key: str = ""
     chroma_persist_dir: str = "./chroma_db"
     knowledge_base_dir: str = "./knowledge_base"
     profile_data_dir: str = "./data/profiles"
