@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     siliconflow_model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
     chroma_persist_dir: str = "./chroma_db"
     knowledge_base_dir: str = "./knowledge_base"
+    rag_auto_ingest: bool = True
+    rag_top_k: int = 5
+    rag_embedding_dimension: int = 384
     profile_data_dir: str = "./data/profiles"
     resource_data_dir: str = "./data/resources"
     user_data_file: str = "./data/auth/users.json"

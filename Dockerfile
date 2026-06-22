@@ -11,6 +11,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY app ./app
 COPY knowledge_base ./knowledge_base
+COPY scripts ./scripts
 
 RUN mkdir -p /app/chroma_db /app/data/profiles /app/data/resources /app/data/auth \
     && useradd --create-home --uid 10001 appuser \

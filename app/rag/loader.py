@@ -9,10 +9,13 @@ def load_markdown_documents(base_dir: str | Path) -> list[dict[str, str]]:
         return []
     documents: list[dict[str, str]] = []
     for path in sorted(base_path.rglob("*.md")):
+        relative_path = path.relative_to(base_path)
         documents.append(
             {
                 "title": path.stem,
-                "source": str(path.as_posix()),
+                "source": str(
+                    (Path("knowledge_base") / base_path.name / relative_path).as_posix()
+                ),
                 "content": path.read_text(encoding="utf-8"),
             }
         )

@@ -10,6 +10,7 @@ __pycache__/
 # Local data and secrets
 .env
 chroma_db/
+faiss_index/
 data/
 
 # Frontend dependencies and builds

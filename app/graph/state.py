@@ -9,6 +9,7 @@ class AgentState(TypedDict, total=False):
     message: str
     profile: dict[str, Any]
     retrieved_docs: list[dict[str, Any]]
+    retrieval_meta: dict[str, Any]
     learning_path: list[dict[str, Any]]
     document: str
     mindmap: str

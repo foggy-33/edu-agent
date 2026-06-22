@@ -76,6 +76,7 @@ def run_agent_workflow(input_state: dict[str, Any]) -> dict[str, Any]:
             "practice_case": state.get("practice_case", ""),
             "extended_reading": state.get("extended_reading", []),
         },
+        "retrieval_meta": state.get("retrieval_meta", {}),
         "safety_report": state.get("safety_report", {"status": "warning", "notes": ["工作流未生成安全报告"]}),
     }
 

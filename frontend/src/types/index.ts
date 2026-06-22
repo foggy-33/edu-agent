@@ -52,7 +52,15 @@ export interface Resources {
   mindmap: string
   quiz: QuizItem[]
   practice_case: string
-  extended_reading: { title: string; url: string }[]
+  extended_reading: { title: string; source: string; reason: string }[]
+}
+
+export interface RetrievalMeta {
+  query: string
+  keyword_count: number
+  vector_count: number
+  mode: 'hybrid' | 'keyword'
+  vector_error: string
 }
 
 export interface SafetyReport {
@@ -64,6 +72,7 @@ export interface GenerateResponse {
   profile: StudentProfile
   learning_path: LearningPathItem[]
   resources: Resources
+  retrieval_meta?: RetrievalMeta
   safety_report: SafetyReport
 }
 
