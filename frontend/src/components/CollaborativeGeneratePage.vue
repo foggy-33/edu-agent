@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import {
+  createConversationTitle,
+  getConversationHistoryItem,
+  saveConversationHistoryItem,
+} from '../api/conversationHistory'
 import { listResources } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
@@ -8,6 +13,15 @@ import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'review'
+
+const props = defineProps<{
+  historyId?: string | null
+}>()
+
+const emit = defineEmits<{
+  conversationSaved: [id: string]
+  newConversation: []
+}>()
 
 const resourceOptions: {
   key: CollaborativeResourceType
@@ -43,6 +57,14 @@ const streamContent = ref<Record<ResultKey, string>>({
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
+
+const emptyStreamContent = (): Record<ResultKey, string> => ({
+  lectureDoc: '',
+  mindmap: '',
+  exercises: '',
+  reading: '',
+  review: '',
+})
 
 const availableTabs = computed(() => [
   ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
@@ -114,14 +136,59 @@ async function loadUploadedResources() {
 }
 
 function resetStreamState() {
-  streamContent.value = {
-    lectureDoc: '',
-    mindmap: '',
-    exercises: '',
-    reading: '',
-    review: '',
-  }
+  streamContent.value = emptyStreamContent()
   thinkingSteps.value = []
+}
+
+function resetConversation() {
+  prompt.value = ''
+  result.value = null
+  error.value = ''
+  submittedTypes.value = []
+  activeTab.value = 'lectureDoc'
+  exerciseAnswers.value = {}
+  exerciseSubmitted.value = {}
+  resetStreamState()
+  emit('newConversation')
+}
+
+function hydrateFromHistory(id: string | null | undefined) {
+  if (!id) {
+    resetConversation()
+    return
+  }
+  const item = getConversationHistoryItem(id)
+  if (!item) return
+  prompt.value = item.question
+  result.value = item.result
+  submittedTypes.value = [...item.resourceTypes]
+  activeTab.value = resourceOptions.find(option => submittedTypes.value.includes(option.key))?.resultKey || 'lectureDoc'
+  streamContent.value = {
+    lectureDoc: item.result.lectureDoc || '',
+    mindmap: item.result.mindmap || '',
+    exercises: item.result.exercises || '',
+    reading: item.result.reading || '',
+    review: item.result.review || '',
+  }
+  thinkingSteps.value = [...item.thinkingSteps]
+  exerciseAnswers.value = {}
+  exerciseSubmitted.value = {}
+  error.value = ''
+}
+
+function saveCompletedConversation(question: string, payload: CollaborativeLearningRequest) {
+  if (!result.value) return
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  saveConversationHistoryItem({
+    id,
+    title: createConversationTitle(question),
+    question,
+    createdAt: new Date().toISOString(),
+    resourceTypes: [...payload.resourceTypes],
+    result: result.value,
+    thinkingSteps: [...thinkingSteps.value],
+  })
+  emit('conversationSaved', id)
 }
 
 function applyStreamEvent(event: string, data: any) {
@@ -207,6 +274,7 @@ async function submit() {
       throw new Error(data?.detail || `请求失败: ${response.status}`)
     }
     await readStream(response)
+    saveCompletedConversation(question, payload)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '资源生成失败'
   } finally {
@@ -214,7 +282,12 @@ async function submit() {
   }
 }
 
-onMounted(loadUploadedResources)
+onMounted(() => {
+  loadUploadedResources()
+  hydrateFromHistory(props.historyId)
+})
+
+watch(() => props.historyId, hydrateFromHistory)
 </script>
 
 <template>
@@ -416,7 +489,7 @@ onMounted(loadUploadedResources)
 
 <style scoped>
 .generate-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 80px); margin: 0 auto; color: #202123; }
-.generate-page.idle { grid-template-rows: auto auto; align-content: center; gap: 28px; padding-bottom: 8vh; }
+.generate-page.idle { grid-template-rows: auto auto; width: min(760px, 100%); align-content: center; gap: 28px; padding-bottom: 8vh; }
 .generate-page.has-result { gap: 24px; }
 .empty-state { display: grid; place-items: center; padding: 0; }
 .empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; }

@@ -417,8 +417,75 @@ textarea:focus-visible {
 }
 
 .app-nav {
-  flex: 1;
   padding: 20px 2px;
+}
+
+.conversation-history {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 2px 14px;
+  overflow-y: auto;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 6px;
+  color: #9aa2b1;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.history-head button {
+  border: 0;
+  color: #5146cf;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.history-item {
+  width: 100%;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: #596276;
+  background: transparent;
+  text-align: left;
+}
+
+.history-item:hover,
+.history-item-active {
+  color: #252c3d;
+  background: #f1efff;
+}
+
+.history-item span,
+.history-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.history-item small,
+.history-empty {
+  color: #a0a7b5;
+  font-size: 10px;
+}
+
+.history-empty {
+  margin: 6px 10px;
 }
 
 .nav-caption {
@@ -504,9 +571,12 @@ textarea:focus-visible {
 }
 
 .nav-icon {
-  width: 22px;
+  width: 20px;
   text-align: center;
-  filter: saturate(0.55);
+  color: currentColor;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .sidebar-footer {
@@ -3339,7 +3409,8 @@ textarea:focus {
   .app-brand > div > div:last-child,
   .app-nav .nav-caption,
   .nav-item span:last-child,
-  .profile-card {
+  .profile-card,
+  .conversation-history {
     display: none;
   }
 

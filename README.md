@@ -111,7 +111,7 @@ edu-agent-ai/
 | 注册登录 | `/api/auth/register`、`/api/auth/login`、`/api/auth/me` | `app/auth/service.py` |
 | 基础画像分析 | `POST /api/analyze` | `ProfileAgent` |
 | RAG 资源包生成 | `POST /api/generate` | `app/graph/workflow.py` |
-| 可选资源协作生成 | `POST /api/learning/generate` | `app/learning/workflow.py` |
+| 可选资源协作生成 | `POST /api/learning/generate`、`POST /api/learning/generate/stream` | `app/learning/workflow.py` |
 | PDF 资源库 | `/api/resources/*` | `app/resources/service.py` |
 | 学习评估 | `/api/evaluate`、`/api/evaluate/smart` | `EvaluatorAgent`、`DynamicProfileService` |
 | 在线测验 | `/api/evaluate/quiz/*` | `app/api/routes.py` |
@@ -144,6 +144,7 @@ POST /api/generate
 
 ```text
 POST /api/learning/generate
+POST /api/learning/generate/stream
 → profile
 → planner
 → lecture
@@ -154,7 +155,7 @@ POST /api/learning/generate
 → integration
 ```
 
-该链路由 `app/learning/workflow.py` 管理。用户可以只生成讲义、思维导图、习题或拓展阅读，也可以把资源库中的 PDF 文本作为额外上下文。响应中的 `agentTrace` 用于展示各节点执行过程。
+该链路由 `app/learning/workflow.py` 管理。用户可以只生成讲义、思维导图、习题或拓展阅读，也可以把资源库中的 PDF 文本作为额外上下文。响应中的 `agentTrace` 用于展示各节点执行过程。首页当前使用流式接口 `/api/learning/generate/stream`，前端逐段接收 `content` 事件，并用小字展示 `status` 事件中的 Agent 处理进度。
 
 两套工作流都优先使用 LangGraph；如果 LangGraph 无法导入，则使用普通 Python 顺序执行，保证基础功能仍可运行。
 
@@ -218,8 +219,7 @@ chroma_db/
 | 页面 | 组件 | 作用 |
 |---|---|---|
 | 登录注册 | `AuthPage.vue` | 用户注册、登录和会话恢复 |
-| 首页 | `HomePage.vue` | 学习工作台和入口导航 |
-| 个性化资源生成 | `CollaborativeGeneratePage.vue` | 选择资源类型和 PDF 后生成内容 |
+| 首页 / 个性化资源生成 | `CollaborativeGeneratePage.vue` | 居中对话入口、流式问答、选择资源类型和 PDF 后生成内容 |
 | 资源库 | `ResourceLibrary.vue` | 上传、查看、下载和删除 PDF |
 | 学习评估 | `EvaluatePage.vue` | 答题评估和薄弱点分析 |
 | 课程管理 | `CoursePage.vue` | 课程列表和进度入口 |
@@ -227,7 +227,7 @@ chroma_db/
 | 课程练习 | `CourseExercisePage.vue` | 在线测验 |
 | 学习分析 | `AnalyzePage.vue` | 当前课程画像分析 |
 | 画像对话 | `PortraitPage.vue` | 分学科画像浏览和对话更新 |
-| 个人中心 | `UserCenterPage.vue` | 用户资料和画像摘要 |
+| 个人中心 | `UserCenterPage.vue`、`HomePage.vue` | 用户资料、原首页学习仪表盘和画像摘要 |
 | 设置 | `SettingsPage.vue` | SiliconFlow 模型配置测试 |
 
 `MarkdownRenderer.vue` 和 `MermaidRenderer.vue` 分别负责讲义 Markdown 与思维导图展示。`frontend/src/api` 封装后端请求，`frontend/src/types` 保存前后端共享的数据结构。
@@ -250,6 +250,208 @@ backend（Uvicorn + FastAPI）
 ```
 
 前端 Nginx 对外暴露端口，后端只在 Compose 网络中提供 `8000` 端口。前端会等待后端健康检查成功后启动。
+
+## RAG 与多 Agent 实现说明
+
+项目中的 RAG 和多 Agent 不是单独存在的两个模块，而是通过两条资源生成链路组合使用：
+
+- `POST /api/generate` 是“RAG 支撑的完整多 Agent 资源包生成”。它面向内置数据库系统知识库，先检索课程资料，再让多个 Agent 基于检索结果生成学习路径、讲义、思维导图、练习题、实践案例和安全检查结果。
+- `POST /api/learning/generate` 与 `POST /api/learning/generate/stream` 是“可选资源类型的协作生成”。它不走内置 Chroma RAG，而是根据用户选择的 PDF 文件拼接 `source_context`，再让讲义、导图、习题、阅读等 Agent 分工生成结果。首页使用的是流式版本。
+
+### 1. RAG 在项目中怎么工作
+
+RAG 入口是 `POST /api/generate`，路由位于 `app/api/routes.py`，实际工作流在 `app/graph/workflow.py`。执行顺序如下：
+
+```text
+用户问题 + 课程名称
+        ↓
+ProfileAgent
+提取专业、课程、年级、学习目标、薄弱点、学习风格
+        ↓
+RetrieverAgent
+组合用户问题、课程和 weak_points，形成检索 query
+        ↓
+KeywordRetriever + ChromaVectorStore
+从 knowledge_base/database_system 中召回相关内容
+        ↓
+合并关键词分数和向量分数，写入 retrieved_docs 与 retrieval_meta
+        ↓
+PlannerAgent / DocumentAgent / MindMapAgent / QuizAgent / PracticeAgent
+基于画像与 retrieved_docs 生成学习路径和资源
+        ↓
+SafetyCheckAgent
+检查输出是否有知识依据和基本教学安全问题
+        ↓
+返回 profile、learning_path、resources、retrieval_meta、safety_report
+```
+
+知识库文件在 `knowledge_base/database_system/` 下，`app/rag/loader.py` 会递归读取 Markdown。每个文档保留 `title`、`source` 和 `content`，其中 `source` 使用项目相对路径，方便前端展示引用来源。
+
+向量库由 `app/rag/vector_store.py` 实现，使用 Chroma 持久化到 `chroma_db/`。当前没有接外部 Embedding API，而是使用 `LocalHashEmbeddings`：
+
+```text
+文本分词
+→ 英文、数字、中文单字、中文双字词
+→ BLAKE2b 稳定哈希
+→ 映射到固定维度向量桶
+→ L2 归一化
+→ 写入 Chroma
+```
+
+这种方案适合本地演示和离线测试，不需要 SiliconFlow Key。知识库写入 Chroma 前按段落切块，默认块大小 700 字符、重叠 100 字符；系统会把知识库目录指纹保存到 `chroma_db/.knowledge_fingerprint`，当 Markdown 文件变化时自动重建索引。
+
+检索时，`RetrieverAgent` 同时执行两路召回：
+
+```text
+关键词召回：KeywordRetriever.search(query, top_k = RAG_TOP_K × 2)
+向量召回：ChromaVectorStore.similarity_search(query, top_k = RAG_TOP_K × 2)
+```
+
+两路结果按 `source` 去重，并计算综合分：
+
+```text
+combined_score = keyword_score × 0.4 + vector_score × 0.6
+```
+
+最终取前 `RAG_TOP_K` 条写入 `retrieved_docs`。如果 Chroma 初始化、索引或查询失败，系统不会中断生成，而是记录 `vector_error`，降级为关键词检索，`retrieval_meta.mode` 会变成 `keyword`。
+
+### 2. RAG 多 Agent 工作流怎么协作
+
+`app/graph/workflow.py` 会优先尝试创建 LangGraph `StateGraph`。如果当前环境无法导入 LangGraph，则使用 `app/graph/fallback_workflow.py` 顺序执行相同节点。
+
+共享状态结构在 `app/graph/state.py`，核心字段包括：
+
+```text
+user_id
+course
+message
+profile
+retrieved_docs
+retrieval_meta
+learning_path
+document
+mindmap
+quiz
+practice_case
+safety_report
+```
+
+每个 Agent 只负责一个阶段，并把结果写回共享状态：
+
+| Agent | 文件 | 职责 |
+|---|---|---|
+| `ProfileAgent` | `app/agents/profile_agent.py` | 从用户输入中抽取学习画像和薄弱点 |
+| `RetrieverAgent` | `app/agents/retriever_agent.py` | 执行关键词 + Chroma 混合检索 |
+| `PlannerAgent` | `app/agents/planner_agent.py` | 生成阶段化学习路径 |
+| `DocumentAgent` | `app/agents/document_agent.py` | 生成 Markdown 讲解文档 |
+| `MindMapAgent` | `app/agents/mindmap_agent.py` | 生成 Mermaid 思维导图 |
+| `QuizAgent` | `app/agents/quiz_agent.py` | 生成多题型练习 |
+| `PracticeAgent` | `app/agents/practice_agent.py` | 生成 SQL 实践案例 |
+| `SafetyCheckAgent` | `app/agents/safety_agent.py` | 检查内容依据和安全提示 |
+
+这条链路的特点是：RAG 检索发生在生成前，后续资源生成 Agent 都能使用 `retrieved_docs`，因此输出可以带上 `extended_reading` 和 `retrieval_meta` 作为知识来源说明。
+
+### 3. 协作式多 Agent 资源生成怎么实现
+
+首页“个性化资源生成”使用的是第二条链路，入口在 `app/api/routes.py`：
+
+```text
+POST /api/learning/generate          # 普通 JSON 返回
+POST /api/learning/generate/stream   # 首页使用，SSE 流式返回
+```
+
+前端在 `frontend/src/components/CollaborativeGeneratePage.vue` 中提交：
+
+```json
+{
+  "user_id": "当前用户",
+  "major": "未指定",
+  "course": "自定义学习主题",
+  "chapter": "用户当前问题",
+  "weakness": "用户输入的问题",
+  "goal": "理解并掌握相关知识",
+  "resourceTypes": ["lecture", "mindmap", "exercise", "reading"],
+  "fileIds": ["用户选择的 PDF 文件 ID"],
+  "api_key": "前端设置中的模型 Key",
+  "base_url": "OpenAI-compatible API 地址",
+  "model": "模型名"
+}
+```
+
+如果用户选择了资源库 PDF，`ResourceService.build_context()` 会读取 `data/resources/<file_id>/content.txt`，拼成 `source_context`，并把引用文件放到 `sources`。`app/learning/agents.py` 中的 `_context()` 会把 `source_context` 追加到每个 Agent 的提示词中，要求优先依据 PDF 原文生成内容。
+
+协作链路的节点定义在 `app/learning/workflow.py`：
+
+```text
+profile_agent
+→ planner_agent
+→ lecture_agent
+→ mindmap_agent
+→ exercise_agent
+→ reading_agent
+→ review_agent
+→ integration_agent
+```
+
+共享状态结构在 `app/learning/state.py`，主要字段包括：
+
+```text
+major、course、chapter、weakness、goal
+resourceTypes、fileIds、source_context、sources
+lectureDoc、mindmap、exercises、exerciseItems、reading、review
+agentTrace
+```
+
+各节点职责如下：
+
+| 节点 | 输出字段 | 说明 |
+|---|---|---|
+| `profile_agent` | `studentProfile` | 整理专业、课程、章节、短板和学习目标 |
+| `planner_agent` | `taskPlan` | 根据 `resourceTypes` 规划要生成哪些资源 |
+| `lecture_agent` | `lectureDoc` | 生成 Markdown 课程讲解 |
+| `mindmap_agent` | `mindmap` | 生成 Mermaid mindmap 源码 |
+| `exercise_agent` | `exercises`、`exerciseItems` | 生成 Markdown 练习题和可在线作答的结构化题目 |
+| `reading_agent` | `reading` | 生成拓展阅读和学习路径 |
+| `review_agent` | `review` | 检查所选资源是否覆盖短板、目标和难度 |
+| `integration_agent` | `agentTrace` | 追加整合完成记录，返回统一 JSON |
+
+如果 `resourceTypes` 为空，表示用户只想直接对话。此时 `generate_learning_resources()` 不跑完整资源链，而是只调用 `direct_chat_agent`，把回答写入 `lectureDoc`，前端显示为“对话回答”。
+
+每个节点都会通过 `_trace()` 追加一条 `agentTrace`：
+
+```json
+{
+  "order": 1,
+  "agent": "学情分析 Agent",
+  "status": "completed",
+  "summary": "已识别知识短板与学习目标",
+  "timestamp": "..."
+}
+```
+
+流式接口 `/api/learning/generate/stream` 使用 `StreamingResponse` 返回 Server-Sent Events：
+
+```text
+event: status   # 小字显示处理过程，例如“正在读取问题和已选资料”
+event: content  # 按块输出 lectureDoc、mindmap、exercises、reading、review
+event: done     # 返回完整 result，前端用于练习题判题和最终状态
+event: error    # 返回错误信息
+```
+
+前端用 `ReadableStream.getReader()` 逐块读取响应，把 `content` 事件追加到当前标签页内容中；`status` 事件显示在回答区上方的小字“处理过程”中。Nginx 在 `frontend/nginx.conf` 中关闭了 `/api/` 的代理缓冲，避免 SSE 被缓存到最后才显示。
+
+### 4. 两条链路的区别
+
+| 对比项 | `/api/generate` | `/api/learning/generate`、`/api/learning/generate/stream` |
+|---|---|---|
+| 主要用途 | 数据库系统课程的完整 RAG 资源包 | 首页自由问答和可选资源生成 |
+| 知识来源 | `knowledge_base/database_system` + Chroma + 关键词检索 | 用户上传 PDF 的 `source_context` + 用户问题 |
+| 是否返回 `retrieval_meta` | 是 | 否 |
+| 是否返回 `agentTrace` | 否 | 是 |
+| 是否可选择资源类型 | 否，固定生成完整资源包 | 是，可选讲义、导图、练习、阅读 |
+| 是否支持直接对话 | 否 | 是，`resourceTypes=[]` 时走 `direct_chat_agent` |
+| 是否支持流式输出 | 当前普通 JSON 返回 | 首页使用 SSE 流式输出 |
+| 练习题形式 | `resources.quiz` | `exercises` Markdown + `exerciseItems` 可作答题卡 |
 
 ## 当前 RAG 实现
 

@@ -13,6 +13,7 @@ import AuthPage from './components/AuthPage.vue'
 import CollaborativeGeneratePage from './components/CollaborativeGeneratePage.vue'
 import PortraitPage from './components/PortraitPage.vue'
 import { getCurrentUser, logout, type AuthUser } from './api/auth'
+import { CONVERSATION_HISTORY_EVENT, loadConversationHistory, type ConversationHistoryItem } from './api/conversationHistory'
 import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
@@ -27,6 +28,8 @@ const authChecking = ref(true)
 const loggingOut = ref(false)
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const selectedCourse = ref<Course | null>(null)
+const conversationHistory = ref<ConversationHistoryItem[]>(loadConversationHistory())
+const selectedHistoryId = ref<string | null>(null)
 
 interface NavItem {
   key: Page
@@ -35,12 +38,12 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { key: 'home', label: '个性化资源生成', icon: '协' },
-  { key: 'resources', label: '资源库', icon: '📦' },
-  { key: 'evaluate', label: '学习评估', icon: '📝' },
-  { key: 'courses', label: '课程管理', icon: '📚' },
-  { key: 'account', label: '个人中心', icon: '👤' },
-  { key: 'portrait', label: '画像对话', icon: '🎯' },
+  { key: 'home', label: '个性化资源生成', icon: '○' },
+  { key: 'resources', label: '资源库', icon: '□' },
+  { key: 'evaluate', label: '学习评估', icon: '✓' },
+  { key: 'courses', label: '课程管理', icon: '≡' },
+  { key: 'account', label: '个人中心', icon: '◎' },
+  { key: 'portrait', label: '画像对话', icon: '◇' },
   { key: 'settings', label: '设置', icon: '⚙' },
 ]
 
@@ -48,11 +51,28 @@ function navigate(page: Page, course?: Course) {
   if (course) {
     selectedCourse.value = course
   }
+  if (page !== 'home') {
+    selectedHistoryId.value = null
+  }
   currentPage.value = page
+}
+
+function startNewConversation() {
+  selectedHistoryId.value = null
+  currentPage.value = 'home'
+}
+
+function openConversation(item: ConversationHistoryItem) {
+  selectedHistoryId.value = item.id
+  currentPage.value = 'home'
 }
 
 function handleUserProfileUpdate(event: Event) {
   userProfile.value = (event as CustomEvent<UserProfile>).detail
+}
+
+function handleConversationHistoryUpdate(event: Event) {
+  conversationHistory.value = (event as CustomEvent<ConversationHistoryItem[]>).detail
 }
 
 function handleAuthenticated(user: AuthUser) {
@@ -80,11 +100,15 @@ async function handleLogout() {
 
 onMounted(async () => {
   window.addEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate)
+  window.addEventListener(CONVERSATION_HISTORY_EVENT, handleConversationHistoryUpdate)
   const user = await getCurrentUser()
   if (user) handleAuthenticated(user)
   authChecking.value = false
 })
-onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate))
+onUnmounted(() => {
+  window.removeEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate)
+  window.removeEventListener(CONVERSATION_HISTORY_EVENT, handleConversationHistoryUpdate)
+})
 </script>
 
 <template>
@@ -126,6 +150,24 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
         </button>
       </nav>
 
+      <section v-if="!sidebarCollapsed" class="conversation-history">
+        <div class="history-head">
+          <span>历史对话</span>
+          <button type="button" @click="startNewConversation">新建</button>
+        </div>
+        <button
+          v-for="item in conversationHistory"
+          :key="item.id"
+          type="button"
+          :class="['history-item', selectedHistoryId === item.id ? 'history-item-active' : '']"
+          @click="openConversation(item)"
+        >
+          <span>{{ item.title }}</span>
+          <small>{{ new Date(item.createdAt).toLocaleString() }}</small>
+        </button>
+        <p v-if="!conversationHistory.length" class="history-empty">暂无历史</p>
+      </section>
+
       <div class="sidebar-footer">
         <button v-if="!sidebarCollapsed" class="profile-card" @click="navigate('account')" title="进入个人中心">
           <div class="profile-avatar">
@@ -159,7 +201,11 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
     <main class="app-main">
       <div class="app-content">
         <div v-if="currentPage === 'home'" class="home-generate-center">
-          <CollaborativeGeneratePage />
+          <CollaborativeGeneratePage
+            :history-id="selectedHistoryId"
+            @conversation-saved="selectedHistoryId = $event"
+            @new-conversation="selectedHistoryId = null"
+          />
         </div>
         <AnalyzePage 
           v-else-if="currentPage === 'analyze'" 
