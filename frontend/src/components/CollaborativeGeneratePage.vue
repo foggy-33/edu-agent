@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { generateCollaborativeLearning, listResources } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
-import type { CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
+import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 
@@ -33,6 +33,8 @@ const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
 const activeTab = ref<ResultKey>('lectureDoc')
+const exerciseAnswers = ref<Record<string, string>>({})
+const exerciseSubmitted = ref<Record<string, boolean>>({})
 
 const availableTabs = computed(() => [
   ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
@@ -45,6 +47,7 @@ const availableTabs = computed(() => [
 const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const activeContent = computed(() => result.value?.[activeTab.value] || '')
+const exerciseItems = computed(() => result.value?.exerciseItems || [])
 
 function toggleResource(key: CollaborativeResourceType) {
   selectedTypes.value = selectedTypes.value.includes(key)
@@ -60,6 +63,37 @@ function toggleFile(fileId: string) {
   selectedFileIds.value = selectedFileIds.value.includes(fileId)
     ? selectedFileIds.value.filter(item => item !== fileId)
     : [...selectedFileIds.value, fileId]
+}
+
+function normalizeAnswer(value: string) {
+  return value.trim().replace(/\s+/g, '').toLowerCase()
+}
+
+function setExerciseAnswer(questionId: string, answer: string) {
+  exerciseAnswers.value = { ...exerciseAnswers.value, [questionId]: answer }
+}
+
+function updateExerciseAnswer(questionId: string, event: Event) {
+  setExerciseAnswer(questionId, (event.target as HTMLInputElement | HTMLTextAreaElement).value)
+}
+
+function submitExercise(item: CollaborativeExerciseItem) {
+  const answer = exerciseAnswers.value[item.id]?.trim()
+  if (!answer) return
+  exerciseSubmitted.value = { ...exerciseSubmitted.value, [item.id]: true }
+}
+
+function retryExercise(questionId: string) {
+  exerciseSubmitted.value = { ...exerciseSubmitted.value, [questionId]: false }
+}
+
+function isExerciseCorrect(item: CollaborativeExerciseItem) {
+  const selected = normalizeAnswer(exerciseAnswers.value[item.id] || '')
+  const expected = normalizeAnswer(item.answer)
+  if (item.type === 'single' || item.type === 'judge') {
+    return selected === expected || expected.startsWith(selected)
+  }
+  return selected === expected
 }
 
 async function loadUploadedResources() {
@@ -92,6 +126,8 @@ async function submit() {
   loading.value = true
   error.value = ''
   result.value = null
+  exerciseAnswers.value = {}
+  exerciseSubmitted.value = {}
   menuOpen.value = false
   submittedTypes.value = [...selectedTypes.value]
   activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'lectureDoc'
@@ -139,6 +175,71 @@ onMounted(loadUploadedResources)
       </div>
       <div class="result-content">
         <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
+        <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
+          <article
+            v-for="(item, index) in exerciseItems"
+            :key="item.id"
+            :class="[
+              'practice-card',
+              exerciseSubmitted[item.id] ? (isExerciseCorrect(item) ? 'practice-correct' : 'practice-wrong') : ''
+            ]"
+          >
+            <div class="practice-head">
+              <span>{{ item.level }}</span>
+              <b>{{ index + 1 }}</b>
+            </div>
+            <h3>{{ item.question }}</h3>
+
+            <div v-if="item.type === 'single' || item.type === 'judge'" class="practice-options">
+              <button
+                v-for="option in item.options"
+                :key="option.label"
+                type="button"
+                :class="{ selected: exerciseAnswers[item.id] === option.label }"
+                :disabled="exerciseSubmitted[item.id]"
+                @click="setExerciseAnswer(item.id, option.label)"
+              >
+                <span>{{ option.label }}</span>
+                {{ option.text }}
+              </button>
+            </div>
+
+            <textarea
+              v-else-if="item.type === 'short'"
+              :value="exerciseAnswers[item.id] || ''"
+              :disabled="exerciseSubmitted[item.id]"
+              rows="3"
+              placeholder="请输入你的答案"
+              @input="updateExerciseAnswer(item.id, $event)"
+            ></textarea>
+
+            <input
+              v-else
+              :value="exerciseAnswers[item.id] || ''"
+              :disabled="exerciseSubmitted[item.id]"
+              placeholder="请输入答案"
+              @input="updateExerciseAnswer(item.id, $event)"
+            />
+
+            <div class="practice-actions">
+              <button
+                v-if="!exerciseSubmitted[item.id]"
+                type="button"
+                :disabled="!exerciseAnswers[item.id]?.trim()"
+                @click="submitExercise(item)"
+              >
+                提交答案
+              </button>
+              <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
+            </div>
+
+            <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
+              <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
+              <p>正确答案：{{ item.answer }}</p>
+              <p>{{ item.explanation }}</p>
+            </div>
+          </article>
+        </div>
         <MarkdownRenderer v-else :content="activeContent" />
       </div>
     </section>
@@ -252,6 +353,26 @@ onMounted(loadUploadedResources)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 26px; }
+.practice-list { display: grid; gap: 16px; }
+.practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
+.practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
+.practice-card.practice-wrong { border-color: #f1caca; background: #fffafa; }
+.practice-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.practice-head span { padding: 4px 8px; border-radius: 999px; color: #555; background: #f2f2f2; font-size: 11px; font-weight: 700; }
+.practice-head b { color: #aaa; font-size: 22px; }
+.practice-card h3 { margin: 0; color: #202123; font-size: 16px; line-height: 1.65; font-weight: 650; }
+.practice-options { display: grid; gap: 9px; }
+.practice-options button { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 11px 12px; border: 1px solid #e1e1e1; border-radius: 11px; color: #333; background: #fafafa; text-align: left; line-height: 1.55; }
+.practice-options button:hover:not(:disabled), .practice-options button.selected { border-color: #202123; background: #f3f3f3; }
+.practice-options button span { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 auto; border-radius: 50%; color: #fff; background: #202123; font-size: 11px; font-weight: 800; }
+.practice-card textarea, .practice-card input { width: 100%; padding: 12px; border: 1px solid #dedede; border-radius: 11px; color: #202123; background: #fff; line-height: 1.6; }
+.practice-card textarea:disabled, .practice-card input:disabled, .practice-options button:disabled { opacity: .78; cursor: default; }
+.practice-actions { display: flex; justify-content: flex-end; }
+.practice-actions button { padding: 9px 14px; border: 0; border-radius: 10px; color: #fff; background: #202123; font-size: 13px; font-weight: 700; }
+.practice-actions button:disabled { background: #d0d0d0; }
+.practice-feedback { display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: #f7f7f7; }
+.practice-feedback strong { color: #202123; }
+.practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
 .composer-section { position: sticky; bottom: 0; z-index: 5; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
 .composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
 .composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }

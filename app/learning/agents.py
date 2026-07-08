@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 import re
 from typing import Any, Callable
 
@@ -71,6 +72,157 @@ def _mindmap_label(value: str) -> str:
     return re.sub(r"[:：()\[\]{}]", " ", value)
 
 
+def _fallback_exercise_items(state: LearningState) -> list[dict[str, Any]]:
+    topic = state["chapter"]
+    weakness = state["weakness"]
+    return [
+        {
+            "id": "basic-1",
+            "level": "基础",
+            "type": "single",
+            "question": f"以下哪项最能帮助理解“{weakness}”？",
+            "options": [
+                {"label": "A", "text": "只背诵概念名称"},
+                {"label": "B", "text": "对比定义、适用条件和评价指标"},
+                {"label": "C", "text": "跳过例题直接做综合题"},
+                {"label": "D", "text": "只看最终答案"},
+            ],
+            "answer": "B",
+            "explanation": "建立对比维度能把概念、条件和应用场景串起来，是解决薄弱点的第一步。",
+        },
+        {
+            "id": "basic-2",
+            "level": "基础",
+            "type": "judge",
+            "question": "一种方法在所有学习或应用场景中都一定最优。",
+            "options": [
+                {"label": "正确", "text": "正确"},
+                {"label": "错误", "text": "错误"},
+            ],
+            "answer": "错误",
+            "explanation": "方法选择依赖输入条件、目标和约束，脱离场景讨论最优通常是不可靠的。",
+        },
+        {
+            "id": "advanced-1",
+            "level": "提高",
+            "type": "fill",
+            "question": f"复习“{topic}”时，建议按定义、适用场景、执行规则和____建立对比表。",
+            "options": [],
+            "answer": "评价指标",
+            "explanation": "评价指标能帮助判断不同方案的效果，也能减少只记结论导致的混淆。",
+        },
+        {
+            "id": "challenge-1",
+            "level": "挑战",
+            "type": "short",
+            "question": f"请用三句话说明你会如何针对“{weakness}”安排一次复习。",
+            "options": [],
+            "answer": "先梳理核心概念和适用条件，再用例题推演过程，最后通过练习题检查是否能迁移应用。",
+            "explanation": "开放题按要点自查：概念梳理、例题推演、练习检验三部分都覆盖即可。",
+        },
+    ]
+
+
+def _normalize_exercise_items(raw_items: Any, state: LearningState) -> list[dict[str, Any]]:
+    if not isinstance(raw_items, list):
+        return _fallback_exercise_items(state)
+    normalized: list[dict[str, Any]] = []
+    allowed_types = {"single", "judge", "fill", "short"}
+    for index, item in enumerate(raw_items, start=1):
+        if not isinstance(item, dict):
+            continue
+        question = str(item.get("question", "")).strip()
+        answer = str(item.get("answer", "")).strip()
+        explanation = str(item.get("explanation", "")).strip()
+        if not question or not answer or not explanation:
+            continue
+        item_type = str(item.get("type", "short")).strip()
+        if item_type not in allowed_types:
+            item_type = "short"
+        options = item.get("options", [])
+        if item_type in {"single", "judge"} and not isinstance(options, list):
+            options = []
+        clean_options = []
+        for option in options:
+            if isinstance(option, dict):
+                label = str(option.get("label", "")).strip()
+                text = str(option.get("text", "")).strip()
+            else:
+                label = str(option).strip()
+                text = label
+            if label and text:
+                clean_options.append({"label": label, "text": text})
+        if item_type == "single" and not clean_options:
+            item_type = "short"
+        if item_type == "judge" and not clean_options:
+            clean_options = [{"label": "正确", "text": "正确"}, {"label": "错误", "text": "错误"}]
+        normalized.append(
+            {
+                "id": str(item.get("id") or f"q{index}"),
+                "level": str(item.get("level") or "基础"),
+                "type": item_type,
+                "question": question,
+                "options": clean_options,
+                "answer": answer,
+                "explanation": explanation,
+            }
+        )
+    return normalized or _fallback_exercise_items(state)
+
+
+def _parse_json_array(value: str) -> Any:
+    cleaned = value.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
+    if start >= 0 and end > start:
+        cleaned = cleaned[start : end + 1]
+    return json.loads(cleaned)
+
+
+def _generate_exercise_items(state: LearningState) -> list[dict[str, Any]]:
+    prompt = (
+        f"{_context(state)}\n\n"
+        "任务：生成可在线作答的分层练习题。只输出 JSON 数组，不要 Markdown，不要解释。\n"
+        "数组每项字段：id、level、type、question、options、answer、explanation。\n"
+        "type 只能是 single、judge、fill、short。single 的 options 为 {label,text} 数组且 answer 为选项 label；"
+        "judge 的 answer 为“正确”或“错误”；fill 和 short 的 options 为空数组。\n"
+        "至少生成 4 题，覆盖基础、提高、挑战三层，并给出清晰解析。"
+    )
+    raw = call_llm(
+        prompt,
+        api_key=state.get("api_key", ""),
+        base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
+        model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+    )
+    if not raw:
+        return _fallback_exercise_items(state)
+    try:
+        return _normalize_exercise_items(_parse_json_array(raw), state)
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return _fallback_exercise_items(state)
+
+
+def _exercises_to_markdown(state: LearningState, items: list[dict[str, Any]]) -> str:
+    blocks = [f"# {state['chapter']} 分层练习"]
+    current_level = ""
+    type_labels = {"single": "选择题", "judge": "判断题", "fill": "填空题", "short": "简答题"}
+    for index, item in enumerate(items, start=1):
+        level = item.get("level", "基础")
+        if level != current_level:
+            blocks.append(f"\n## {level}层")
+            current_level = level
+        blocks.append(f"\n{index}. **{type_labels.get(item.get('type'), '练习题')}**：{item['question']}")
+        for option in item.get("options", []):
+            blocks.append(f"   - {option['label']}. {option['text']}")
+        blocks.append(f"   - 答案：{item['answer']}")
+        blocks.append(f"   - 解析：{item['explanation']}")
+    blocks.append(_source_note(state))
+    return "\n".join(block for block in blocks if block)
+
+
 def profile_agent(state: LearningState) -> dict[str, Any]:
     profile = {
         "major": state["major"],
@@ -136,25 +288,12 @@ def mindmap_agent(state: LearningState) -> dict[str, Any]:
 def exercise_agent(state: LearningState) -> dict[str, Any]:
     if "exercise" not in state["resourceTypes"]:
         return {}
-    value = _generate(
-        state,
-        "依据所选 PDF 或用户问题生成 Markdown 练习题，包含选择题、判断题、填空题、简答题和综合题；包含答案解析，并按基础、提高、挑战分层。",
-        lambda: (
-            f"# {state['chapter']} 分层练习\n\n"
-            "## 基础层\n"
-            f"1. **选择题**：以下哪项最能解释本章核心目标？\n   - 答案：结合执行规则与评价指标进行判断。\n   - 解析：只记名称不能解决实际问题。\n\n"
-            "2. **判断题**：一种方法在所有场景中都最优。\n   - 答案：错误。\n   - 解析：方法选择依赖目标与输入条件。\n\n"
-            "3. **填空题**：分析方案时，应重点比较执行规则、适用场景和____。\n   - 答案：评价指标。\n\n"
-            "## 提高层\n"
-            f"4. **简答题**：结合“{state['weakness']}”说明如何建立对比表。\n"
-            "   - 答案与解析：按规则、优点、局限、场景和指标五列进行比较。\n\n"
-            "## 挑战层\n"
-            "5. **综合题**：设计一组输入，分别推演三种方案并解释差异。\n"
-            "   - 答案与解析：应给出完整步骤、结果指标和方案选择理由。"
-            f"{_source_note(state)}"
-        ),
-    )
-    return {"exercises": value, "agentTrace": _trace(state, "练习题 Agent", "五类分层练习题生成完成")}
+    items = _generate_exercise_items(state)
+    return {
+        "exercises": _exercises_to_markdown(state, items),
+        "exerciseItems": items,
+        "agentTrace": _trace(state, "练习题 Agent", "可在线作答的分层练习题生成完成"),
+    }
 
 
 def reading_agent(state: LearningState) -> dict[str, Any]:

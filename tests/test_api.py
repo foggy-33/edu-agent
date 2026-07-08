@@ -87,6 +87,9 @@ def test_collaborative_learning_generate() -> None:
     assert data["lectureDoc"].startswith("#")
     assert data["mindmap"].startswith("mindmap")
     assert "选择题" in data["exercises"]
+    assert data["exerciseItems"][0]["question"]
+    assert data["exerciseItems"][0]["answer"]
+    assert data["exerciseItems"][0]["explanation"]
     assert data["reading"]
     assert "质量审核" in data["review"]
     assert len(data["agentTrace"]) == 8

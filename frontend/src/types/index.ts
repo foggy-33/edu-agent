@@ -132,10 +132,26 @@ export interface AgentTraceItem {
   timestamp: string
 }
 
+export interface CollaborativeExerciseOption {
+  label: string
+  text: string
+}
+
+export interface CollaborativeExerciseItem {
+  id: string
+  level: string
+  type: 'single' | 'judge' | 'fill' | 'short'
+  question: string
+  options: CollaborativeExerciseOption[]
+  answer: string
+  explanation: string
+}
+
 export interface CollaborativeLearningResponse {
   lectureDoc: string
   mindmap: string
   exercises: string
+  exerciseItems: CollaborativeExerciseItem[]
   reading: string
   review: string
   sources: Pick<UploadedResource, 'id' | 'name' | 'page_count'>[]

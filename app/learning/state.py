@@ -21,6 +21,7 @@ class LearningState(TypedDict, total=False):
     lectureDoc: str
     mindmap: str
     exercises: str
+    exerciseItems: list[dict[str, Any]]
     reading: str
     review: str
     agentTrace: list[dict[str, Any]]
