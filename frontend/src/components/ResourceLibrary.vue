@@ -8,14 +8,14 @@ const emit = defineEmits<{
   navigate: [page: 'collaborative']
 }>()
 
-const DEFAULT_FOLDER = '未分类'
-const ALL_FOLDERS = '全部文件'
+const ALL_FOLDERS = '全部资料'
+const LEGACY_FOLDER = '历史资料'
 
 const userProfile = ref(loadUserProfile())
 const fileInput = ref<HTMLInputElement | null>(null)
 const resources = ref<UploadedResource[]>([])
 const customFolders = ref<string[]>([])
-const activeFolder = ref(DEFAULT_FOLDER)
+const activeFolder = ref(ALL_FOLDERS)
 const searchQuery = ref('')
 const newFolderName = ref('')
 const creatingFolder = ref(false)
@@ -24,9 +24,10 @@ const uploading = ref(false)
 const error = ref('')
 
 const folders = computed(() => {
-  const names = new Set<string>([DEFAULT_FOLDER, ...customFolders.value])
+  const names = new Set<string>()
+  customFolders.value.forEach(name => names.add(name))
   resources.value.forEach(item => names.add(folderName(item)))
-  return Array.from(names)
+  return Array.from(names).filter(Boolean)
 })
 
 const folderStats = computed(() =>
@@ -34,6 +35,16 @@ const folderStats = computed(() =>
     name,
     count: resources.value.filter(item => folderName(item) === name).length,
   }))
+)
+
+const uploadTargetFolder = computed(() =>
+  activeFolder.value === ALL_FOLDERS ? '' : activeFolder.value
+)
+
+const activeFolderCount = computed(() =>
+  activeFolder.value === ALL_FOLDERS
+    ? resources.value.length
+    : resources.value.filter(item => folderName(item) === activeFolder.value).length
 )
 
 const visibleResources = computed(() => {
@@ -45,18 +56,8 @@ const visibleResources = computed(() => {
   })
 })
 
-const activeFolderCount = computed(() =>
-  activeFolder.value === ALL_FOLDERS
-    ? resources.value.length
-    : resources.value.filter(item => folderName(item) === activeFolder.value).length
-)
-
-const uploadTargetFolder = computed(() =>
-  activeFolder.value === ALL_FOLDERS ? DEFAULT_FOLDER : activeFolder.value
-)
-
 function folderName(item: UploadedResource) {
-  return item.course_folder || DEFAULT_FOLDER
+  return item.course_folder || LEGACY_FOLDER
 }
 
 function folderStorageKey() {
@@ -68,7 +69,10 @@ function loadCustomFolders() {
     const raw = localStorage.getItem(folderStorageKey())
     const parsed = raw ? JSON.parse(raw) : []
     customFolders.value = Array.isArray(parsed)
-      ? parsed.filter(item => typeof item === 'string' && item.trim())
+      ? parsed
+          .filter(item => typeof item === 'string')
+          .map(item => item.trim())
+          .filter(item => item && item !== '\u672a\u5206\u7c7b')
       : []
   } catch {
     customFolders.value = []
@@ -76,8 +80,8 @@ function loadCustomFolders() {
 }
 
 function saveCustomFolders(next: string[]) {
-  customFolders.value = next
-  localStorage.setItem(folderStorageKey(), JSON.stringify(next))
+  customFolders.value = Array.from(new Set(next.map(item => item.trim()).filter(Boolean)))
+  localStorage.setItem(folderStorageKey(), JSON.stringify(customFolders.value))
 }
 
 function formatSize(bytes: number) {
@@ -89,13 +93,13 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString('zh-CN')
 }
 
-async function loadResources() {
+async function loadResourceList() {
   loading.value = true
   error.value = ''
   try {
     resources.value = (await listResources(userProfile.value.userId)).resources
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '资源加载失败'
+    error.value = reason instanceof Error ? reason.message : '资料加载失败'
   } finally {
     loading.value = false
   }
@@ -107,38 +111,59 @@ function createFolder() {
     creatingFolder.value = true
     return
   }
+  if (name === ALL_FOLDERS) {
+    error.value = '课程文件夹不能命名为“全部资料”'
+    return
+  }
   if (!folders.value.includes(name)) {
     saveCustomFolders([...customFolders.value, name])
   }
   activeFolder.value = name
   newFolderName.value = ''
   creatingFolder.value = false
+  error.value = ''
 }
 
 function chooseFolder(name: string) {
   activeFolder.value = name
+  error.value = ''
 }
 
 function choosePdf() {
+  if (!uploadTargetFolder.value) {
+    error.value = '请先选择或新建一个课程文件夹，再上传资料'
+    creatingFolder.value = true
+    return
+  }
   fileInput.value?.click()
 }
 
 async function handleUpload(event: Event) {
   const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
+  const files = Array.from(input.files || [])
   input.value = ''
-  if (!file) return
-  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-    error.value = '请选择 PDF 文件'
+  if (!files.length) return
+  if (!uploadTargetFolder.value) {
+    error.value = '请先选择课程文件夹'
+    return
+  }
+
+  const invalid = files.find(file => file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf'))
+  if (invalid) {
+    error.value = `只能上传 PDF 文件：${invalid.name}`
     return
   }
 
   uploading.value = true
   error.value = ''
+  const uploaded: UploadedResource[] = []
   try {
-    const result = await uploadResource(userProfile.value.userId, file, uploadTargetFolder.value)
-    resources.value = [result.resource, ...resources.value]
-    activeFolder.value = result.resource.course_folder || uploadTargetFolder.value
+    for (const file of files) {
+      const result = await uploadResource(userProfile.value.userId, file, uploadTargetFolder.value)
+      uploaded.push(result.resource)
+    }
+    resources.value = [...uploaded, ...resources.value]
+    activeFolder.value = uploadTargetFolder.value
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : 'PDF 上传失败'
   } finally {
@@ -158,7 +183,7 @@ async function removeResource(item: UploadedResource) {
 
 onMounted(() => {
   loadCustomFolders()
-  loadResources()
+  loadResourceList()
 })
 </script>
 
@@ -166,9 +191,9 @@ onMounted(() => {
   <div class="resource-library">
     <header class="library-header">
       <div>
-        <span class="section-kicker">FILE LIBRARY</span>
-        <h1>文件库</h1>
-        <p>按课程建立文件夹，上传 PDF 后可用于问答、思维导图和练习题生成。</p>
+        <span class="section-kicker">MATERIAL LIBRARY</span>
+        <h1>资料库</h1>
+        <p>按课程建立资料文件夹，上传 PDF 后可用于问答、思维导图和练习题生成。</p>
       </div>
       <button class="generate-btn" @click="emit('navigate', 'collaborative')">
         基于资料生成
@@ -176,7 +201,7 @@ onMounted(() => {
     </header>
 
     <div class="library-shell">
-      <aside class="folder-panel" aria-label="课程文件夹">
+      <aside class="folder-panel" aria-label="课程资料文件夹">
         <div class="folder-panel-head">
           <strong>课程文件夹</strong>
           <button title="新建课程文件夹" @click="creatingFolder = !creatingFolder">+</button>
@@ -192,7 +217,7 @@ onMounted(() => {
           :class="{ active: activeFolder === ALL_FOLDERS }"
           @click="chooseFolder(ALL_FOLDERS)"
         >
-          <span>全部文件</span>
+          <span>全部资料</span>
           <small>{{ resources.length }}</small>
         </button>
 
@@ -212,22 +237,23 @@ onMounted(() => {
         <div class="library-toolbar">
           <div>
             <h2>{{ activeFolder }}</h2>
-            <p>{{ activeFolderCount }} 个文件，上传目标：{{ uploadTargetFolder }}</p>
+            <p v-if="uploadTargetFolder">{{ activeFolderCount }} 个资料，上传目标：{{ uploadTargetFolder }}</p>
+            <p v-else>{{ activeFolderCount }} 个资料，请选择课程文件夹后上传</p>
           </div>
           <div class="toolbar-actions">
             <label class="search-bar">
               <span>⌕</span>
-              <input v-model="searchQuery" type="text" placeholder="搜索文件或课程" />
+              <input v-model="searchQuery" type="text" placeholder="搜索资料或课程" />
             </label>
-            <button class="upload-btn" :disabled="uploading" @click="choosePdf">
+            <button class="upload-btn" :disabled="uploading || !uploadTargetFolder" @click="choosePdf">
               {{ uploading ? '解析中...' : '上传 PDF' }}
             </button>
-            <input ref="fileInput" type="file" accept=".pdf,application/pdf" hidden @change="handleUpload" />
+            <input ref="fileInput" type="file" accept=".pdf,application/pdf" multiple hidden @change="handleUpload" />
           </div>
         </div>
 
         <div v-if="error" class="library-error">{{ error }}</div>
-        <div v-if="loading" class="library-state">正在加载资源...</div>
+        <div v-if="loading" class="library-state">正在加载资料...</div>
 
         <div v-else-if="visibleResources.length" class="resources-grid">
           <article v-for="resource in visibleResources" :key="resource.id" class="resource-card">
@@ -249,9 +275,10 @@ onMounted(() => {
 
         <div v-else class="empty-state">
           <div class="empty-icon">PDF</div>
-          <h2>{{ searchQuery ? '没有匹配的文件' : `向“${uploadTargetFolder}”上传第一份 PDF` }}</h2>
-          <p>{{ searchQuery ? '换个关键词再试试。' : '文件会保存在当前课程文件夹中，之后可直接作为 AI 生成资料。' }}</p>
-          <button v-if="!searchQuery" :disabled="uploading" @click="choosePdf">选择 PDF 文件</button>
+          <h2>{{ searchQuery ? '没有匹配的资料' : (uploadTargetFolder ? `向“${uploadTargetFolder}”上传资料` : '先新建课程文件夹') }}</h2>
+          <p>{{ searchQuery ? '换个关键词再试试。' : (uploadTargetFolder ? '可一次选择多个 PDF，资料会保存到当前课程文件夹。' : '上传资料前必须选择一个课程文件夹。') }}</p>
+          <button v-if="!searchQuery && uploadTargetFolder" :disabled="uploading" @click="choosePdf">选择 PDF 文件</button>
+          <button v-else-if="!searchQuery" @click="creatingFolder = true">新建课程文件夹</button>
         </div>
       </section>
     </div>
@@ -314,11 +341,7 @@ onMounted(() => {
   background: transparent;
   text-align: left;
 }
-.folder-item span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.folder-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folder-item small { color: #8b93a1; }
 .folder-item.active { background: #f0f1f4; font-weight: 750; }
 .file-panel { min-width: 0; padding: 18px; }
@@ -408,7 +431,7 @@ onMounted(() => {
 .empty-state p { margin: 0 0 18px; color: #89919f; font-size: 12px; }
 .empty-state button { padding: 10px 14px; }
 button { cursor: pointer; }
-button:disabled { cursor: wait; opacity: .6; }
+button:disabled { cursor: default; opacity: .55; }
 @media (max-width: 900px) {
   .library-header, .library-toolbar { flex-direction: column; align-items: stretch; }
   .library-shell { grid-template-columns: 1fr; }

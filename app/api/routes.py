@@ -1,4 +1,4 @@
-import json
+﻿import json
 import re
 from collections import Counter
 from typing import Any, Iterator
@@ -507,7 +507,7 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
 @router.post("/resources/upload", status_code=201)
 def upload_resource(
     user_id: str = Form(...),
-    course_folder: str = Form("未分类"),
+    course_folder: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict:
     if file.content_type not in {"application/pdf", "application/x-pdf"}:

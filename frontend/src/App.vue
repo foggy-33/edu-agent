@@ -53,7 +53,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { key: 'home', label: '新聊天', icon: 'newChat' },
-  { key: 'resources', label: '文件库', icon: 'files' },
+  { key: 'resources', label: '资料库', icon: 'files' },
   { key: 'courses', label: '课程', icon: 'project' },
   { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },

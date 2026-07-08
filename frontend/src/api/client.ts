@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   LearningRequest,
   EvaluateRequest,
   GenerateResponse,
@@ -25,7 +25,7 @@ async function httpRequest<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => null)
-    throw new Error(data?.detail || `请求失败: ${response.status} ${response.statusText}`)
+    throw new Error(data?.detail || `璇锋眰澶辫触: ${response.status} ${response.statusText}`)
   }
 
   if (response.status === 204) return undefined as T
@@ -83,7 +83,7 @@ export async function getDynamicProfile(userId: string, course?: string): Promis
 export async function uploadResource(
   userId: string,
   file: File,
-  courseFolder = '未分类'
+  courseFolder: string
 ): Promise<{ resource: UploadedResource }> {
   const body = new FormData()
   body.append('user_id', userId)
