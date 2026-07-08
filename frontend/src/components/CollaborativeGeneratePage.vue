@@ -68,6 +68,10 @@ const streamContent = ref<Record<ResultKey, string>>({
 })
 const thinkingSteps = ref<string[]>([])
 const processSteps = ref<AgentProcessStep[]>([])
+const processQueue = ref<AgentProcessStep[]>([])
+const processCollapsed = ref(false)
+const processCompleted = ref(false)
+let processTimer: ReturnType<typeof setTimeout> | null = null
 
 const emptyStreamContent = (): Record<ResultKey, string> => ({
   lectureDoc: '',
@@ -158,6 +162,13 @@ function resetStreamState() {
   streamContent.value = emptyStreamContent()
   thinkingSteps.value = []
   processSteps.value = []
+  processQueue.value = []
+  processCollapsed.value = false
+  processCompleted.value = false
+  if (processTimer) {
+    clearTimeout(processTimer)
+    processTimer = null
+  }
 }
 
 function resetConversation() {
@@ -201,6 +212,7 @@ function hydrateFromHistory(id: string | null | undefined) {
       state: 'done',
     }
   })
+  processCollapsed.value = true
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   error.value = ''
@@ -221,29 +233,57 @@ function saveCompletedConversation(question: string, payload: CollaborativeLearn
   emit('conversationSaved', id)
 }
 
-function appendProcessStep(data: any) {
-  if (!data.message) return
-  const agent = data.agent || '协作调度'
-  const state: ProcessState = data.state === 'done' ? 'done' : 'running'
-  const detail = data.detail || '正在推进多 Agent 协作流程'
+function buildProcessStep(data: any): AgentProcessStep | null {
+  if (!data.message) return null
+  return {
+    id: `${Date.now()}-${processSteps.value.length}-${processQueue.value.length}`,
+    agent: data.agent || '协作调度',
+    message: data.message,
+    detail: data.detail || '正在推进多 Agent 协作流程',
+    state: data.state === 'done' ? 'done' : 'running',
+  }
+}
+
+function showProcessStep(step: AgentProcessStep) {
   const next = processSteps.value.map(step => (
     step.state === 'running' ? { ...step, state: 'done' as ProcessState } : step
   ))
   const last = next[next.length - 1]
-  if (last && last.agent === agent && last.message === data.message) {
-    processSteps.value = [...next.slice(0, -1), { ...last, detail, state }]
+  if (last && last.agent === step.agent && last.message === step.message) {
+    processSteps.value = [...next.slice(0, -1), step]
     return
   }
-  processSteps.value = [
-    ...next,
-    {
-      id: `${Date.now()}-${processSteps.value.length}`,
-      agent,
-      message: data.message,
-      detail,
-      state,
-    },
-  ]
+  processSteps.value = [...next, step]
+}
+
+function collapseCompletedProcess() {
+  processSteps.value = processSteps.value.map(step => ({ ...step, state: 'done' }))
+  window.setTimeout(() => {
+    if (processCompleted.value) processCollapsed.value = true
+  }, 1200)
+}
+
+function pumpProcessQueue() {
+  if (processTimer) return
+  if (!processQueue.value.length) {
+    if (processCompleted.value && processSteps.value.length) collapseCompletedProcess()
+    return
+  }
+  processTimer = window.setTimeout(() => {
+    const [step, ...rest] = processQueue.value
+    processQueue.value = rest
+    if (step) showProcessStep(step)
+    processTimer = null
+    pumpProcessQueue()
+  }, processSteps.value.length ? 520 : 140)
+}
+
+function appendProcessStep(data: any) {
+  const step = buildProcessStep(data)
+  if (!step) return
+  processCollapsed.value = false
+  processQueue.value = [...processQueue.value, step]
+  pumpProcessQueue()
 }
 
 function applyStreamEvent(event: string, data: any) {
@@ -261,7 +301,8 @@ function applyStreamEvent(event: string, data: any) {
   }
   if (event === 'done') {
     result.value = data.result
-    processSteps.value = processSteps.value.map(step => ({ ...step, state: 'done' }))
+    processCompleted.value = true
+    pumpProcessQueue()
     return
   }
   if (event === 'error') {
@@ -379,12 +420,14 @@ watch(prompt, resizePromptInput)
         </button>
       </div>
       <div class="result-content">
-        <div v-if="processSteps.length" class="thinking-trace">
-          <div class="trace-head">
+        <div v-if="processSteps.length" :class="['thinking-trace', processCollapsed ? 'thinking-trace-collapsed' : '']">
+          <div class="trace-head" role="button" tabindex="0" @click="processCollapsed = !processCollapsed">
             <span>处理过程</span>
-            <b>{{ processSteps.filter(step => step.state === 'done').length }}/{{ processSteps.length }}</b>
+            <b>
+              {{ processCollapsed ? '已完成，点击展开' : `${processSteps.filter(step => step.state === 'done').length}/${processSteps.length}` }}
+            </b>
           </div>
-          <ol class="agent-flow">
+          <ol v-if="!processCollapsed" class="agent-flow">
             <li
               v-for="step in processSteps"
               :key="step.id"
@@ -504,7 +547,9 @@ watch(prompt, resizePromptInput)
               aria-label="选择生成内容"
               @click="menuOpen = !menuOpen"
             >
-              +
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
             </button>
 
             <div v-if="menuOpen" class="tool-menu">
@@ -577,12 +622,14 @@ watch(prompt, resizePromptInput)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 26px 0; }
-.thinking-trace { margin-bottom: 18px; padding: 12px 13px; border: 1px solid #ececec; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.6; }
-.trace-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.thinking-trace { margin-bottom: 18px; padding: 10px 12px; border: 1px solid #ececec; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.6; transition: padding .2s ease, box-shadow .2s ease; }
+.thinking-trace-collapsed { padding: 9px 12px; box-shadow: none; }
+.trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; cursor: pointer; user-select: none; }
+.thinking-trace-collapsed .trace-head { margin-bottom: 0; }
 .trace-head span { color: #8a8a8a; font-size: 11px; font-weight: 750; }
 .trace-head b { color: #9a9a9a; font-size: 10px; font-weight: 700; }
 .agent-flow { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
-.agent-step { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 8px 9px; border-radius: 12px; transition: background .2s ease, transform .2s ease; }
+.agent-step { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 8px 9px; border-radius: 12px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
 .agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
 .agent-step:last-child::before { display: none; }
 .agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 2px; border: 1px solid #d5d5d5; border-radius: 50%; background: #fff; }
@@ -628,7 +675,8 @@ watch(prompt, resizePromptInput)
 .selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
 .composer-actions { display: flex; align-items: center; gap: 8px; }
 .tool-picker { position: relative; }
-.add-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; font-size: 24px; font-weight: 300; line-height: 1; }
+.add-button { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; line-height: 1; }
+.add-button svg { width: 19px; height: 19px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .add-button:hover { background: #e6e6e6; }
 .tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); }
 .generate-page.idle .tool-menu { top: 46px; bottom: auto; }
@@ -655,6 +703,10 @@ button:disabled { cursor: default; opacity: .65; }
   0% { box-shadow: 0 0 0 0 rgba(32, 33, 35, .28); }
   70% { box-shadow: 0 0 0 7px rgba(32, 33, 35, 0); }
   100% { box-shadow: 0 0 0 0 rgba(32, 33, 35, 0); }
+}
+@keyframes traceStepIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 620px) {
   .generate-page { min-height: calc(100vh - 64px); }

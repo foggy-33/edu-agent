@@ -37,6 +37,8 @@ const navIcons = {
   project: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'],
   evaluate: ['M9 5h6', 'M9 3h6a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V5a2 2 0 0 1 2-2Z', 'M8 14l2.2 2.2L16 10.5'],
   portrait: ['M12 3a9 9 0 1 0 9 9', 'M12 3v18', 'M3 12h18', 'M5.6 5.6l12.8 12.8', 'M5.6 18.4 18.4 5.6', 'M8.5 13.5l3 2 4.5-6'],
+  user: ['M20 21a8 8 0 0 0-16 0', 'M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z'],
+  model: ['M4 6h16', 'M7 12h10', 'M10 18h4', 'M8 6a2 2 0 1 0 0 .01', 'M16 12a2 2 0 1 0 0 .01', 'M12 18a2 2 0 1 0 0 .01'],
   apps: ['M4 4h6v6H4Z', 'M14 4h6v6h-6Z', 'M4 14h6v6H4Z', 'M14 14h6v6h-6Z'],
   more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],
 } as const
@@ -50,11 +52,11 @@ interface NavItem {
 const navItems: NavItem[] = [
   { key: 'home', label: '新聊天', icon: 'newChat' },
   { key: 'resources', label: '文件库', icon: 'files' },
-  { key: 'courses', label: '项目', icon: 'project' },
+  { key: 'courses', label: '课程', icon: 'project' },
   { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
-  { key: 'account', label: '应用', icon: 'apps' },
-  { key: 'settings', label: '更多', icon: 'more' },
+  { key: 'account', label: '个人中心', icon: 'user' },
+  { key: 'settings', label: '模型设置', icon: 'model' },
 ]
 
 function navigate(page: Page, course?: Course) {
@@ -189,7 +191,7 @@ onUnmounted(() => {
       </section>
 
       <div class="sidebar-footer">
-        <button class="profile-card" @click="navigate('account')" title="进入个人中心">
+        <button type="button" class="profile-card" @click="navigate('account')" title="进入个人中心">
           <div class="profile-avatar">
             <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
             <span v-else>{{ userInitial }}</span>
@@ -202,11 +204,10 @@ onUnmounted(() => {
         <button
           class="sidebar-logout-button"
           :disabled="loggingOut"
-          :title="sidebarCollapsed ? '退出登录' : undefined"
+          :title="loggingOut ? '正在退出...' : '退出登录'"
           @click="handleLogout"
         >
           <span>⇥</span>
-          <span v-if="!sidebarCollapsed" class="font-medium">{{ loggingOut ? '正在退出...' : '退出登录' }}</span>
         </button>
       </div>
     </aside>

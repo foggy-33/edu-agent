@@ -440,6 +440,183 @@ def delete_resource(file_id: str, user_id: str) -> None:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+COURSE_CATALOG: list[dict[str, Any]] = [
+    {
+        "id": "database_system",
+        "name": "数据库系统",
+        "icon": "DB",
+        "description": "覆盖关系模型、SQL、函数依赖、范式、事务、并发控制、索引与存储管理。",
+        "progress": 75,
+        "totalHours": 32,
+        "completedHours": 24,
+        "status": "in-progress",
+        "lastAccess": "2小时前",
+        "difficulty": "中等",
+        "chapters": [
+            {"id": "db-01", "name": "数据库系统导论", "hours": 3, "status": "completed", "topics": ["数据模型", "数据库系统结构"]},
+            {"id": "db-02", "name": "关系模型与关系代数", "hours": 5, "status": "completed", "topics": ["关系", "主码", "关系运算"]},
+            {"id": "db-03", "name": "SQL 基础与查询", "hours": 6, "status": "current", "topics": ["SELECT", "JOIN", "GROUP BY"]},
+            {"id": "db-04", "name": "函数依赖与范式", "hours": 6, "status": "pending", "topics": ["候选码", "2NF", "3NF", "BCNF"]},
+            {"id": "db-05", "name": "事务与并发控制", "hours": 6, "status": "pending", "topics": ["ACID", "调度", "锁"]},
+            {"id": "db-06", "name": "索引与存储管理", "hours": 6, "status": "pending", "topics": ["B+树", "索引选择", "磁盘组织"]},
+        ],
+        "goals": ["理解关系数据库的核心模型与约束", "能够编写常见 SQL 查询并解释执行意图", "掌握函数依赖、候选码和范式判断方法", "理解事务 ACID、并发异常和锁机制"],
+        "suggestions": ["先复习 SQL JOIN 与 GROUP BY", "用小关系模式手算候选码闭包", "完成范式判断与事务调度练习"],
+        "questions": [
+            {
+                "id": "db-q1",
+                "type": "single",
+                "chapter": "关系模型",
+                "question": "关系模型中用于唯一标识元组的属性组称为什么？",
+                "options": [{"label": "A", "text": "外码"}, {"label": "B", "text": "候选码"}, {"label": "C", "text": "视图"}, {"label": "D", "text": "索引"}],
+                "answer": "B",
+                "analysis": "候选码能够唯一标识关系中的每一个元组，且不含多余属性。",
+            },
+            {
+                "id": "db-q2",
+                "type": "judge",
+                "chapter": "事务",
+                "question": "事务的隔离性要求并发执行的结果与某种串行执行结果等价。",
+                "options": [],
+                "answer": True,
+                "analysis": "隔离性强调并发事务之间互不干扰，常用可串行化来刻画正确性。",
+            },
+        ],
+    },
+    {
+        "id": "data_structure",
+        "name": "数据结构",
+        "icon": "DS",
+        "description": "覆盖线性表、栈、队列、树、图、查找与排序等基础结构和算法操作。",
+        "progress": 60,
+        "totalHours": 40,
+        "completedHours": 24,
+        "status": "in-progress",
+        "lastAccess": "1天前",
+        "difficulty": "困难",
+        "chapters": [
+            {"id": "ds-01", "name": "线性表", "hours": 5, "status": "completed", "topics": ["顺序表", "链表"]},
+            {"id": "ds-02", "name": "栈与队列", "hours": 5, "status": "completed", "topics": ["LIFO", "FIFO", "循环队列"]},
+            {"id": "ds-03", "name": "树与二叉树", "hours": 8, "status": "current", "topics": ["遍历", "完全二叉树", "哈夫曼树"]},
+            {"id": "ds-04", "name": "图", "hours": 8, "status": "pending", "topics": ["DFS", "BFS", "最短路径"]},
+            {"id": "ds-05", "name": "查找与排序", "hours": 10, "status": "pending", "topics": ["哈希", "二分查找", "快速排序"]},
+        ],
+        "goals": ["掌握常见数据结构的存储方式", "能够分析基本操作复杂度", "能根据问题选择合适结构"],
+        "suggestions": ["重点练习树的遍历与性质", "把栈队列操作画成状态变化图", "排序题注意稳定性和复杂度"],
+        "questions": [
+            {
+                "id": "ds-q1",
+                "type": "single",
+                "chapter": "栈与队列",
+                "question": "栈的主要操作特点是？",
+                "options": [{"label": "A", "text": "先进先出"}, {"label": "B", "text": "后进先出"}, {"label": "C", "text": "随机访问"}, {"label": "D", "text": "按关键字访问"}],
+                "answer": "B",
+                "analysis": "栈是后进先出结构，最后压入的元素最先弹出。",
+            }
+        ],
+    },
+    {
+        "id": "algorithm_design",
+        "name": "算法设计",
+        "icon": "ALG",
+        "description": "围绕复杂度分析、分治、贪心、动态规划、回溯与图算法建立解题方法。",
+        "progress": 45,
+        "totalHours": 48,
+        "completedHours": 21,
+        "status": "in-progress",
+        "lastAccess": "3天前",
+        "difficulty": "困难",
+        "chapters": [
+            {"id": "alg-01", "name": "复杂度分析", "hours": 6, "status": "completed", "topics": ["Big-O", "递推式"]},
+            {"id": "alg-02", "name": "分治法", "hours": 8, "status": "completed", "topics": ["归并排序", "二分"]},
+            {"id": "alg-03", "name": "动态规划", "hours": 10, "status": "current", "topics": ["最优子结构", "状态转移"]},
+            {"id": "alg-04", "name": "贪心算法", "hours": 8, "status": "pending", "topics": ["选择性质", "证明"]},
+            {"id": "alg-05", "name": "回溯与搜索", "hours": 8, "status": "pending", "topics": ["剪枝", "状态空间树"]},
+        ],
+        "goals": ["能够识别算法设计范式", "能够写出状态定义和转移方程", "能够分析时间与空间复杂度"],
+        "suggestions": ["动态规划先写状态含义", "贪心题要补充正确性证明", "复杂度题注意最坏情况"],
+        "questions": [
+            {
+                "id": "alg-q1",
+                "type": "single",
+                "chapter": "动态规划",
+                "question": "动态规划通常适用于具备哪些性质的问题？",
+                "options": [{"label": "A", "text": "最优子结构和重叠子问题"}, {"label": "B", "text": "完全随机"}, {"label": "C", "text": "只需一次比较"}, {"label": "D", "text": "无状态依赖"}],
+                "answer": "A",
+                "analysis": "动态规划通过保存重叠子问题结果，并利用最优子结构构造整体最优解。",
+            }
+        ],
+    },
+    {
+        "id": "operating_system",
+        "name": "操作系统",
+        "icon": "OS",
+        "description": "覆盖进程线程、调度、同步互斥、内存管理、文件系统与 I/O 管理。",
+        "progress": 30,
+        "totalHours": 36,
+        "completedHours": 11,
+        "status": "in-progress",
+        "lastAccess": "1周前",
+        "difficulty": "中等",
+        "chapters": [
+            {"id": "os-01", "name": "进程与线程", "hours": 7, "status": "completed", "topics": ["PCB", "上下文切换"]},
+            {"id": "os-02", "name": "处理机调度", "hours": 6, "status": "current", "topics": ["FCFS", "SJF", "RR"]},
+            {"id": "os-03", "name": "同步与死锁", "hours": 8, "status": "pending", "topics": ["信号量", "死锁条件"]},
+            {"id": "os-04", "name": "内存管理", "hours": 8, "status": "pending", "topics": ["分页", "页面置换"]},
+        ],
+        "goals": ["理解进程调度与同步机制", "能够判断死锁必要条件", "掌握分页和页面置换基本方法"],
+        "suggestions": ["调度题按时间轴推演", "死锁题先列资源分配关系", "页面置换题逐步记录页框"],
+        "questions": [
+            {
+                "id": "os-q1",
+                "type": "single",
+                "chapter": "进程调度",
+                "question": "LRU 通常属于哪类算法？",
+                "options": [{"label": "A", "text": "进程调度"}, {"label": "B", "text": "页面置换"}, {"label": "C", "text": "磁盘调度"}, {"label": "D", "text": "文件分配"}],
+                "answer": "B",
+                "analysis": "LRU 是最近最久未使用页面置换算法，用于虚拟内存管理。",
+            }
+        ],
+    },
+    {
+        "id": "computer_network",
+        "name": "计算机网络",
+        "icon": "NET",
+        "description": "覆盖网络体系结构、TCP/IP、路由、可靠传输、拥塞控制与应用层协议。",
+        "progress": 100,
+        "totalHours": 30,
+        "completedHours": 30,
+        "status": "completed",
+        "lastAccess": "2周前",
+        "difficulty": "中等",
+        "chapters": [
+            {"id": "net-01", "name": "网络体系结构", "hours": 5, "status": "completed", "topics": ["OSI", "TCP/IP"]},
+            {"id": "net-02", "name": "传输层", "hours": 8, "status": "completed", "topics": ["TCP", "UDP", "拥塞控制"]},
+            {"id": "net-03", "name": "网络层", "hours": 8, "status": "completed", "topics": ["IP", "路由"]},
+            {"id": "net-04", "name": "应用层", "hours": 5, "status": "completed", "topics": ["HTTP", "DNS"]},
+        ],
+        "goals": ["理解分层体系结构", "掌握 TCP 可靠传输机制", "能解释常见应用层协议工作流程"],
+        "suggestions": ["复习 TCP 三次握手", "对照 OSI 和 TCP/IP 分层", "用报文流梳理 HTTP 与 DNS"],
+        "questions": [
+            {
+                "id": "net-q1",
+                "type": "single",
+                "chapter": "应用层",
+                "question": "HTTP 协议主要工作在哪一层？",
+                "options": [{"label": "A", "text": "应用层"}, {"label": "B", "text": "网络层"}, {"label": "C", "text": "数据链路层"}, {"label": "D", "text": "物理层"}],
+                "answer": "A",
+                "analysis": "HTTP 是典型应用层协议，运行在 TCP 等传输服务之上。",
+            }
+        ],
+    },
+]
+
+
+@router.get("/courses")
+def course_catalog() -> dict:
+    return {"courses": COURSE_CATALOG}
+
+
 @router.post("/evaluate")
 def evaluate(request: EvaluateRequest) -> dict:
     result = EvaluatorAgent().run(request.model_dump())
@@ -447,19 +624,6 @@ def evaluate(request: EvaluateRequest) -> dict:
         user_id=request.user_id, course=request.course, result=result
     )
     return result
-
-
-@router.get("/courses")
-def courses() -> dict:
-    return {
-        "courses": [
-            {
-                "id": "database_system",
-                "name": "数据库系统",
-                "description": "关系模型、SQL、函数依赖、范式、事务、并发控制、索引与存储管理。",
-            }
-        ]
-    }
 
 
 @router.get("/workflow")

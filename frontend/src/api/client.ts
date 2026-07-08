@@ -4,8 +4,10 @@ import type {
   GenerateResponse,
   EvaluateResponse,
   Course,
-  StudentProfile
-  , UploadedResource
+  StudentProfile,
+  CollaborativeLearningRequest,
+  CollaborativeLearningResponse,
+  UploadedResource
 } from '../types'
 import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig, SubjectProfileSummary } from '../types/profile'
 
@@ -53,6 +55,13 @@ export async function evaluate(payload: EvaluateRequest): Promise<EvaluateRespon
 
 export async function getCourses(): Promise<{ courses: Course[] }> {
   return httpRequest<{ courses: Course[] }>(`${API_BASE}/courses`)
+}
+
+export async function generateLearningResources(payload: CollaborativeLearningRequest): Promise<CollaborativeLearningResponse> {
+  return httpRequest<CollaborativeLearningResponse>(`${API_BASE}/learning/generate`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
 }
 
 export async function getWorkflow(): Promise<Record<string, unknown>> {

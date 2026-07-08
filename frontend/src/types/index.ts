@@ -85,26 +85,44 @@ export interface EvaluateResponse {
   next_steps: string[]
 }
 
+export interface QuestionOption {
+  label: string
+  text: string
+}
+
 export interface Question {
-  id: number
-  type: 'single' | 'multiple' | 'judge'
+  id: number | string
+  type: 'single' | 'multiple' | 'judge' | 'fill' | 'short'
   chapter: string
   question: string
-  options?: { label: string; text: string }[]
+  options?: QuestionOption[]
   answer: string | string[] | boolean
   analysis: string
+  level?: string
+}
+
+export interface CourseChapter {
+  id: number | string
+  name: string
+  hours: number
+  status: 'completed' | 'current' | 'pending' | string
+  topics?: string[]
 }
 
 export interface Course {
-  id: number
+  id: number | string
   name: string
   icon: string
+  description?: string
   progress: number
   totalHours: number
   completedHours: number
   status: 'in-progress' | 'completed' | 'not-started' | string
   lastAccess: string
   difficulty: '简单' | '中等' | '困难' | string
+  chapters?: CourseChapter[]
+  goals?: string[]
+  suggestions?: string[]
   questions: Question[]
 }
 

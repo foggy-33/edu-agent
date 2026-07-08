@@ -227,7 +227,7 @@ onMounted(async () => {
 .composer textarea::placeholder { color: #929292; }
 .selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 9px; }
 .selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
-.selected-tools button.subject-chip { color: #4f43c5; border-color: #ddd8ff; background: #f4f2ff; }
+.selected-tools button.subject-chip { color: #444; border-color: #dedede; background: #f6f6f6; }
 .selected-tools button span { font-size: 10px; font-weight: 850; }
 .composer-actions { display: flex; align-items: center; gap: 9px; }
 .composer-actions select { min-width: 116px; max-width: 160px; padding: 8px 28px 8px 10px; border: 0; border-radius: 999px; color: #565656; background: #f0f0f0; outline: 0; font-size: 12px; }
