@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { generateCollaborativeLearning, listResources } from '../api/client'
+import { listResources } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
@@ -35,6 +35,14 @@ const result = ref<CollaborativeLearningResponse | null>(null)
 const activeTab = ref<ResultKey>('lectureDoc')
 const exerciseAnswers = ref<Record<string, string>>({})
 const exerciseSubmitted = ref<Record<string, boolean>>({})
+const streamContent = ref<Record<ResultKey, string>>({
+  lectureDoc: '',
+  mindmap: '',
+  exercises: '',
+  reading: '',
+  review: '',
+})
+const thinkingSteps = ref<string[]>([])
 
 const availableTabs = computed(() => [
   ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
@@ -46,7 +54,8 @@ const availableTabs = computed(() => [
 
 const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
-const activeContent = computed(() => result.value?.[activeTab.value] || '')
+const hasStreamingOutput = computed(() => Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
+const activeContent = computed(() => streamContent.value[activeTab.value] || result.value?.[activeTab.value] || '')
 const exerciseItems = computed(() => result.value?.exerciseItems || [])
 
 function toggleResource(key: CollaborativeResourceType) {
@@ -104,6 +113,60 @@ async function loadUploadedResources() {
   }
 }
 
+function resetStreamState() {
+  streamContent.value = {
+    lectureDoc: '',
+    mindmap: '',
+    exercises: '',
+    reading: '',
+    review: '',
+  }
+  thinkingSteps.value = []
+}
+
+function applyStreamEvent(event: string, data: any) {
+  if (event === 'status') {
+    if (data.message) {
+      thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}：${data.message}` : data.message]
+    }
+    return
+  }
+  if (event === 'content' && data.key && typeof data.text === 'string') {
+    const key = data.key as ResultKey
+    streamContent.value = { ...streamContent.value, [key]: (streamContent.value[key] || '') + data.text }
+    return
+  }
+  if (event === 'done') {
+    result.value = data.result
+    return
+  }
+  if (event === 'error') {
+    throw new Error(data.message || '资源生成失败')
+  }
+}
+
+async function readStream(response: Response) {
+  if (!response.body) throw new Error('浏览器不支持流式读取')
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const blocks = buffer.split('\n\n')
+    buffer = blocks.pop() || ''
+    for (const block of blocks) {
+      const lines = block.split('\n')
+      const event = lines.find(line => line.startsWith('event: '))?.slice(7).trim() || 'message'
+      const dataLine = lines.find(line => line.startsWith('data: '))
+      if (!dataLine) continue
+      applyStreamEvent(event, JSON.parse(dataLine.slice(6)))
+    }
+  }
+}
+
 async function submit() {
   const question = prompt.value.trim()
   if (!question) {
@@ -126,6 +189,7 @@ async function submit() {
   loading.value = true
   error.value = ''
   result.value = null
+  resetStreamState()
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   menuOpen.value = false
@@ -133,7 +197,16 @@ async function submit() {
   activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'lectureDoc'
 
   try {
-    result.value = await generateCollaborativeLearning(payload)
+    const response = await fetch('/api/learning/generate/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!response.ok) {
+      const data = await response.json().catch(() => null)
+      throw new Error(data?.detail || `请求失败: ${response.status}`)
+    }
+    await readStream(response)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '资源生成失败'
   } finally {
@@ -145,25 +218,25 @@ onMounted(loadUploadedResources)
 </script>
 
 <template>
-  <div :class="['generate-page', { 'has-result': result || loading }]">
+  <div :class="['generate-page', { 'has-result': result || loading || hasStreamingOutput, idle: !result && !loading && !hasStreamingOutput }]">
     <section v-if="!result && !loading" class="empty-state">
-      <h2>今天想学点什么？</h2>
+      <h2>准备好了，随时开始</h2>
     </section>
 
-    <section v-if="loading" class="generating-state">
+    <section v-if="loading && !hasStreamingOutput" class="generating-state">
       <span class="generating-mark">✦</span>
       <div>
-        <strong>正在生成学习资源</strong>
-        <p>正在理解问题并组织所选内容……</p>
+        <strong>正在理解问题</strong>
+        <p>正在连接协作 Agent……</p>
       </div>
     </section>
 
-    <section v-if="result" class="result-card">
-      <div v-if="result.sources.length" class="result-sources">
+    <section v-if="result || hasStreamingOutput" class="result-card">
+      <div v-if="result?.sources.length" class="result-sources">
         <span>参考资料</span>
         <b v-for="source in result.sources" :key="source.id">{{ source.name }}</b>
       </div>
-      <div class="result-tabs">
+      <div v-if="availableTabs.length > 1" class="result-tabs">
         <button
           v-for="tab in availableTabs"
           :key="tab.key"
@@ -174,6 +247,10 @@ onMounted(loadUploadedResources)
         </button>
       </div>
       <div class="result-content">
+        <div v-if="thinkingSteps.length" class="thinking-trace">
+          <span>处理过程</span>
+          <p>{{ thinkingSteps[thinkingSteps.length - 1] }}</p>
+        </div>
         <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
         <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
           <article
@@ -338,21 +415,25 @@ onMounted(loadUploadedResources)
 </template>
 
 <style scoped>
-.generate-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 210px); margin: 0 auto; color: #202123; }
+.generate-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 80px); margin: 0 auto; color: #202123; }
+.generate-page.idle { grid-template-rows: auto auto; align-content: center; gap: 28px; padding-bottom: 8vh; }
 .generate-page.has-result { gap: 24px; }
-.empty-state { display: grid; place-items: end center; padding-bottom: 42px; }
-.empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: -.035em; }
+.empty-state { display: grid; place-items: center; padding: 0; }
+.empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; }
 .generating-state { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 320px; }
 .generating-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #202123; animation: pulse 1.2s infinite; }
 .generating-state strong { font-size: 16px; }
 .generating-state p { margin: 5px 0 0; color: #8a8a8a; font-size: 13px; }
-.result-card { min-height: 320px; overflow: hidden; border: 1px solid #e5e5e5; border-radius: 18px; background: #fff; }
+.result-card { min-height: 320px; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
 .result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 12px 16px 0; color: #858585; font-size: 10px; }
 .result-sources b { padding: 5px 8px; border-radius: 999px; color: #7d3434; background: #fff0f0; font-weight: 650; }
 .result-tabs { display: flex; gap: 4px; padding: 12px 16px 0; overflow-x: auto; border-bottom: 1px solid #ececec; }
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
-.result-content { padding: 26px; }
+.result-content { padding: 26px 0; }
+.thinking-trace { margin-bottom: 18px; color: #8a8a8a; font-size: 12px; line-height: 1.6; }
+.thinking-trace span { display: block; margin-bottom: 3px; color: #aaa; font-size: 11px; }
+.thinking-trace p { margin: 0; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
@@ -374,6 +455,7 @@ onMounted(loadUploadedResources)
 .practice-feedback strong { color: #202123; }
 .practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
 .composer-section { position: sticky; bottom: 0; z-index: 5; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.generate-page.idle .composer-section { position: static; padding: 0; background: transparent; }
 .composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
 .composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
 .composer textarea { width: 100%; min-height: 34px; max-height: 170px; padding: 5px 5px 10px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.55; }
@@ -388,6 +470,7 @@ onMounted(loadUploadedResources)
 .add-button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; font-size: 25px; font-weight: 300; }
 .add-button:hover { background: #e6e6e6; }
 .tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); }
+.generate-page.idle .tool-menu { top: 46px; bottom: auto; }
 .menu-title { padding: 8px 10px 6px; color: #888; font-size: 11px; font-weight: 700; }
 .file-options { display: grid; max-height: 190px; overflow-y: auto; }
 .no-files { padding: 10px; color: #969696; font-size: 11px; }
@@ -409,7 +492,7 @@ button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }
 @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
 @media (max-width: 620px) {
-  .generate-page { min-height: calc(100vh - 170px); }
+  .generate-page { min-height: calc(100vh - 64px); }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }
   .result-content { padding: 18px; }
 }

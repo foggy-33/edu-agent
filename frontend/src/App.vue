@@ -157,44 +157,6 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
     </aside>
 
     <main class="app-main">
-      <header class="app-header">
-        <div>
-          <h1 class="page-title">
-            {{ currentPage === 'detail' ? (selectedCourse?.name || '课程详情') :
-               currentPage === 'exercise' ? (selectedCourse?.name + ' - 习题练习' || '习题练习') :
-               currentPage === 'analyze' ? (selectedCourse?.name + ' - 学习分析' || '学习分析') :
-               navItems.find(n => n.key === currentPage)?.label }}
-          </h1>
-          <p class="page-subtitle">
-            {{ currentPage === 'home' ? '多智能体协作生成完整个性化学习资源包' :
-               currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
-               currentPage === 'collaborative' ? '多智能体协作生成完整个性化学习资源包' :
-               currentPage === 'resources' ? '管理和查阅所有学习资料' :
-               currentPage === 'evaluate' ? '评估学习效果，获取改进建议' :
-               currentPage === 'courses' ? '管理您的课程、学习进度和习题练习' :
-               currentPage === 'detail' ? '查看课程详情、章节和练习' :
-               currentPage === 'exercise' ? '完成习题练习，检验学习成果' :
-               currentPage === 'portrait' ? '与AI对话构建和完善学习画像' :
-               currentPage === 'settings' ? '配置模型服务与接口连接' :
-               currentPage === 'account' ? '查看和维护个人资料' :
-               '' }}
-          </p>
-        </div>
-        <div class="header-actions">
-          <div class="search-box">
-            <span>⌕</span>
-            <input 
-              type="text" 
-              placeholder="搜索课程、资源..."
-            />
-          </div>
-          <button class="header-icon-button">
-            🔔
-            <span class="notification-dot"></span>
-          </button>
-        </div>
-      </header>
-
       <div class="app-content">
         <div v-if="currentPage === 'home'" class="home-generate-center">
           <CollaborativeGeneratePage />

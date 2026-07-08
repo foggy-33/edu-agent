@@ -1,5 +1,8 @@
+import json
+from typing import Any, Iterator
+
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.profile_agent import ProfileAgent
@@ -32,6 +35,23 @@ def bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="请先登录")
     return authorization.removeprefix("Bearer ").strip()
+
+
+def _collaborative_payload(request: CollaborativeLearningRequest) -> dict[str, Any]:
+    payload = request.model_dump()
+    source_context, sources = resource_service.build_context(request.user_id, request.fileIds)
+    payload["source_context"] = source_context
+    payload["sources"] = sources
+    return payload
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _stream_text(key: str, value: str, size: int = 28) -> Iterator[str]:
+    for index in range(0, len(value), size):
+        yield _sse("content", {"key": key, "text": value[index:index + size]})
 
 
 @router.post("/auth/register", status_code=201)
@@ -89,15 +109,59 @@ def generate(request: LearningRequest) -> dict:
 @router.post("/learning/generate")
 def generate_collaborative_learning_resources(request: CollaborativeLearningRequest) -> dict:
     try:
-        payload = request.model_dump()
-        source_context, sources = resource_service.build_context(request.user_id, request.fileIds)
-        payload["source_context"] = source_context
-        payload["sources"] = sources
-        return generate_learning_resources(payload)
+        return generate_learning_resources(_collaborative_payload(request))
     except ResourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/learning/generate/stream")
+def stream_collaborative_learning_resources(request: CollaborativeLearningRequest) -> StreamingResponse:
+    def events() -> Iterator[str]:
+        try:
+            yield _sse("status", {"message": "正在读取问题和已选资料"})
+            payload = _collaborative_payload(request)
+            if payload.get("source_context"):
+                yield _sse("status", {"message": "已整理引用资料，准备生成回答"})
+            else:
+                yield _sse("status", {"message": "未引用资料，直接围绕问题生成回答"})
+
+            if request.resourceTypes:
+                yield _sse("status", {"message": f"已选择 {len(request.resourceTypes)} 类资源，正在调度协作 Agent"})
+            else:
+                yield _sse("status", {"message": "直接对话模式，正在组织回答"})
+
+            result = generate_learning_resources(payload)
+            for trace in result.get("agentTrace", []):
+                yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+
+            keys = ["lectureDoc"] if not request.resourceTypes else []
+            key_map = {
+                "lecture": "lectureDoc",
+                "mindmap": "mindmap",
+                "exercise": "exercises",
+                "reading": "reading",
+            }
+            keys.extend(key_map[item] for item in request.resourceTypes if item in key_map)
+            if request.resourceTypes:
+                keys.append("review")
+
+            for key in dict.fromkeys(keys):
+                yield _sse("status", {"message": f"正在输出{key}"})
+                yield from _stream_text(key, str(result.get(key, "")))
+
+            yield _sse("done", {"result": result})
+        except ResourceError as exc:
+            yield _sse("error", {"message": str(exc)})
+        except ValueError as exc:
+            yield _sse("error", {"message": str(exc)})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/resources/upload", status_code=201)
