@@ -21,6 +21,21 @@ from app.api.schemas import (
 )
 from app.auth.service import AuthError, AuthService
 from app.graph.workflow import run_agent_workflow, workflow_description
+from app.learning.agents import (
+    _context,
+    _exercises_to_markdown,
+    _generate_exercise_items,
+    _mindmap_label,
+    _source_note,
+    _source_points,
+    _trace,
+    integration_agent,
+    planner_agent,
+    profile_agent,
+    review_agent,
+)
+from app.learning.llm import stream_llm
+from app.learning.state import LearningState
 from app.learning.workflow import generate_learning_resources
 from app.profiles.service import DynamicProfileService
 from app.resources.service import ResourceError, ResourceService
@@ -52,6 +67,91 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 def _stream_text(key: str, value: str, size: int = 28) -> Iterator[str]:
     for index in range(0, len(value), size):
         yield _sse("content", {"key": key, "text": value[index:index + size]})
+
+
+def _generation_prompt(state: LearningState, task: str) -> str:
+    return f"{_context(state)}\n\n任务：{task}\n请直接输出可展示的中文内容，不要解释你的生成过程。"
+
+
+def _stream_generated_text(state: LearningState, key: str, task: str, fallback: str) -> Iterator[str]:
+    collected: list[str] = []
+    for chunk in stream_llm(
+        _generation_prompt(state, task),
+        api_key=state.get("api_key", ""),
+        base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
+        model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+    ):
+        collected.append(chunk)
+        yield _sse("content", {"key": key, "text": chunk})
+
+    text = "".join(collected).strip()
+    if text:
+        return text
+
+    yield from _stream_text(key, fallback)
+    return fallback
+
+
+def _lecture_fallback(state: LearningState) -> str:
+    return (
+        f"# {state['course']} · {state['chapter']} 个性化讲解\n\n"
+        f"## 学习目标\n围绕“{state['weakness']}”建立适用于“{state['goal']}”的知识框架。\n\n"
+        "## 概念解释\n本章节的核心是理解不同方案的适用条件、执行规则和评价指标，而不是只记结论。\n\n"
+        "## 原理说明\n先明确输入条件，再跟踪每一步状态变化，最后比较结果中的效率、公平性与开销。\n\n"
+        "## 对比例子\n使用同一组输入分别执行各方案，记录执行顺序、等待时间和响应时间，观察差异。\n\n"
+        f"## 易错点\n- 混淆概念名称与实际执行规则。\n- 忽略题目给出的边界条件。\n- 没有结合“{state['weakness']}”进行对比。\n\n"
+        "## 复习建议\n制作对比表，完成一次手工推演，再用练习题检验迁移能力。"
+        f"{_source_note(state)}"
+    )
+
+
+def _mindmap_fallback(state: LearningState) -> str:
+    points = _source_points(state)
+    branches = "\n".join(f"    {_mindmap_label(item)}" for item in points)
+    if not branches:
+        branches = (
+            "    核心概念\n"
+            "      定义与目标\n"
+            "      关键指标\n"
+            "    原理与流程\n"
+            "      输入条件\n"
+            "      执行规则\n"
+            "    复习路径\n"
+            "      分层练习"
+        )
+    return f"mindmap\n  root(({state['chapter']}))\n{branches}"
+
+
+def _reading_fallback(state: LearningState) -> str:
+    return (
+        f"# {state['chapter']} 拓展阅读\n\n"
+        "## 知识延伸\n从本章方法继续学习性能评价、资源权衡与复杂系统中的决策机制。\n\n"
+        "## 实际应用场景\n- 操作系统与云平台资源管理\n- 在线服务的任务队列\n- 实时系统的响应保障\n\n"
+        f"## 学习路径\n1. 补齐“{state['weakness']}”基础概念。\n2. 完成可视化推演。\n3. 阅读真实系统案例。\n4. 尝试解释方案权衡。"
+        f"{_source_note(state)}"
+    )
+
+
+def _direct_chat_fallback(state: LearningState) -> str:
+    return (
+        f"你问的是：{state['weakness']}\n\n"
+        "我会先抓住核心概念，再给出可操作的理解路径。"
+        "如果这是一个课程问题，可以继续追问具体概念、例题或要求我展开某一步。"
+        f"{_source_note(state)}"
+    )
+
+
+def _learning_result(state: LearningState) -> dict[str, Any]:
+    return {
+        "lectureDoc": state.get("lectureDoc", ""),
+        "mindmap": state.get("mindmap", ""),
+        "exercises": state.get("exercises", ""),
+        "exerciseItems": state.get("exerciseItems", []),
+        "reading": state.get("reading", ""),
+        "review": state.get("review", ""),
+        "sources": state.get("sources", []),
+        "agentTrace": state.get("agentTrace", []),
+    }
 
 
 @router.post("/auth/register", status_code=201)
@@ -122,36 +222,83 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
         try:
             yield _sse("status", {"message": "正在读取问题和已选资料"})
             payload = _collaborative_payload(request)
+            state = LearningState(**payload, agentTrace=[])
             if payload.get("source_context"):
                 yield _sse("status", {"message": "已整理引用资料，准备生成回答"})
             else:
                 yield _sse("status", {"message": "未引用资料，直接围绕问题生成回答"})
 
-            if request.resourceTypes:
-                yield _sse("status", {"message": f"已选择 {len(request.resourceTypes)} 类资源，正在调度协作 Agent"})
-            else:
-                yield _sse("status", {"message": "直接对话模式，正在组织回答"})
+            if not request.resourceTypes:
+                yield _sse("status", {"message": "直接对话模式，正在组织回答", "agent": "直接对话 Agent"})
+                state["lectureDoc"] = yield from _stream_generated_text(
+                    state,
+                    "lectureDoc",
+                    "直接回答用户的问题。保持中文、清晰、可执行；如果用户引用了 PDF，优先依据资料回答，资料不足时说明是补充解释。",
+                    _direct_chat_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "直接对话 Agent", "已生成直接对话回答")
+                yield _sse("status", {"message": "已生成直接对话回答", "agent": "直接对话 Agent"})
+                yield _sse("done", {"result": _learning_result(state)})
+                return
 
-            result = generate_learning_resources(payload)
-            for trace in result.get("agentTrace", []):
+            yield _sse("status", {"message": f"已选择 {len(request.resourceTypes)} 类资源，正在调度协作 Agent"})
+
+            for node in (profile_agent, planner_agent):
+                state.update(node(state))
+                trace = state.get("agentTrace", [])[-1]
                 yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
 
-            keys = ["lectureDoc"] if not request.resourceTypes else []
-            key_map = {
-                "lecture": "lectureDoc",
-                "mindmap": "mindmap",
-                "exercise": "exercises",
-                "reading": "reading",
-            }
-            keys.extend(key_map[item] for item in request.resourceTypes if item in key_map)
-            if request.resourceTypes:
-                keys.append("review")
+            if "lecture" in request.resourceTypes:
+                yield _sse("status", {"message": "正在流式生成课程讲解", "agent": "课程讲解 Agent"})
+                state["lectureDoc"] = yield from _stream_generated_text(
+                    state,
+                    "lectureDoc",
+                    "生成 Markdown 课程讲解文档，必须包含概念解释、原理说明、例子、易错点和复习建议。",
+                    _lecture_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "课程讲解 Agent", "课程讲解文档生成完成")
+                yield _sse("status", {"message": "课程讲解文档生成完成", "agent": "课程讲解 Agent"})
 
-            for key in dict.fromkeys(keys):
-                yield _sse("status", {"message": f"正在输出{key}"})
-                yield from _stream_text(key, str(result.get(key, "")))
+            if "mindmap" in request.resourceTypes:
+                yield _sse("status", {"message": "正在流式生成思维导图", "agent": "思维导图 Agent"})
+                state["mindmap"] = yield from _stream_generated_text(
+                    state,
+                    "mindmap",
+                    "只输出 Mermaid mindmap 源码，提炼所选 PDF 或用户问题中的主题、核心概念、层级关系、应用与易错点。",
+                    _mindmap_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "思维导图 Agent", "Mermaid 思维导图生成完成")
+                yield _sse("status", {"message": "Mermaid 思维导图生成完成", "agent": "思维导图 Agent"})
 
-            yield _sse("done", {"result": result})
+            if "exercise" in request.resourceTypes:
+                yield _sse("status", {"message": "正在生成可作答练习题", "agent": "练习题 Agent"})
+                items = _generate_exercise_items(state)
+                state["exerciseItems"] = items
+                state["exercises"] = _exercises_to_markdown(state, items)
+                state["agentTrace"] = _trace(state, "练习题 Agent", "可在线作答的分层练习题生成完成")
+                yield from _stream_text("exercises", state["exercises"])
+                yield _sse("status", {"message": "可在线作答的分层练习题生成完成", "agent": "练习题 Agent"})
+
+            if "reading" in request.resourceTypes:
+                yield _sse("status", {"message": "正在流式生成拓展阅读", "agent": "拓展阅读 Agent"})
+                state["reading"] = yield from _stream_generated_text(
+                    state,
+                    "reading",
+                    "生成 Markdown 拓展阅读，包含相关知识延伸、实际应用场景和递进学习路径。",
+                    _reading_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")
+                yield _sse("status", {"message": "知识延伸与学习路径生成完成", "agent": "拓展阅读 Agent"})
+
+            state.update(review_agent(state))
+            yield from _stream_text("review", state.get("review", ""))
+            trace = state.get("agentTrace", [])[-1]
+            yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+
+            state.update(integration_agent(state))
+            trace = state.get("agentTrace", [])[-1]
+            yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+            yield _sse("done", {"result": _learning_result(state)})
         except ResourceError as exc:
             yield _sse("error", {"message": str(exc)})
         except ValueError as exc:

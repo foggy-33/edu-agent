@@ -266,7 +266,7 @@ async function submit() {
   try {
     const response = await fetch('/api/learning/generate/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
       body: JSON.stringify(payload),
     })
     if (!response.ok) {
@@ -489,7 +489,7 @@ watch(() => props.historyId, hydrateFromHistory)
 
 <style scoped>
 .generate-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 80px); margin: 0 auto; color: #202123; }
-.generate-page.idle { grid-template-rows: auto auto; width: min(760px, 100%); align-content: center; gap: 28px; padding-bottom: 8vh; }
+.generate-page.idle { grid-template-rows: auto auto; width: min(640px, 100%); align-content: center; gap: 28px; padding-bottom: 8vh; }
 .generate-page.has-result { gap: 24px; }
 .empty-state { display: grid; place-items: center; padding: 0; }
 .empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; }
@@ -527,7 +527,7 @@ watch(() => props.historyId, hydrateFromHistory)
 .practice-feedback { display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: #f7f7f7; }
 .practice-feedback strong { color: #202123; }
 .practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
-.composer-section { position: sticky; bottom: 0; z-index: 5; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
 .generate-page.idle .composer-section { position: static; padding: 0; background: transparent; }
 .composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
 .composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
