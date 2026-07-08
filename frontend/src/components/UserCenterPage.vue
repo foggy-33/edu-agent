@@ -39,7 +39,7 @@ const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => 
   const radius = 84 * Math.max(0, Math.min(100, Number(value))) / 100
   return `${110 + Math.cos(angle) * radius},${110 + Math.sin(angle) * radius}`
 }).join(' '))
-const radarAxes = computed(() => radarMetrics.value.map(([name], index) => {
+const radarAxes = computed(() => radarMetrics.value.map(([name, value], index) => {
   const total = radarMetrics.value.length
   const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
   return {

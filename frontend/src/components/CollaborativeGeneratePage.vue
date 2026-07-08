@@ -23,6 +23,18 @@ interface AgentProcessStep {
   state: ProcessState
 }
 
+interface ConversationTurn {
+  id: string
+  question: string
+  resourceTypes: CollaborativeResourceType[]
+  result: CollaborativeLearningResponse | null
+  streamContent: Record<ResultKey, string>
+  thinkingSteps: string[]
+  processSteps: AgentProcessStep[]
+  processCollapsed: boolean
+  processCompleted: boolean
+}
+
 interface ComposerModelOption {
   label: string
   model: string
@@ -70,6 +82,9 @@ const composerModels: ComposerModelOption[] = [
 
 const prompt = ref('')
 const currentQuestion = ref('')
+const conversationTurns = ref<ConversationTurn[]>([])
+const activeTurnId = ref('')
+const streamingTurnId = ref('')
 const modelConfig = ref(loadSiliconFlowConfig())
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
@@ -109,6 +124,7 @@ const emptyStreamContent = (): Record<ResultKey, string> => ({
 })
 
 const availableTabs = computed(() => [
+
   ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
   ...resourceOptions
     .filter(item => submittedTypes.value.includes(item.key))
@@ -116,15 +132,69 @@ const availableTabs = computed(() => [
   ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
 ])
 
+void availableTabs.value
+
 const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
-const hasStreamingOutput = computed(() => Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
-const activeContent = computed(() => streamContent.value[activeTab.value] || result.value?.[activeTab.value] || '')
-const exerciseItems = computed(() => result.value?.exerciseItems || [])
-const conversationQuestion = computed(() => currentQuestion.value.trim())
+const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
 const activeComposerModel = computed(() => composerModels.find(item => item.model === modelConfig.value.model))
 const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
+
+function tabsForTurn(turn: ConversationTurn) {
+  return [
+    ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
+    ...resourceOptions
+      .filter(item => turn.resourceTypes.includes(item.key))
+      .map(item => ({ key: item.resultKey, label: item.label })),
+    ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
+  ]
+}
+
+function contentForTurn(turn: ConversationTurn, key: ResultKey) {
+  return turn.streamContent[key] || turn.result?.[key] || ''
+}
+
+function exerciseItemsForTurn(turn: ConversationTurn) {
+  return turn.result?.exerciseItems || []
+}
+
+function isActiveTurn(turn: ConversationTurn) {
+  return turn.id === activeTurnId.value
+}
+
+function activeProcessSummary(turn: ConversationTurn) {
+  const running = turn.processSteps.find(step => step.state === 'running')
+  const last = turn.processSteps[turn.processSteps.length - 1]
+  if (running) return `${running.agent}：${running.message}`
+  if (turn.processCompleted) return '已完成，点击展开'
+  return last ? `${last.agent}：${last.message}` : '处理中'
+}
+
+function syncActiveTurn(targetId = streamingTurnId.value || activeTurnId.value) {
+  const id = targetId
+  if (!id) return
+  conversationTurns.value = conversationTurns.value.map(turn => (
+    turn.id === id
+      ? {
+          ...turn,
+          result: result.value,
+          streamContent: { ...streamContent.value },
+          thinkingSteps: [...thinkingSteps.value],
+          processSteps: processSteps.value.map(step => ({ ...step })),
+          processCollapsed: processCollapsed.value,
+          processCompleted: processCompleted.value,
+        }
+      : turn
+  ))
+}
+
+function setTurnCollapsed(turnId: string, collapsed: boolean) {
+  conversationTurns.value = conversationTurns.value.map(turn => (
+    turn.id === turnId ? { ...turn, processCollapsed: collapsed } : turn
+  ))
+  if (turnId === activeTurnId.value) processCollapsed.value = collapsed
+}
 
 function toggleResource(key: CollaborativeResourceType) {
   selectedTypes.value = selectedTypes.value.includes(key)
@@ -212,6 +282,9 @@ function resetStreamState() {
 function resetConversation() {
   prompt.value = ''
   currentQuestion.value = ''
+  conversationTurns.value = []
+  activeTurnId.value = ''
+  streamingTurnId.value = ''
   result.value = null
   error.value = ''
   submittedTypes.value = []
@@ -253,6 +326,19 @@ function hydrateFromHistory(id: string | null | undefined) {
     }
   })
   processCollapsed.value = true
+  activeTurnId.value = id
+  streamingTurnId.value = ''
+  conversationTurns.value = [{
+    id,
+    question: item.question,
+    resourceTypes: [...item.resourceTypes],
+    result: item.result,
+    streamContent: { ...streamContent.value },
+    thinkingSteps: [...thinkingSteps.value],
+    processSteps: processSteps.value.map(step => ({ ...step })),
+    processCollapsed: true,
+    processCompleted: true,
+  }]
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   error.value = ''
@@ -291,15 +377,22 @@ function showProcessStep(step: AgentProcessStep) {
   const last = next[next.length - 1]
   if (last && last.agent === step.agent && last.message === step.message) {
     processSteps.value = [...next.slice(0, -1), step]
+    syncActiveTurn()
     return
   }
   processSteps.value = [...next, step]
+  syncActiveTurn()
 }
 
 function collapseCompletedProcess() {
+  const targetId = streamingTurnId.value || activeTurnId.value
   processSteps.value = processSteps.value.map(step => ({ ...step, state: 'done' }))
+  syncActiveTurn(targetId)
   window.setTimeout(() => {
-    if (processCompleted.value) processCollapsed.value = true
+    if (processCompleted.value) {
+      processCollapsed.value = true
+      syncActiveTurn(targetId)
+    }
   }, 1200)
 }
 
@@ -323,6 +416,7 @@ function appendProcessStep(data: any) {
   if (!step) return
   processCollapsed.value = false
   processQueue.value = [...processQueue.value, step]
+  syncActiveTurn()
   pumpProcessQueue()
 }
 
@@ -337,11 +431,13 @@ function applyStreamEvent(event: string, data: any) {
   if (event === 'content' && data.key && typeof data.text === 'string') {
     const key = data.key as ResultKey
     streamContent.value = { ...streamContent.value, [key]: (streamContent.value[key] || '') + data.text }
+    syncActiveTurn()
     return
   }
   if (event === 'done') {
     result.value = data.result
     processCompleted.value = true
+    syncActiveTurn()
     pumpProcessQueue()
     return
   }
@@ -380,6 +476,7 @@ async function submit() {
   }
   const config = { ...modelConfig.value }
   currentQuestion.value = question
+  const turnId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
     major: '未指定',
@@ -397,6 +494,22 @@ async function submit() {
   result.value = null
   prompt.value = ''
   resetStreamState()
+  activeTurnId.value = turnId
+  streamingTurnId.value = turnId
+  conversationTurns.value = [
+    ...conversationTurns.value,
+    {
+      id: turnId,
+      question,
+      resourceTypes: [...payload.resourceTypes],
+      result: null,
+      streamContent: emptyStreamContent(),
+      thinkingSteps: [],
+      processSteps: [],
+      processCollapsed: false,
+      processCompleted: false,
+    },
+  ]
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   menuOpen.value = false
@@ -421,6 +534,7 @@ async function submit() {
     error.value = reason instanceof Error ? reason.message : '资源生成失败'
   } finally {
     loading.value = false
+    streamingTurnId.value = ''
   }
 }
 
@@ -436,11 +550,11 @@ watch(prompt, resizePromptInput)
 
 <template>
   <div :class="['generate-page', { 'has-result': result || loading || hasStreamingOutput, idle: !result && !loading && !hasStreamingOutput }]">
-    <section v-if="!result && !loading" class="empty-state">
+    <section v-if="!conversationTurns.length && !result && !loading" class="empty-state">
       <h2>准备好了，随时开始</h2>
     </section>
 
-    <section v-if="loading && !hasStreamingOutput" class="generating-state">
+    <section v-if="loading && !conversationTurns.length && !hasStreamingOutput" class="generating-state">
       <span class="generating-mark">✦</span>
       <div>
         <strong>正在理解问题</strong>
@@ -448,23 +562,24 @@ watch(prompt, resizePromptInput)
       </div>
     </section>
 
-    <section v-if="result || hasStreamingOutput" class="chat-thread">
-      <article v-if="conversationQuestion" class="chat-message user-message">
-        <div class="message-bubble">{{ conversationQuestion }}</div>
+    <section v-if="conversationTurns.length" class="chat-thread">
+      <template v-for="turn in conversationTurns" :key="turn.id">
+      <article class="chat-message user-message">
+        <div class="message-bubble">{{ turn.question }}</div>
       </article>
 
       <article class="chat-message assistant-message">
         <div class="assistant-body">
-          <div v-if="processSteps.length" :class="['thinking-trace', processCollapsed ? 'thinking-trace-collapsed' : '']">
-            <div class="trace-head" role="button" tabindex="0" @click="processCollapsed = !processCollapsed">
+          <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
+            <div class="trace-head" role="button" tabindex="0" @click="setTurnCollapsed(turn.id, !turn.processCollapsed)">
               <span>处理过程</span>
               <b>
-                {{ processCollapsed ? '已完成，点击展开' : `${processSteps.filter(step => step.state === 'done').length}/${processSteps.length}` }}
+                {{ turn.processCollapsed ? activeProcessSummary(turn) : `${turn.processSteps.filter(step => step.state === 'done').length}/${turn.processSteps.length}` }}
               </b>
             </div>
-            <ol v-if="!processCollapsed" class="agent-flow">
+            <ol v-if="!turn.processCollapsed" class="agent-flow">
               <li
-                v-for="step in processSteps"
+                v-for="step in turn.processSteps"
                 :key="step.id"
                 :class="['agent-step', `agent-step-${step.state}`]"
               >
@@ -478,27 +593,27 @@ watch(prompt, resizePromptInput)
             </ol>
           </div>
 
-          <div v-if="result?.sources.length" class="result-sources">
+          <div v-if="turn.result?.sources.length" class="result-sources">
             <span>参考资料</span>
-            <b v-for="source in result.sources" :key="source.id">{{ source.name }}</b>
+            <b v-for="source in turn.result.sources" :key="source.id">{{ source.name }}</b>
           </div>
 
-          <div v-if="availableTabs.length > 1" class="result-tabs">
+          <div v-if="tabsForTurn(turn).length > 1" class="result-tabs">
             <button
-              v-for="tab in availableTabs"
+              v-for="tab in tabsForTurn(turn)"
               :key="tab.key"
-              :class="{ active: activeTab === tab.key }"
-              @click="activeTab = tab.key"
+              :class="{ active: isActiveTurn(turn) && activeTab === tab.key }"
+              @click="activeTurnId = turn.id; activeTab = tab.key"
             >
               {{ tab.label }}
             </button>
           </div>
 
           <div class="result-content">
-            <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
-            <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
+            <MermaidRenderer v-if="activeTab === 'mindmap' && isActiveTurn(turn)" :chart="contentForTurn(turn, 'mindmap')" />
+            <div v-else-if="activeTab === 'exercises' && isActiveTurn(turn) && exerciseItemsForTurn(turn).length" class="practice-list">
               <article
-                v-for="(item, index) in exerciseItems"
+                v-for="(item, index) in exerciseItemsForTurn(turn)"
                 :key="item.id"
                 :class="[
                   'practice-card',
@@ -561,10 +676,11 @@ watch(prompt, resizePromptInput)
                 </div>
               </article>
             </div>
-            <MarkdownRenderer v-else :content="activeContent" />
+            <MarkdownRenderer v-else :content="contentForTurn(turn, isActiveTurn(turn) ? activeTab : tabsForTurn(turn)[0]?.key || 'lectureDoc')" />
           </div>
         </div>
       </article>
+      </template>
     </section>
 
     <section class="composer-section">
@@ -719,7 +835,7 @@ watch(prompt, resizePromptInput)
 .generating-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #202123; animation: pulse 1.2s infinite; }
 .generating-state strong { font-size: 16px; }
 .generating-state p { margin: 5px 0 0; color: #8a8a8a; font-size: 13px; }
-.chat-thread { display: grid; gap: 28px; min-height: 320px; padding: 22px 0 12px; }
+.chat-thread { display: grid; gap: 22px; min-height: 320px; padding: 22px 0 96px; }
 .chat-message { display: flex; width: 100%; }
 .user-message { justify-content: flex-end; }
 .message-bubble { max-width: min(78%, 720px); padding: 12px 16px; border-radius: 22px; color: #202123; background: #f0f0f0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -731,19 +847,19 @@ watch(prompt, resizePromptInput)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 0; }
-.thinking-trace { margin-bottom: 18px; padding: 10px 12px; border: 1px solid #ececec; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.6; transition: padding .2s ease, box-shadow .2s ease; }
-.thinking-trace-collapsed { padding: 9px 12px; box-shadow: none; }
-.trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; cursor: pointer; user-select: none; }
+.thinking-trace { margin-bottom: 12px; padding: 7px 11px; border: 1px solid #eeeeee; border-radius: 14px; color: #606060; background: #fff; box-shadow: 0 3px 14px rgba(0, 0, 0, .03); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
+.thinking-trace-collapsed { padding: 7px 11px; box-shadow: none; }
+.trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; cursor: pointer; user-select: none; }
 .thinking-trace-collapsed .trace-head { margin-bottom: 0; }
 .trace-head span { color: #8a8a8a; font-size: 11px; font-weight: 750; }
-.trace-head b { color: #9a9a9a; font-size: 10px; font-weight: 700; }
-.agent-flow { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
-.agent-step { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 8px 9px; border-radius: 12px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
+.trace-head b { min-width: 0; overflow: hidden; color: #9a9a9a; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.agent-flow { display: grid; gap: 5px; max-height: 170px; margin: 0; padding: 0 2px 0 0; overflow-y: auto; list-style: none; }
+.agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 6px 8px; border-radius: 10px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
 .agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
 .agent-step:last-child::before { display: none; }
-.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 2px; border: 1px solid #d5d5d5; border-radius: 50%; background: #fff; }
-.agent-step i::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #b8b8b8; }
-.agent-step strong { display: block; color: #2a2a2a; font-size: 12px; font-weight: 760; }
+.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 2px; border: 1px solid #d5d5d5; border-radius: 50%; background: #fff; }
+.agent-step i::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #b8b8b8; }
+.agent-step strong { display: block; color: #2a2a2a; font-size: 11px; font-weight: 760; }
 .agent-step p { margin: 1px 0 0; color: #555; }
 .agent-step small { display: block; margin-top: 1px; color: #9a9a9a; font-size: 10px; }
 .agent-step-running { background: #f7f7f7; transform: translateX(2px); }

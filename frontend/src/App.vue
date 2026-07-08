@@ -56,7 +56,6 @@ const navItems: NavItem[] = [
   { key: 'courses', label: '课程', icon: 'project' },
   { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
-  { key: 'account', label: '个人中心', icon: 'user' },
   { key: 'settings', label: '模型设置', icon: 'model' },
 ]
 
@@ -199,7 +198,6 @@ onUnmounted(() => {
           </div>
           <div v-if="!sidebarCollapsed" class="min-w-0">
             <div class="profile-name">{{ userProfile.name }}</div>
-            <div class="profile-id">Plus</div>
           </div>
         </button>
         <button
