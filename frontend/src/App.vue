@@ -31,6 +31,7 @@ const selectedCourse = ref<Course | null>(null)
 const initialConversationHistory = loadConversationHistory()
 const conversationHistory = ref<ConversationHistoryItem[]>(initialConversationHistory)
 const selectedHistoryId = ref<string | null>(initialConversationHistory[0]?.id || null)
+const conversationResetSeed = ref(0)
 
 const navIcons = {
   newChat: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z'],
@@ -70,6 +71,7 @@ function navigate(page: Page, course?: Course) {
 
 function startNewConversation() {
   selectedHistoryId.value = null
+  conversationResetSeed.value += 1
   currentPage.value = 'home'
 }
 
@@ -215,7 +217,7 @@ onUnmounted(() => {
         <div v-if="currentPage === 'home'" class="home-generate-center">
           <CollaborativeGeneratePage
             :history-id="selectedHistoryId"
-            @conversation-saved="selectedHistoryId = $event"
+            :conversation-seed="conversationResetSeed"
             @new-conversation="selectedHistoryId = null"
           />
         </div>

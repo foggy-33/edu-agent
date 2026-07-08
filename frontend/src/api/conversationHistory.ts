@@ -13,6 +13,15 @@ export interface ConversationHistoryItem {
   resourceTypes: CollaborativeResourceType[]
   result: CollaborativeLearningResponse
   thinkingSteps: string[]
+  turns?: ConversationHistoryTurn[]
+}
+
+export interface ConversationHistoryTurn {
+  id: string
+  question: string
+  resourceTypes: CollaborativeResourceType[]
+  result: CollaborativeLearningResponse
+  thinkingSteps: string[]
 }
 
 export function loadConversationHistory(): ConversationHistoryItem[] {

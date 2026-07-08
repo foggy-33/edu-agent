@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   createConversationTitle,
@@ -46,10 +46,10 @@ interface ComposerModeOption extends ComposerModelOption {
 
 const props = defineProps<{
   historyId?: string | null
+  conversationSeed?: number
 }>()
 
 const emit = defineEmits<{
-  conversationSaved: [id: string]
   newConversation: []
 }>()
 
@@ -60,17 +60,17 @@ const resourceOptions: {
   description: string
   icon: string
 }[] = [
-  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: '▤' },
-  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: '◇' },
-  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: '✓' },
-  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '◉' },
+  { key: 'lecture', resultKey: 'lectureDoc', label: '璇剧▼璁茶В', description: '鐢熸垚姒傚康銆佸師鐞嗗拰绀轰緥璁茶В', icon: '鈻? },
+  { key: 'mindmap', resultKey: 'mindmap', label: '鎬濈淮瀵煎浘', description: '鐢熸垚缁撴瀯鍖栫煡璇嗗鍥?, icon: '鈼? },
+  { key: 'exercise', resultKey: 'exercises', label: '缁冧範棰?, description: '鐢熸垚鍒嗗眰棰樼洰鍜岀瓟妗堣В鏋?, icon: '鉁? },
+  { key: 'reading', resultKey: 'reading', label: '鎷撳睍闃呰', description: '鐢熸垚寤朵几鐭ヨ瘑鍜屽涔犺矾寰?, icon: '鈼? },
 ]
 
 const modelModes: ComposerModeOption[] = [
-  { key: 'smart', label: '智能', model: 'zai-org/GLM-5.2' },
-  { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
-  { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
-  { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+  { key: 'smart', label: '鏅鸿兘', model: 'zai-org/GLM-5.2' },
+  { key: 'fast', label: '鏋侀€?, model: 'deepseek-ai/DeepSeek-V4-Flash' },
+  { key: 'balanced', label: '鍧囪　', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
+  { key: 'advanced', label: '楂樼骇', model: 'deepseek-ai/DeepSeek-V4-Pro' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -83,6 +83,7 @@ const composerModels: ComposerModelOption[] = [
 const prompt = ref('')
 const currentQuestion = ref('')
 const conversationTurns = ref<ConversationTurn[]>([])
+const currentConversationId = ref('')
 const activeTurnId = ref('')
 const streamingTurnId = ref('')
 const modelConfig = ref(loadSiliconFlowConfig())
@@ -125,11 +126,11 @@ const emptyStreamContent = (): Record<ResultKey, string> => ({
 
 const availableTabs = computed(() => [
 
-  ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
+  ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '瀵硅瘽鍥炵瓟' }] : []),
   ...resourceOptions
     .filter(item => submittedTypes.value.includes(item.key))
     .map(item => ({ key: item.resultKey, label: item.label })),
-  ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
+  ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '瀹℃牳缁撴灉' }] : []),
 ])
 
 void availableTabs.value
@@ -139,15 +140,15 @@ const selectedFiles = computed(() => resources.value.filter(item => selectedFile
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
 const activeComposerModel = computed(() => composerModels.find(item => item.model === modelConfig.value.model))
-const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
+const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '鑷畾涔夋ā鍨?)
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
-    ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
+    ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '瀵硅瘽鍥炵瓟' }] : []),
     ...resourceOptions
       .filter(item => turn.resourceTypes.includes(item.key))
       .map(item => ({ key: item.resultKey, label: item.label })),
-    ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
+    ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '瀹℃牳缁撴灉' }] : []),
   ]
 }
 
@@ -166,9 +167,9 @@ function isActiveTurn(turn: ConversationTurn) {
 function activeProcessSummary(turn: ConversationTurn) {
   const running = turn.processSteps.find(step => step.state === 'running')
   const last = turn.processSteps[turn.processSteps.length - 1]
-  if (running) return `${running.agent}：${running.message}`
-  if (turn.processCompleted) return '已完成，点击展开'
-  return last ? `${last.agent}：${last.message}` : '处理中'
+  if (running) return `${running.agent}锛?{running.message}`
+  if (turn.processCompleted) return '宸插畬鎴愶紝鐐瑰嚮灞曞紑'
+  return last ? `${last.agent}锛?{last.message}` : '澶勭悊涓?
 }
 
 function syncActiveTurn(targetId = streamingTurnId.value || activeTurnId.value) {
@@ -280,9 +281,11 @@ function resetStreamState() {
 }
 
 function resetConversation() {
+  persistCurrentConversation()
   prompt.value = ''
   currentQuestion.value = ''
   conversationTurns.value = []
+  currentConversationId.value = ''
   activeTurnId.value = ''
   streamingTurnId.value = ''
   result.value = null
@@ -295,77 +298,110 @@ function resetConversation() {
   emit('newConversation')
 }
 
+function buildHistoryProcessSteps(steps: string[], prefix: string): AgentProcessStep[] {
+  return steps.map((step, index) => ({
+    id: `${prefix}-${index}`,
+    agent: '流程记录',
+    message: step,
+    detail: '历史对话中的执行记录',
+    state: 'done',
+  }))
+}
+
 function hydrateFromHistory(id: string | null | undefined) {
   if (!id) {
-    resetConversation()
     return
   }
   const item = getConversationHistoryItem(id)
   if (!item) return
+  const turns = item.turns?.length
+    ? item.turns
+    : [{
+        id,
+        question: item.question,
+        resourceTypes: item.resourceTypes,
+        result: item.result,
+        thinkingSteps: item.thinkingSteps,
+      }]
+  const lastTurn = turns[turns.length - 1]
   prompt.value = ''
-  currentQuestion.value = item.question
-  result.value = item.result
-  submittedTypes.value = [...item.resourceTypes]
+  currentConversationId.value = id
+  currentQuestion.value = lastTurn.question
+  result.value = lastTurn.result
+  submittedTypes.value = [...lastTurn.resourceTypes]
   activeTab.value = resourceOptions.find(option => submittedTypes.value.includes(option.key))?.resultKey || 'lectureDoc'
   streamContent.value = {
-    lectureDoc: item.result.lectureDoc || '',
-    mindmap: item.result.mindmap || '',
-    exercises: item.result.exercises || '',
-    reading: item.result.reading || '',
-    review: item.result.review || '',
+    lectureDoc: lastTurn.result.lectureDoc || '',
+    mindmap: lastTurn.result.mindmap || '',
+    exercises: lastTurn.result.exercises || '',
+    reading: lastTurn.result.reading || '',
+    review: lastTurn.result.review || '',
   }
-  thinkingSteps.value = [...item.thinkingSteps]
-  processSteps.value = item.thinkingSteps.map((step, index) => {
-    const [agent, ...messageParts] = step.split('：')
-    return {
-      id: `history-${index}`,
-      agent: messageParts.length ? agent : '流程记录',
-      message: messageParts.length ? messageParts.join('：') : step,
-      detail: '历史对话中的执行记录',
-      state: 'done',
-    }
-  })
+  thinkingSteps.value = [...lastTurn.thinkingSteps]
+  processSteps.value = buildHistoryProcessSteps(lastTurn.thinkingSteps, 'history')
   processCollapsed.value = true
-  activeTurnId.value = id
+  activeTurnId.value = lastTurn.id
   streamingTurnId.value = ''
-  conversationTurns.value = [{
-    id,
-    question: item.question,
-    resourceTypes: [...item.resourceTypes],
-    result: item.result,
-    streamContent: { ...streamContent.value },
-    thinkingSteps: [...thinkingSteps.value],
-    processSteps: processSteps.value.map(step => ({ ...step })),
+  conversationTurns.value = turns.map(turn => ({
+    id: turn.id,
+    question: turn.question,
+    resourceTypes: [...turn.resourceTypes],
+    result: turn.result,
+    streamContent: {
+      lectureDoc: turn.result.lectureDoc || '',
+      mindmap: turn.result.mindmap || '',
+      exercises: turn.result.exercises || '',
+      reading: turn.result.reading || '',
+      review: turn.result.review || '',
+    },
+    thinkingSteps: [...turn.thinkingSteps],
+    processSteps: buildHistoryProcessSteps(turn.thinkingSteps, `${turn.id}-history`),
     processCollapsed: true,
     processCompleted: true,
-  }]
+  }))
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   error.value = ''
 }
 
-function saveCompletedConversation(question: string, payload: CollaborativeLearningRequest) {
-  if (!result.value) return
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+function persistCurrentConversation(fallbackQuestion = '') {
+  const id = currentConversationId.value || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const turns = conversationTurns.value
+    .filter(turn => turn.result)
+    .map(turn => ({
+      id: turn.id,
+      question: turn.question,
+      resourceTypes: [...turn.resourceTypes],
+      result: turn.result!,
+      thinkingSteps: [...turn.thinkingSteps],
+    }))
+  const latestTurn = turns[turns.length - 1]
+  if (!latestTurn) return ''
+  currentConversationId.value = id
   saveConversationHistoryItem({
     id,
-    title: createConversationTitle(question),
-    question,
+    title: createConversationTitle(turns[0]?.question || fallbackQuestion),
+    question: latestTurn.question,
     createdAt: new Date().toISOString(),
-    resourceTypes: [...payload.resourceTypes],
-    result: result.value,
-    thinkingSteps: [...thinkingSteps.value],
+    resourceTypes: [...latestTurn.resourceTypes],
+    result: latestTurn.result,
+    thinkingSteps: [...latestTurn.thinkingSteps],
+    turns,
   })
-  emit('conversationSaved', id)
+  return id
+}
+
+function saveCompletedConversation(question: string) {
+  persistCurrentConversation(question)
 }
 
 function buildProcessStep(data: any): AgentProcessStep | null {
   if (!data.message) return null
   return {
     id: `${Date.now()}-${processSteps.value.length}-${processQueue.value.length}`,
-    agent: data.agent || '协作调度',
+    agent: data.agent || '鍗忎綔璋冨害',
     message: data.message,
-    detail: data.detail || '正在推进多 Agent 协作流程',
+    detail: data.detail || '姝ｅ湪鎺ㄨ繘澶?Agent 鍗忎綔娴佺▼',
     state: data.state === 'done' ? 'done' : 'running',
   }
 }
@@ -423,7 +459,7 @@ function appendProcessStep(data: any) {
 function applyStreamEvent(event: string, data: any) {
   if (event === 'status') {
     if (data.message) {
-      thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}：${data.message}` : data.message]
+      thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}锛?{data.message}` : data.message]
       appendProcessStep(data)
     }
     return
@@ -442,12 +478,12 @@ function applyStreamEvent(event: string, data: any) {
     return
   }
   if (event === 'error') {
-    throw new Error(data.message || '资源生成失败')
+    throw new Error(data.message || '璧勬簮鐢熸垚澶辫触')
   }
 }
 
 async function readStream(response: Response) {
-  if (!response.body) throw new Error('浏览器不支持流式读取')
+  if (!response.body) throw new Error('娴忚鍣ㄤ笉鏀寔娴佸紡璇诲彇')
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
@@ -471,7 +507,7 @@ async function readStream(response: Response) {
 async function submit() {
   const question = prompt.value.trim()
   if (!question) {
-    error.value = '请输入你想学习的内容'
+    error.value = '璇疯緭鍏ヤ綘鎯冲涔犵殑鍐呭'
     return
   }
   const config = { ...modelConfig.value }
@@ -479,11 +515,11 @@ async function submit() {
   const turnId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
-    major: '未指定',
-    course: '自定义学习主题',
-    chapter: '用户当前问题',
+    major: '鏈寚瀹?,
+    course: '鑷畾涔夊涔犱富棰?,
+    chapter: '鐢ㄦ埛褰撳墠闂',
     weakness: question,
-    goal: '理解并掌握相关知识',
+    goal: '鐞嗚В骞舵帉鎻＄浉鍏崇煡璇?,
     resourceTypes: [...selectedTypes.value],
     fileIds: [...selectedFileIds.value],
     ...config,
@@ -526,12 +562,12 @@ async function submit() {
     })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
-      throw new Error(data?.detail || `请求失败: ${response.status}`)
+      throw new Error(data?.detail || `璇锋眰澶辫触: ${response.status}`)
     }
     await readStream(response)
-    saveCompletedConversation(question, payload)
+    saveCompletedConversation(question)
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '资源生成失败'
+    error.value = reason instanceof Error ? reason.message : '璧勬簮鐢熸垚澶辫触'
   } finally {
     loading.value = false
     streamingTurnId.value = ''
@@ -545,20 +581,21 @@ onMounted(() => {
 })
 
 watch(() => props.historyId, hydrateFromHistory)
+watch(() => props.conversationSeed, () => resetConversation())
 watch(prompt, resizePromptInput)
 </script>
 
 <template>
   <div :class="['generate-page', { 'has-result': result || loading || hasStreamingOutput, idle: !result && !loading && !hasStreamingOutput }]">
     <section v-if="!conversationTurns.length && !result && !loading" class="empty-state">
-      <h2>准备好了，随时开始</h2>
+      <h2>鍑嗗濂戒簡锛岄殢鏃跺紑濮?/h2>
     </section>
 
     <section v-if="loading && !conversationTurns.length && !hasStreamingOutput" class="generating-state">
-      <span class="generating-mark">✦</span>
+      <span class="generating-mark">鉁?/span>
       <div>
-        <strong>正在理解问题</strong>
-        <p>正在连接协作 Agent……</p>
+        <strong>姝ｅ湪鐞嗚В闂</strong>
+        <p>姝ｅ湪杩炴帴鍗忎綔 Agent鈥︹€?/p>
       </div>
     </section>
 
@@ -572,7 +609,7 @@ watch(prompt, resizePromptInput)
         <div class="assistant-body">
           <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
             <div class="trace-head" role="button" tabindex="0" @click="setTurnCollapsed(turn.id, !turn.processCollapsed)">
-              <span>处理过程</span>
+              <span>澶勭悊杩囩▼</span>
               <b>
                 {{ turn.processCollapsed ? activeProcessSummary(turn) : `${turn.processSteps.filter(step => step.state === 'done').length}/${turn.processSteps.length}` }}
               </b>
@@ -594,7 +631,7 @@ watch(prompt, resizePromptInput)
           </div>
 
           <div v-if="turn.result?.sources.length" class="result-sources">
-            <span>参考资料</span>
+            <span>鍙傝€冭祫鏂?/span>
             <b v-for="source in turn.result.sources" :key="source.id">{{ source.name }}</b>
           </div>
 
@@ -645,7 +682,7 @@ watch(prompt, resizePromptInput)
                   :value="exerciseAnswers[item.id] || ''"
                   :disabled="exerciseSubmitted[item.id]"
                   rows="3"
-                  placeholder="请输入你的答案"
+                  placeholder="璇疯緭鍏ヤ綘鐨勭瓟妗?
                   @input="updateExerciseAnswer(item.id, $event)"
                 ></textarea>
 
@@ -653,7 +690,7 @@ watch(prompt, resizePromptInput)
                   v-else
                   :value="exerciseAnswers[item.id] || ''"
                   :disabled="exerciseSubmitted[item.id]"
-                  placeholder="请输入答案"
+                  placeholder="璇疯緭鍏ョ瓟妗?
                   @input="updateExerciseAnswer(item.id, $event)"
                 />
 
@@ -664,14 +701,14 @@ watch(prompt, resizePromptInput)
                     :disabled="!exerciseAnswers[item.id]?.trim()"
                     @click="submitExercise(item)"
                   >
-                    提交答案
+                    鎻愪氦绛旀
                   </button>
-                  <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
+                  <button v-else type="button" @click="retryExercise(item.id)">閲嶆柊浣滅瓟</button>
                 </div>
 
                 <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
-                  <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
-                  <p>正确答案：{{ item.answer }}</p>
+                  <strong>{{ isExerciseCorrect(item) ? '鍥炵瓟姝ｇ‘' : '鍥炵瓟閿欒' }}</strong>
+                  <p>姝ｇ‘绛旀锛歿{ item.answer }}</p>
                   <p>{{ item.explanation }}</p>
                 </div>
               </article>
@@ -696,7 +733,7 @@ watch(prompt, resizePromptInput)
             :disabled="loading"
             @click="toggleFile(file.id)"
           >
-            <span>PDF</span>{{ file.name }}<i>×</i>
+            <span>PDF</span>{{ file.name }}<i>脳</i>
           </button>
           <button
             v-for="item in selectedOptions"
@@ -705,7 +742,7 @@ watch(prompt, resizePromptInput)
             :disabled="loading"
             @click="removeResource(item.key)"
           >
-            <span>{{ item.icon }}</span>{{ item.label }}<i>×</i>
+            <span>{{ item.icon }}</span>{{ item.label }}<i>脳</i>
           </button>
         </div>
 
@@ -715,7 +752,7 @@ watch(prompt, resizePromptInput)
               class="add-button"
               type="button"
               :disabled="loading"
-              aria-label="选择生成内容"
+              aria-label="閫夋嫨鐢熸垚鍐呭"
               @click="menuOpen = !menuOpen"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -724,7 +761,7 @@ watch(prompt, resizePromptInput)
             </button>
 
             <div v-if="menuOpen" class="tool-menu">
-              <div class="menu-title">引用资源库文件</div>
+              <div class="menu-title">寮曠敤璧勬簮搴撴枃浠?/div>
               <div v-if="resources.length" class="file-options">
                 <button
                   v-for="file in resources"
@@ -734,13 +771,13 @@ watch(prompt, resizePromptInput)
                   @click="toggleFile(file.id)"
                 >
                   <span class="tool-icon pdf">PDF</span>
-                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
-                  <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
+                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 椤?路 宸茶В鏋?/small></span>
+                  <i>{{ selectedFileIds.includes(file.id) ? '鉁? : '' }}</i>
                 </button>
               </div>
-              <div v-else class="no-files">资源库暂无 PDF，请先上传文件</div>
+              <div v-else class="no-files">璧勬簮搴撴殏鏃?PDF锛岃鍏堜笂浼犳枃浠?/div>
               <div class="menu-divider"></div>
-              <div class="menu-title">选择生成内容</div>
+              <div class="menu-title">閫夋嫨鐢熸垚鍐呭</div>
               <button
                 v-for="item in resourceOptions"
                 :key="item.key"
@@ -750,7 +787,7 @@ watch(prompt, resizePromptInput)
               >
                 <span class="tool-icon">{{ item.icon }}</span>
                 <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
-                <i>{{ selectedTypes.includes(item.key) ? '✓' : '' }}</i>
+                <i>{{ selectedTypes.includes(item.key) ? '鉁? : '' }}</i>
               </button>
             </div>
           </div>
@@ -760,7 +797,7 @@ watch(prompt, resizePromptInput)
             v-model="prompt"
             rows="1"
             :disabled="loading"
-            placeholder="有问题，尽管问"
+            placeholder="鏈夐棶棰橈紝灏界闂?
             @input="resizePromptInput"
             @keydown.enter.exact.prevent="submit"
           ></textarea>
@@ -773,7 +810,7 @@ watch(prompt, resizePromptInput)
               @click="modelMenuOpen = !modelMenuOpen"
             >
               {{ activeMode.label }}
-              <span>⌄</span>
+              <span>鈱?/span>
             </button>
 
             <div v-if="modelMenuOpen" class="model-menu">
@@ -785,7 +822,7 @@ watch(prompt, resizePromptInput)
                 @click="selectComposerModel(mode)"
               >
                 <span>{{ mode.label }}</span>
-                <b v-if="modelConfig.model === mode.model">✓</b>
+                <b v-if="modelConfig.model === mode.model">鉁?/b>
               </button>
 
               <div class="model-menu-divider"></div>
@@ -796,7 +833,7 @@ watch(prompt, resizePromptInput)
                 @click="modelSubmenuOpen = !modelSubmenuOpen"
               >
                 <span>{{ activeModelLabel }}</span>
-                <b>›</b>
+                <b>鈥?/b>
               </button>
 
               <div v-if="modelSubmenuOpen" class="model-submenu">
@@ -808,19 +845,19 @@ watch(prompt, resizePromptInput)
                   @click="selectComposerModel(model)"
                 >
                   <span>{{ model.label }}</span>
-                  <b v-if="modelConfig.model === model.model">✓</b>
+                  <b v-if="modelConfig.model === model.model">鉁?/b>
                 </button>
               </div>
             </div>
           </div>
 
-          <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">
-            {{ loading ? '…' : '↑' }}
+          <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="鍙戦€? @click="submit">
+            {{ loading ? '鈥? : '鈫? }}
           </button>
         </div>
       </div>
 
-      <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+      <p class="composer-hint">Enter 鍙戦€?路 Shift + Enter 鎹㈣</p>
     </section>
   </div>
 </template>
@@ -866,7 +903,7 @@ watch(prompt, resizePromptInput)
 .agent-step-running i { border-color: #202123; }
 .agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
 .agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
-.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
+.agent-step-done i::after { content: "鉁?; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
