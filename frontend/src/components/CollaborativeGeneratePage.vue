@@ -25,7 +25,7 @@ const resourceOptions: {
 const prompt = ref('')
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
-const selectedTypes = ref<CollaborativeResourceType[]>(['lecture'])
+const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
 const menuOpen = ref(false)
@@ -35,10 +35,11 @@ const result = ref<CollaborativeLearningResponse | null>(null)
 const activeTab = ref<ResultKey>('lectureDoc')
 
 const availableTabs = computed(() => [
+  ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
   ...resourceOptions
     .filter(item => submittedTypes.value.includes(item.key))
     .map(item => ({ key: item.resultKey, label: item.label })),
-  { key: 'review' as ResultKey, label: '审核结果' },
+  ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
 ])
 
 const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
@@ -75,12 +76,6 @@ async function submit() {
     error.value = '请输入你想学习的内容'
     return
   }
-  if (!selectedTypes.value.length) {
-    error.value = '请至少选择一种生成内容'
-    menuOpen.value = true
-    return
-  }
-
   const config = loadSiliconFlowConfig()
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
@@ -99,7 +94,7 @@ async function submit() {
   result.value = null
   menuOpen.value = false
   submittedTypes.value = [...selectedTypes.value]
-  activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'review'
+  activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'lectureDoc'
 
   try {
     result.value = await generateCollaborativeLearning(payload)
@@ -227,7 +222,7 @@ onMounted(loadUploadedResources)
           </div>
 
           <span class="selection-label">
-            {{ selectedFileIds.length ? `已引用 ${selectedFileIds.length} 份 PDF` : selectedTypes.length ? `已选 ${selectedTypes.length} 项` : '选择生成内容' }}
+            {{ selectedFileIds.length ? `已引用 ${selectedFileIds.length} 份 PDF` : selectedTypes.length ? `已选 ${selectedTypes.length} 项` : '直接对话' }}
           </span>
 
           <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">

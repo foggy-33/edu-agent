@@ -88,8 +88,6 @@ def generate(request: LearningRequest) -> dict:
 
 @router.post("/learning/generate")
 def generate_collaborative_learning_resources(request: CollaborativeLearningRequest) -> dict:
-    if not request.resourceTypes:
-        raise HTTPException(status_code=400, detail="请至少选择一种资源类型")
     try:
         payload = request.model_dump()
         source_context, sources = resource_service.build_context(request.user_id, request.fileIds)

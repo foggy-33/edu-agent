@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
+import HomePage from './HomePage.vue'
 
 const emit = defineEmits<{
   logout: []
+  navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account']
 }>()
 
 const userProfile = ref(loadUserProfile())
@@ -117,19 +119,30 @@ function reset() {
       </div>
     </div>
 
+    <section class="account-dashboard-section">
+      <HomePage @navigate="page => emit('navigate', page)" />
+    </section>
   </div>
 </template>
 
 <style scoped>
 .user-center-container {
-  display: block !important;
-  max-width: 760px;
+  display: flex !important;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
 .profile-section {
   display: flex !important;
   flex-direction: column !important;
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.account-dashboard-section {
+  width: 100%;
 }
 
 .profile-card {

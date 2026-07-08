@@ -704,6 +704,17 @@ textarea:focus-visible {
   padding: clamp(20px, 2.8vw, 40px);
 }
 
+.home-generate-center {
+  min-height: calc(100vh - 162px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-generate-center .generate-page {
+  flex: 1;
+}
+
 .dashboard {
   display: flex;
   flex-direction: column;

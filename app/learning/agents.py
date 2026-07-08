@@ -174,6 +174,20 @@ def reading_agent(state: LearningState) -> dict[str, Any]:
     return {"reading": value, "agentTrace": _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")}
 
 
+def direct_chat_agent(state: LearningState) -> dict[str, Any]:
+    value = _generate(
+        state,
+        "直接回答用户的问题。保持中文、清晰、可执行；如果用户引用了 PDF，优先依据资料回答，资料不足时说明是补充解释。",
+        lambda: (
+            f"你问的是：{state['weakness']}\n\n"
+            "我会先抓住核心概念，再给出可操作的理解路径。"
+            "如果这是一个课程问题，可以继续追问具体概念、例题或要求我展开某一步。"
+            f"{_source_note(state)}"
+        ),
+    )
+    return {"lectureDoc": value, "agentTrace": _trace(state, "直接对话 Agent", "已生成直接对话回答")}
+
+
 def review_agent(state: LearningState) -> dict[str, Any]:
     field_map = {
         "lecture": "lectureDoc",

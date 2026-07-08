@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from app.learning.agents import (
+    direct_chat_agent,
     exercise_agent,
     integration_agent,
     lecture_agent,
@@ -49,6 +50,18 @@ def _run_sequential(state: LearningState) -> LearningState:
 
 def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
     initial = LearningState(**payload, agentTrace=[])
+    if not initial.get("resourceTypes"):
+        state = initial
+        state.update(direct_chat_agent(state))
+        return {
+            "lectureDoc": state.get("lectureDoc", ""),
+            "mindmap": "",
+            "exercises": "",
+            "reading": "",
+            "review": "",
+            "sources": state.get("sources", []),
+            "agentTrace": state.get("agentTrace", []),
+        }
     graph = _build_graph()
     state = graph.invoke(initial) if graph else _run_sequential(initial)
     return {

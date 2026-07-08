@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import HomePage from './components/HomePage.vue'
 import AnalyzePage from './components/AnalyzePage.vue'
 import EvaluatePage from './components/EvaluatePage.vue'
 import CoursePage from './components/CoursePage.vue'
@@ -36,8 +35,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { key: 'home', label: '首页', icon: '🏠' },
-  { key: 'collaborative', label: '个性化资源生成', icon: '协' },
+  { key: 'home', label: '个性化资源生成', icon: '协' },
   { key: 'resources', label: '资源库', icon: '📦' },
   { key: 'evaluate', label: '学习评估', icon: '📝' },
   { key: 'courses', label: '课程管理', icon: '📚' },
@@ -168,7 +166,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
                navItems.find(n => n.key === currentPage)?.label }}
           </h1>
           <p class="page-subtitle">
-            {{ currentPage === 'home' ? '欢迎回来，查看您的学习数据' :
+            {{ currentPage === 'home' ? '多智能体协作生成完整个性化学习资源包' :
                currentPage === 'analyze' ? '分析您的学习情况，发现薄弱环节' :
                currentPage === 'collaborative' ? '多智能体协作生成完整个性化学习资源包' :
                currentPage === 'resources' ? '管理和查阅所有学习资料' :
@@ -198,7 +196,9 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
       </header>
 
       <div class="app-content">
-        <HomePage v-if="currentPage === 'home'" @navigate="navigate" />
+        <div v-if="currentPage === 'home'" class="home-generate-center">
+          <CollaborativeGeneratePage />
+        </div>
         <AnalyzePage 
           v-else-if="currentPage === 'analyze'" 
           :course="selectedCourse"
@@ -218,7 +218,7 @@ onUnmounted(() => window.removeEventListener(USER_PROFILE_EVENT, handleUserProfi
           :course="selectedCourse"
           @navigate="navigate"
         />
-        <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" />
+        <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" @navigate="navigate" />
         <PortraitPage v-else-if="currentPage === 'portrait'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>
