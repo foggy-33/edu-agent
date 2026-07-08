@@ -146,7 +146,6 @@ onMounted(loadProfileOverview)
         <h1>{{ userProfile.name }}的学习空间</h1>
         <p>管理账号资料、查看学科画像，并快速回到最近的学习任务。</p>
       </div>
-      <button type="button" @click="emit('navigate', 'portrait')">进入画像对话</button>
     </section>
 
     <div class="user-center-grid">
@@ -275,7 +274,7 @@ onMounted(loadProfileOverview)
         </div>
 
         <p class="portrait-summary">
-          {{ portrait?.llm_context?.summary || activeSubject?.summary || '还没有形成完整画像。可以进入画像对话，补充学习目标、薄弱点和学习偏好后生成雷达图。' }}
+          {{ portrait?.llm_context?.summary || activeSubject?.summary || '还没有形成完整画像。完成学习评估或多轮学习问答后，会在这里生成雷达图。' }}
         </p>
 
         <div class="metric-list">

@@ -505,11 +505,22 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
 
 
 @router.post("/resources/upload", status_code=201)
-def upload_resource(user_id: str = Form(...), file: UploadFile = File(...)) -> dict:
+def upload_resource(
+    user_id: str = Form(...),
+    course_folder: str = Form("未分类"),
+    file: UploadFile = File(...),
+) -> dict:
     if file.content_type not in {"application/pdf", "application/x-pdf"}:
         raise HTTPException(status_code=400, detail="仅支持上传 PDF 文件")
     try:
-        return {"resource": resource_service.upload_pdf(user_id=user_id, filename=file.filename or "document.pdf", stream=file.file)}
+        return {
+            "resource": resource_service.upload_pdf(
+                user_id=user_id,
+                filename=file.filename or "document.pdf",
+                stream=file.file,
+                course_folder=course_folder,
+            )
+        }
     except ResourceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:

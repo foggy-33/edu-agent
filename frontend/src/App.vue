@@ -56,7 +56,6 @@ const navItems: NavItem[] = [
   { key: 'courses', label: '课程', icon: 'project' },
   { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
-  { key: 'settings', label: '模型设置', icon: 'model' },
 ]
 
 function navigate(page: Page, course?: Course) {

@@ -14,6 +14,7 @@ from app.core.config import get_settings
 
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
+DEFAULT_RESOURCE_FOLDER = "未分类"
 
 
 class ResourceError(ValueError):
@@ -26,7 +27,14 @@ class ResourceService:
         self.base_dir.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
 
-    def upload_pdf(self, *, user_id: str, filename: str, stream: BinaryIO) -> dict[str, Any]:
+    def upload_pdf(
+        self,
+        *,
+        user_id: str,
+        filename: str,
+        stream: BinaryIO,
+        course_folder: str = DEFAULT_RESOURCE_FOLDER,
+    ) -> dict[str, Any]:
         if not filename.lower().endswith(".pdf"):
             raise ResourceError("仅支持上传 PDF 文件")
 
@@ -58,6 +66,7 @@ class ResourceService:
                 "page_count": len(pages),
                 "text_length": len(text),
                 "status": "ready",
+                "course_folder": self._normalize_folder(course_folder),
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             (resource_dir / "content.txt").write_text(text, encoding="utf-8")
@@ -75,7 +84,7 @@ class ResourceService:
         for path in self.base_dir.glob("*/metadata.json"):
             metadata = json.loads(path.read_text(encoding="utf-8"))
             if metadata.get("user_id") == user_id:
-                resources.append(metadata)
+                resources.append(self._normalize_metadata(metadata))
         return sorted(resources, key=lambda item: item["created_at"], reverse=True)
 
     def get_metadata(self, user_id: str, file_id: str) -> dict[str, Any]:
@@ -85,7 +94,7 @@ class ResourceService:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         if metadata.get("user_id") != user_id:
             raise ResourceError("无权访问该资源")
-        return metadata
+        return self._normalize_metadata(metadata)
 
     def get_pdf_path(self, user_id: str, file_id: str) -> Path:
         self.get_metadata(user_id, file_id)
@@ -111,6 +120,7 @@ class ResourceService:
                 "id": metadata["id"],
                 "name": metadata["name"],
                 "page_count": metadata["page_count"],
+                "course_folder": metadata.get("course_folder", DEFAULT_RESOURCE_FOLDER),
             })
             remaining -= len(excerpt)
             if remaining <= 0:
@@ -132,3 +142,13 @@ class ResourceService:
         if not file_id.isalnum():
             raise ResourceError("资源 ID 不合法")
         return self.base_dir / file_id
+
+    @staticmethod
+    def _normalize_folder(value: str | None) -> str:
+        folder = (value or DEFAULT_RESOURCE_FOLDER).strip()
+        return folder[:60] or DEFAULT_RESOURCE_FOLDER
+
+    @classmethod
+    def _normalize_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any]:
+        metadata["course_folder"] = cls._normalize_folder(metadata.get("course_folder"))
+        return metadata

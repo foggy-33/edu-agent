@@ -80,9 +80,14 @@ export async function getDynamicProfile(userId: string, course?: string): Promis
   return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}${params}`)
 }
 
-export async function uploadResource(userId: string, file: File): Promise<{ resource: UploadedResource }> {
+export async function uploadResource(
+  userId: string,
+  file: File,
+  courseFolder = '未分类'
+): Promise<{ resource: UploadedResource }> {
   const body = new FormData()
   body.append('user_id', userId)
+  body.append('course_folder', courseFolder)
   body.append('file', file)
   return httpRequest<{ resource: UploadedResource }>(`${API_BASE}/resources/upload`, {
     method: 'POST',

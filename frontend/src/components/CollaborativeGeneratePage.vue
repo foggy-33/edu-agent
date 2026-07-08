@@ -835,7 +835,7 @@ watch(prompt, resizePromptInput)
 .generating-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #202123; animation: pulse 1.2s infinite; }
 .generating-state strong { font-size: 16px; }
 .generating-state p { margin: 5px 0 0; color: #8a8a8a; font-size: 13px; }
-.chat-thread { display: grid; gap: 22px; min-height: 320px; padding: 22px 0 96px; }
+.chat-thread { display: grid; gap: 22px; min-height: 320px; padding: 22px 0 132px; }
 .chat-message { display: flex; width: 100%; }
 .user-message { justify-content: flex-end; }
 .message-bubble { max-width: min(78%, 720px); padding: 12px 16px; border-radius: 22px; color: #202123; background: #f0f0f0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -887,10 +887,10 @@ watch(prompt, resizePromptInput)
 .practice-feedback { display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: #f7f7f7; }
 .practice-feedback strong { color: #202123; }
 .practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
-.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 18px 0 10px; background: #f7f8fb; box-shadow: 0 -22px 34px #f7f8fb; }
+.composer-section { position: sticky; bottom: 18px; z-index: 5; width: min(760px, calc(100% - 32px)); margin: 0 auto; padding: 0; background: transparent; box-shadow: none; }
 .generate-page.idle .composer-section { position: static; padding: 0; background: transparent; }
-.composer { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); outline: none; }
-.composer:focus-within { border-color: #d9d9d9; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
+.composer { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 26px; background: rgba(255, 255, 255, .98); box-shadow: 0 14px 44px rgba(15, 23, 42, .16); outline: none; backdrop-filter: blur(10px); }
+.composer:focus-within { border-color: #d9d9d9; box-shadow: 0 16px 48px rgba(15, 23, 42, .2); }
 .composer textarea { min-width: 0; width: 100%; min-height: 24px; max-height: 150px; padding: 6px 4px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.5; }
 .composer textarea::placeholder { color: #929292; }
 .selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 7px; }
@@ -933,7 +933,7 @@ watch(prompt, resizePromptInput)
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 20px; line-height: 1; }
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-section:focus-within, .composer:focus, .composer textarea:focus, .add-button:focus, .model-button:focus, .model-menu-item:focus, .send-button:focus { outline: none; }
-.composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
+.composer-hint { margin: 7px 0 0; color: rgba(80, 80, 80, .62); text-align: center; font-size: 10px; text-shadow: 0 1px 8px rgba(255, 255, 255, .9); }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }

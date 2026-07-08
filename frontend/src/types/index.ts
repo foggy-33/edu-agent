@@ -185,5 +185,6 @@ export interface UploadedResource {
   page_count: number
   text_length: number
   status: 'ready'
+  course_folder: string
   created_at: string
 }
