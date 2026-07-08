@@ -60,17 +60,17 @@ const resourceOptions: {
   description: string
   icon: string
 }[] = [
-  { key: 'lecture', resultKey: 'lectureDoc', label: '璇剧▼璁茶В', description: '鐢熸垚姒傚康銆佸師鐞嗗拰绀轰緥璁茶В', icon: '鈻? },
-  { key: 'mindmap', resultKey: 'mindmap', label: '鎬濈淮瀵煎浘', description: '鐢熸垚缁撴瀯鍖栫煡璇嗗鍥?, icon: '鈼? },
-  { key: 'exercise', resultKey: 'exercises', label: '缁冧範棰?, description: '鐢熸垚鍒嗗眰棰樼洰鍜岀瓟妗堣В鏋?, icon: '鉁? },
-  { key: 'reading', resultKey: 'reading', label: '鎷撳睍闃呰', description: '鐢熸垚寤朵几鐭ヨ瘑鍜屽涔犺矾寰?, icon: '鈼? },
+  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: '▣' },
+  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: '◇' },
+  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: '✓' },
+  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '○' },
 ]
 
 const modelModes: ComposerModeOption[] = [
-  { key: 'smart', label: '鏅鸿兘', model: 'zai-org/GLM-5.2' },
-  { key: 'fast', label: '鏋侀€?, model: 'deepseek-ai/DeepSeek-V4-Flash' },
-  { key: 'balanced', label: '鍧囪　', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
-  { key: 'advanced', label: '楂樼骇', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+  { key: 'smart', label: '智能', model: 'zai-org/GLM-5.2' },
+  { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
+  { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
+  { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -140,7 +140,7 @@ const selectedFiles = computed(() => resources.value.filter(item => selectedFile
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
 const activeComposerModel = computed(() => composerModels.find(item => item.model === modelConfig.value.model))
-const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '鑷畾涔夋ā鍨?)
+const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
@@ -167,9 +167,9 @@ function isActiveTurn(turn: ConversationTurn) {
 function activeProcessSummary(turn: ConversationTurn) {
   const running = turn.processSteps.find(step => step.state === 'running')
   const last = turn.processSteps[turn.processSteps.length - 1]
-  if (running) return `${running.agent}锛?{running.message}`
-  if (turn.processCompleted) return '宸插畬鎴愶紝鐐瑰嚮灞曞紑'
-  return last ? `${last.agent}锛?{last.message}` : '澶勭悊涓?
+  if (running) return `${running.agent}：${running.message}`
+  if (turn.processCompleted) return '已完成，点击展开'
+  return last ? `${last.agent}：${last.message}` : '处理中'
 }
 
 function syncActiveTurn(targetId = streamingTurnId.value || activeTurnId.value) {
@@ -515,11 +515,11 @@ async function submit() {
   const turnId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
-    major: '鏈寚瀹?,
-    course: '鑷畾涔夊涔犱富棰?,
+    major: '未指定',
+    course: '自定义学习主题',
     chapter: '鐢ㄦ埛褰撳墠闂',
     weakness: question,
-    goal: '鐞嗚В骞舵帉鎻＄浉鍏崇煡璇?,
+    goal: '理解并掌握相关知识',
     resourceTypes: [...selectedTypes.value],
     fileIds: [...selectedFileIds.value],
     ...config,
@@ -588,14 +588,14 @@ watch(prompt, resizePromptInput)
 <template>
   <div :class="['generate-page', { 'has-result': result || loading || hasStreamingOutput, idle: !result && !loading && !hasStreamingOutput }]">
     <section v-if="!conversationTurns.length && !result && !loading" class="empty-state">
-      <h2>鍑嗗濂戒簡锛岄殢鏃跺紑濮?/h2>
+      <h2>准备好了，随时开始</h2>
     </section>
 
     <section v-if="loading && !conversationTurns.length && !hasStreamingOutput" class="generating-state">
-      <span class="generating-mark">鉁?/span>
+      <span class="generating-mark">✦</span>
       <div>
         <strong>姝ｅ湪鐞嗚В闂</strong>
-        <p>姝ｅ湪杩炴帴鍗忎綔 Agent鈥︹€?/p>
+        <p>正在连接协作 Agent...</p>
       </div>
     </section>
 
@@ -631,7 +631,7 @@ watch(prompt, resizePromptInput)
           </div>
 
           <div v-if="turn.result?.sources.length" class="result-sources">
-            <span>鍙傝€冭祫鏂?/span>
+            <span>参考资料</span>
             <b v-for="source in turn.result.sources" :key="source.id">{{ source.name }}</b>
           </div>
 
@@ -682,7 +682,7 @@ watch(prompt, resizePromptInput)
                   :value="exerciseAnswers[item.id] || ''"
                   :disabled="exerciseSubmitted[item.id]"
                   rows="3"
-                  placeholder="璇疯緭鍏ヤ綘鐨勭瓟妗?
+                  placeholder="请输入你的答案"
                   @input="updateExerciseAnswer(item.id, $event)"
                 ></textarea>
 
@@ -690,7 +690,7 @@ watch(prompt, resizePromptInput)
                   v-else
                   :value="exerciseAnswers[item.id] || ''"
                   :disabled="exerciseSubmitted[item.id]"
-                  placeholder="璇疯緭鍏ョ瓟妗?
+                  placeholder="请输入答案"
                   @input="updateExerciseAnswer(item.id, $event)"
                 />
 
@@ -708,7 +708,7 @@ watch(prompt, resizePromptInput)
 
                 <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
                   <strong>{{ isExerciseCorrect(item) ? '鍥炵瓟姝ｇ‘' : '鍥炵瓟閿欒' }}</strong>
-                  <p>姝ｇ‘绛旀锛歿{ item.answer }}</p>
+                  <p>正确答案：{{ item.answer }}</p>
                   <p>{{ item.explanation }}</p>
                 </div>
               </article>
@@ -752,7 +752,7 @@ watch(prompt, resizePromptInput)
               class="add-button"
               type="button"
               :disabled="loading"
-              aria-label="閫夋嫨鐢熸垚鍐呭"
+              aria-label="选择生成内容"
               @click="menuOpen = !menuOpen"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -761,7 +761,7 @@ watch(prompt, resizePromptInput)
             </button>
 
             <div v-if="menuOpen" class="tool-menu">
-              <div class="menu-title">寮曠敤璧勬簮搴撴枃浠?/div>
+              <div class="menu-title">引用资料库文件</div>
               <div v-if="resources.length" class="file-options">
                 <button
                   v-for="file in resources"
@@ -771,11 +771,11 @@ watch(prompt, resizePromptInput)
                   @click="toggleFile(file.id)"
                 >
                   <span class="tool-icon pdf">PDF</span>
-                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 椤?路 宸茶В鏋?/small></span>
-                  <i>{{ selectedFileIds.includes(file.id) ? '鉁? : '' }}</i>
+                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
+                  <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
                 </button>
               </div>
-              <div v-else class="no-files">璧勬簮搴撴殏鏃?PDF锛岃鍏堜笂浼犳枃浠?/div>
+              <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
               <div class="menu-divider"></div>
               <div class="menu-title">閫夋嫨鐢熸垚鍐呭</div>
               <button
@@ -787,7 +787,7 @@ watch(prompt, resizePromptInput)
               >
                 <span class="tool-icon">{{ item.icon }}</span>
                 <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
-                <i>{{ selectedTypes.includes(item.key) ? '鉁? : '' }}</i>
+                <i>{{ selectedTypes.includes(item.key) ? '✓' : '' }}</i>
               </button>
             </div>
           </div>
@@ -797,7 +797,7 @@ watch(prompt, resizePromptInput)
             v-model="prompt"
             rows="1"
             :disabled="loading"
-            placeholder="鏈夐棶棰橈紝灏界闂?
+            placeholder="有问题，尽管问"
             @input="resizePromptInput"
             @keydown.enter.exact.prevent="submit"
           ></textarea>
@@ -810,7 +810,7 @@ watch(prompt, resizePromptInput)
               @click="modelMenuOpen = !modelMenuOpen"
             >
               {{ activeMode.label }}
-              <span>鈱?/span>
+              <span>⌄</span>
             </button>
 
             <div v-if="modelMenuOpen" class="model-menu">
@@ -822,7 +822,7 @@ watch(prompt, resizePromptInput)
                 @click="selectComposerModel(mode)"
               >
                 <span>{{ mode.label }}</span>
-                <b v-if="modelConfig.model === mode.model">鉁?/b>
+                <b v-if="modelConfig.model === mode.model">✓</b>
               </button>
 
               <div class="model-menu-divider"></div>
@@ -833,7 +833,7 @@ watch(prompt, resizePromptInput)
                 @click="modelSubmenuOpen = !modelSubmenuOpen"
               >
                 <span>{{ activeModelLabel }}</span>
-                <b>鈥?/b>
+                <b>›</b>
               </button>
 
               <div v-if="modelSubmenuOpen" class="model-submenu">
@@ -845,19 +845,19 @@ watch(prompt, resizePromptInput)
                   @click="selectComposerModel(model)"
                 >
                   <span>{{ model.label }}</span>
-                  <b v-if="modelConfig.model === model.model">鉁?/b>
+                  <b v-if="modelConfig.model === model.model">✓</b>
                 </button>
               </div>
             </div>
           </div>
 
-          <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="鍙戦€? @click="submit">
-            {{ loading ? '鈥? : '鈫? }}
+          <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">
+            {{ loading ? '…' : '↑' }}
           </button>
         </div>
       </div>
 
-      <p class="composer-hint">Enter 鍙戦€?路 Shift + Enter 鎹㈣</p>
+      <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
     </section>
   </div>
 </template>
@@ -903,7 +903,7 @@ watch(prompt, resizePromptInput)
 .agent-step-running i { border-color: #202123; }
 .agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
 .agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
-.agent-step-done i::after { content: "鉁?; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
+.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
