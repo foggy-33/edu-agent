@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   createConversationTitle,
   getConversationHistoryItem,
@@ -13,6 +13,15 @@ import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'review'
+type ProcessState = 'running' | 'done'
+
+interface AgentProcessStep {
+  id: string
+  agent: string
+  message: string
+  detail: string
+  state: ProcessState
+}
 
 const props = defineProps<{
   historyId?: string | null
@@ -39,6 +48,7 @@ const resourceOptions: {
 const prompt = ref('')
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
+const promptInput = ref<HTMLTextAreaElement | null>(null)
 const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
@@ -57,6 +67,7 @@ const streamContent = ref<Record<ResultKey, string>>({
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
+const processSteps = ref<AgentProcessStep[]>([])
 
 const emptyStreamContent = (): Record<ResultKey, string> => ({
   lectureDoc: '',
@@ -118,6 +129,14 @@ function retryExercise(questionId: string) {
   exerciseSubmitted.value = { ...exerciseSubmitted.value, [questionId]: false }
 }
 
+async function resizePromptInput() {
+  await nextTick()
+  const input = promptInput.value
+  if (!input) return
+  input.style.height = 'auto'
+  input.style.height = `${Math.min(input.scrollHeight, 150)}px`
+}
+
 function isExerciseCorrect(item: CollaborativeExerciseItem) {
   const selected = normalizeAnswer(exerciseAnswers.value[item.id] || '')
   const expected = normalizeAnswer(item.answer)
@@ -138,6 +157,7 @@ async function loadUploadedResources() {
 function resetStreamState() {
   streamContent.value = emptyStreamContent()
   thinkingSteps.value = []
+  processSteps.value = []
 }
 
 function resetConversation() {
@@ -171,6 +191,16 @@ function hydrateFromHistory(id: string | null | undefined) {
     review: item.result.review || '',
   }
   thinkingSteps.value = [...item.thinkingSteps]
+  processSteps.value = item.thinkingSteps.map((step, index) => {
+    const [agent, ...messageParts] = step.split('：')
+    return {
+      id: `history-${index}`,
+      agent: messageParts.length ? agent : '流程记录',
+      message: messageParts.length ? messageParts.join('：') : step,
+      detail: '历史对话中的执行记录',
+      state: 'done',
+    }
+  })
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   error.value = ''
@@ -191,10 +221,36 @@ function saveCompletedConversation(question: string, payload: CollaborativeLearn
   emit('conversationSaved', id)
 }
 
+function appendProcessStep(data: any) {
+  if (!data.message) return
+  const agent = data.agent || '协作调度'
+  const state: ProcessState = data.state === 'done' ? 'done' : 'running'
+  const detail = data.detail || '正在推进多 Agent 协作流程'
+  const next = processSteps.value.map(step => (
+    step.state === 'running' ? { ...step, state: 'done' as ProcessState } : step
+  ))
+  const last = next[next.length - 1]
+  if (last && last.agent === agent && last.message === data.message) {
+    processSteps.value = [...next.slice(0, -1), { ...last, detail, state }]
+    return
+  }
+  processSteps.value = [
+    ...next,
+    {
+      id: `${Date.now()}-${processSteps.value.length}`,
+      agent,
+      message: data.message,
+      detail,
+      state,
+    },
+  ]
+}
+
 function applyStreamEvent(event: string, data: any) {
   if (event === 'status') {
     if (data.message) {
       thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}：${data.message}` : data.message]
+      appendProcessStep(data)
     }
     return
   }
@@ -205,6 +261,7 @@ function applyStreamEvent(event: string, data: any) {
   }
   if (event === 'done') {
     result.value = data.result
+    processSteps.value = processSteps.value.map(step => ({ ...step, state: 'done' }))
     return
   }
   if (event === 'error') {
@@ -285,9 +342,11 @@ async function submit() {
 onMounted(() => {
   loadUploadedResources()
   hydrateFromHistory(props.historyId)
+  resizePromptInput()
 })
 
 watch(() => props.historyId, hydrateFromHistory)
+watch(prompt, resizePromptInput)
 </script>
 
 <template>
@@ -320,9 +379,25 @@ watch(() => props.historyId, hydrateFromHistory)
         </button>
       </div>
       <div class="result-content">
-        <div v-if="thinkingSteps.length" class="thinking-trace">
-          <span>处理过程</span>
-          <p>{{ thinkingSteps[thinkingSteps.length - 1] }}</p>
+        <div v-if="processSteps.length" class="thinking-trace">
+          <div class="trace-head">
+            <span>处理过程</span>
+            <b>{{ processSteps.filter(step => step.state === 'done').length }}/{{ processSteps.length }}</b>
+          </div>
+          <ol class="agent-flow">
+            <li
+              v-for="step in processSteps"
+              :key="step.id"
+              :class="['agent-step', `agent-step-${step.state}`]"
+            >
+              <i></i>
+              <div>
+                <strong>{{ step.agent }}</strong>
+                <p>{{ step.message }}</p>
+                <small>{{ step.detail }}</small>
+              </div>
+            </li>
+          </ol>
         </div>
         <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
         <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
@@ -398,14 +473,6 @@ watch(() => props.historyId, hydrateFromHistory)
       <div v-if="error" class="composer-error">{{ error }}</div>
 
       <div class="composer">
-        <textarea
-          v-model="prompt"
-          rows="1"
-          :disabled="loading"
-          placeholder="有问题，尽管问"
-          @keydown.enter.exact.prevent="submit"
-        ></textarea>
-
         <div v-if="selectedOptions.length || selectedFiles.length" class="selected-tools">
           <button
             v-for="file in selectedFiles"
@@ -472,9 +539,15 @@ watch(() => props.historyId, hydrateFromHistory)
             </div>
           </div>
 
-          <span class="selection-label">
-            {{ selectedFileIds.length ? `已引用 ${selectedFileIds.length} 份 PDF` : selectedTypes.length ? `已选 ${selectedTypes.length} 项` : '直接对话' }}
-          </span>
+          <textarea
+            ref="promptInput"
+            v-model="prompt"
+            rows="1"
+            :disabled="loading"
+            placeholder="有问题，尽管问"
+            @input="resizePromptInput"
+            @keydown.enter.exact.prevent="submit"
+          ></textarea>
 
           <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">
             {{ loading ? '…' : '↑' }}
@@ -504,9 +577,24 @@ watch(() => props.historyId, hydrateFromHistory)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 26px 0; }
-.thinking-trace { margin-bottom: 18px; color: #8a8a8a; font-size: 12px; line-height: 1.6; }
-.thinking-trace span { display: block; margin-bottom: 3px; color: #aaa; font-size: 11px; }
-.thinking-trace p { margin: 0; }
+.thinking-trace { margin-bottom: 18px; padding: 12px 13px; border: 1px solid #ececec; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.6; }
+.trace-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+.trace-head span { color: #8a8a8a; font-size: 11px; font-weight: 750; }
+.trace-head b { color: #9a9a9a; font-size: 10px; font-weight: 700; }
+.agent-flow { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.agent-step { position: relative; display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 8px 9px; border-radius: 12px; transition: background .2s ease, transform .2s ease; }
+.agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
+.agent-step:last-child::before { display: none; }
+.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 2px; border: 1px solid #d5d5d5; border-radius: 50%; background: #fff; }
+.agent-step i::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #b8b8b8; }
+.agent-step strong { display: block; color: #2a2a2a; font-size: 12px; font-weight: 760; }
+.agent-step p { margin: 1px 0 0; color: #555; }
+.agent-step small { display: block; margin-top: 1px; color: #9a9a9a; font-size: 10px; }
+.agent-step-running { background: #f7f7f7; transform: translateX(2px); }
+.agent-step-running i { border-color: #202123; }
+.agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
+.agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
+.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
@@ -529,18 +617,18 @@ watch(() => props.historyId, hydrateFromHistory)
 .practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
 .composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
 .generate-page.idle .composer-section { position: static; padding: 0; background: transparent; }
-.composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
+.composer { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
 .composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
-.composer textarea { width: 100%; min-height: 34px; max-height: 170px; padding: 5px 5px 10px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.55; }
+.composer textarea { min-width: 0; width: 100%; min-height: 24px; max-height: 150px; padding: 6px 4px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.5; }
 .composer textarea::placeholder { color: #929292; }
-.selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 9px; }
+.selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 7px; }
 .selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
 .selected-tools button i { color: #929292; font-style: normal; font-size: 14px; }
 .selected-tools button.selected-file { max-width: 260px; border-color: #f1caca; color: #8d3434; background: #fff5f5; }
 .selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
-.composer-actions { display: flex; align-items: center; gap: 9px; }
+.composer-actions { display: flex; align-items: center; gap: 8px; }
 .tool-picker { position: relative; }
-.add-button { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; font-size: 25px; font-weight: 300; }
+.add-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; font-size: 24px; font-weight: 300; line-height: 1; }
 .add-button:hover { background: #e6e6e6; }
 .tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); }
 .generate-page.idle .tool-menu { top: 46px; bottom: auto; }
@@ -556,14 +644,18 @@ watch(() => props.historyId, hydrateFromHistory)
 .tool-menu b { font-size: 13px; }
 .tool-menu small { color: #8a8a8a; font-size: 10px; }
 .tool-menu i { color: #202123; text-align: center; font-style: normal; }
-.selection-label { flex: 1; color: #8b8b8b; font-size: 12px; }
-.send-button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 21px; }
+.send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 20px; line-height: 1; }
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }
 @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
+@keyframes tracePulse {
+  0% { box-shadow: 0 0 0 0 rgba(32, 33, 35, .28); }
+  70% { box-shadow: 0 0 0 7px rgba(32, 33, 35, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(32, 33, 35, 0); }
+}
 @media (max-width: 620px) {
   .generate-page { min-height: calc(100vh - 64px); }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }

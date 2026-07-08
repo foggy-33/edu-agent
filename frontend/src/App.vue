@@ -31,20 +31,30 @@ const selectedCourse = ref<Course | null>(null)
 const conversationHistory = ref<ConversationHistoryItem[]>(loadConversationHistory())
 const selectedHistoryId = ref<string | null>(null)
 
+const navIcons = {
+  newChat: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z'],
+  files: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z', 'M14 2v6h6', 'M8 13h8', 'M8 17h6'],
+  project: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z'],
+  evaluate: ['M9 5h6', 'M9 3h6a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V5a2 2 0 0 1 2-2Z', 'M8 14l2.2 2.2L16 10.5'],
+  portrait: ['M12 3a9 9 0 1 0 9 9', 'M12 3v18', 'M3 12h18', 'M5.6 5.6l12.8 12.8', 'M5.6 18.4 18.4 5.6', 'M8.5 13.5l3 2 4.5-6'],
+  apps: ['M4 4h6v6H4Z', 'M14 4h6v6h-6Z', 'M4 14h6v6H4Z', 'M14 14h6v6h-6Z'],
+  more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],
+} as const
+
 interface NavItem {
   key: Page
   label: string
-  icon: string
+  icon: keyof typeof navIcons
 }
 
 const navItems: NavItem[] = [
-  { key: 'home', label: '个性化资源生成', icon: '○' },
-  { key: 'resources', label: '资源库', icon: '□' },
-  { key: 'evaluate', label: '学习评估', icon: '✓' },
-  { key: 'courses', label: '课程管理', icon: '≡' },
-  { key: 'account', label: '个人中心', icon: '◎' },
-  { key: 'portrait', label: '画像对话', icon: '◇' },
-  { key: 'settings', label: '设置', icon: '⚙' },
+  { key: 'home', label: '新聊天', icon: 'newChat' },
+  { key: 'resources', label: '文件库', icon: 'files' },
+  { key: 'courses', label: '项目', icon: 'project' },
+  { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
+  { key: 'portrait', label: '画像对话', icon: 'portrait' },
+  { key: 'account', label: '应用', icon: 'apps' },
+  { key: 'settings', label: '更多', icon: 'more' },
 ]
 
 function navigate(page: Page, course?: Course) {
@@ -60,6 +70,14 @@ function navigate(page: Page, course?: Course) {
 function startNewConversation() {
   selectedHistoryId.value = null
   currentPage.value = 'home'
+}
+
+function handleNavItem(item: NavItem) {
+  if (item.key === 'home') {
+    startNewConversation()
+    return
+  }
+  navigate(item.key)
 }
 
 function openConversation(item: ConversationHistoryItem) {
@@ -122,38 +140,41 @@ onUnmounted(() => {
       ]"
     >
       <div class="app-brand">
-        <div :class="['flex items-center gap-3', sidebarCollapsed ? 'justify-center w-full' : '']">
-          <div class="brand-mark">
-            AI
-          </div>
-          <div v-if="!sidebarCollapsed">
-            <div class="brand-name">智学空间</div>
-            <div class="brand-caption">智能学习工作台</div>
-          </div>
-        </div>
+        <div v-if="!sidebarCollapsed" class="brand-name">智学AI</div>
+        <div v-else class="brand-mark">AI</div>
+        <button
+          type="button"
+          class="collapse-button"
+          :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          ◧
+        </button>
       </div>
 
       <nav class="app-nav">
-        <div v-if="!sidebarCollapsed" class="nav-caption">工作台</div>
         <button
           v-for="item in navItems"
           :key="item.key"
-          @click="navigate(item.key)"
+          @click="handleNavItem(item)"
           :class="[
             'nav-item',
             currentPage === item.key ? 'nav-item-active' : ''
           ]"
           :title="sidebarCollapsed ? item.label : undefined"
         >
-          <span class="nav-icon">{{ item.icon }}</span>
+          <span class="nav-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path v-for="path in navIcons[item.icon]" :key="path" :d="path" />
+            </svg>
+          </span>
           <span v-if="!sidebarCollapsed" class="font-medium">{{ item.label }}</span>
         </button>
       </nav>
 
       <section v-if="!sidebarCollapsed" class="conversation-history">
         <div class="history-head">
-          <span>历史对话</span>
-          <button type="button" @click="startNewConversation">新建</button>
+          <span>最近</span>
         </div>
         <button
           v-for="item in conversationHistory"
@@ -163,28 +184,20 @@ onUnmounted(() => {
           @click="openConversation(item)"
         >
           <span>{{ item.title }}</span>
-          <small>{{ new Date(item.createdAt).toLocaleString() }}</small>
         </button>
         <p v-if="!conversationHistory.length" class="history-empty">暂无历史</p>
       </section>
 
       <div class="sidebar-footer">
-        <button v-if="!sidebarCollapsed" class="profile-card" @click="navigate('account')" title="进入个人中心">
+        <button class="profile-card" @click="navigate('account')" title="进入个人中心">
           <div class="profile-avatar">
             <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
             <span v-else>{{ userInitial }}</span>
           </div>
-          <div class="min-w-0">
+          <div v-if="!sidebarCollapsed" class="min-w-0">
             <div class="profile-name">{{ userProfile.name }}</div>
-            <div class="profile-id">{{ userProfile.userId }}</div>
+            <div class="profile-id">Plus</div>
           </div>
-        </button>
-        <button 
-          @click="sidebarCollapsed = !sidebarCollapsed"
-          class="collapse-button"
-        >
-          <span>{{ sidebarCollapsed ? '→' : '←' }}</span>
-          <span v-if="!sidebarCollapsed" class="font-medium">收起菜单</span>
         </button>
         <button
           class="sidebar-logout-button"

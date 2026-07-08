@@ -220,16 +220,36 @@ def generate_collaborative_learning_resources(request: CollaborativeLearningRequ
 def stream_collaborative_learning_resources(request: CollaborativeLearningRequest) -> StreamingResponse:
     def events() -> Iterator[str]:
         try:
-            yield _sse("status", {"message": "正在读取问题和已选资料"})
+            yield _sse("status", {
+                "message": "读取用户问题与资源选择",
+                "agent": "请求接入",
+                "detail": "接收问题、资源类型、PDF 文件 ID 和模型配置",
+                "state": "running",
+            })
             payload = _collaborative_payload(request)
             state = LearningState(**payload, agentTrace=[])
             if payload.get("source_context"):
-                yield _sse("status", {"message": "已整理引用资料，准备生成回答"})
+                yield _sse("status", {
+                    "message": "PDF 上下文整理完成",
+                    "agent": "资料检索",
+                    "detail": "读取已选 PDF 的解析文本，拼接为 source_context 供后续 Agent 使用",
+                    "state": "done",
+                })
             else:
-                yield _sse("status", {"message": "未引用资料，直接围绕问题生成回答"})
+                yield _sse("status", {
+                    "message": "未选择 PDF 资料",
+                    "agent": "资料检索",
+                    "detail": "后续 Agent 将直接围绕用户问题和学习目标生成内容",
+                    "state": "done",
+                })
 
             if not request.resourceTypes:
-                yield _sse("status", {"message": "直接对话模式，正在组织回答", "agent": "直接对话 Agent"})
+                yield _sse("status", {
+                    "message": "直接对话模式启动",
+                    "agent": "直接对话 Agent",
+                    "detail": "未选择生成内容，跳过资源规划链路，直接组织回答",
+                    "state": "running",
+                })
                 state["lectureDoc"] = yield from _stream_generated_text(
                     state,
                     "lectureDoc",
@@ -237,19 +257,39 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     _direct_chat_fallback(state),
                 )
                 state["agentTrace"] = _trace(state, "直接对话 Agent", "已生成直接对话回答")
-                yield _sse("status", {"message": "已生成直接对话回答", "agent": "直接对话 Agent"})
+                yield _sse("status", {
+                    "message": "直接对话回答完成",
+                    "agent": "直接对话 Agent",
+                    "detail": "回答已写入 lectureDoc，并准备保存为历史记录",
+                    "state": "done",
+                })
                 yield _sse("done", {"result": _learning_result(state)})
                 return
 
-            yield _sse("status", {"message": f"已选择 {len(request.resourceTypes)} 类资源，正在调度协作 Agent"})
+            yield _sse("status", {
+                "message": f"调度 {len(request.resourceTypes)} 类资源生成任务",
+                "agent": "协作调度",
+                "detail": "按所选资源类型组织学情分析、任务规划、内容生成、质量审核和资源整合",
+                "state": "running",
+            })
 
             for node in (profile_agent, planner_agent):
                 state.update(node(state))
                 trace = state.get("agentTrace", [])[-1]
-                yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+                yield _sse("status", {
+                    "message": trace.get("summary", ""),
+                    "agent": trace.get("agent", ""),
+                    "detail": "更新共享状态，后续 Agent 将读取该阶段输出继续生成",
+                    "state": "done",
+                })
 
             if "lecture" in request.resourceTypes:
-                yield _sse("status", {"message": "正在流式生成课程讲解", "agent": "课程讲解 Agent"})
+                yield _sse("status", {
+                    "message": "流式生成课程讲解",
+                    "agent": "课程讲解 Agent",
+                    "detail": "根据学情、目标和资料上下文生成 Markdown 讲义，并逐段输出",
+                    "state": "running",
+                })
                 state["lectureDoc"] = yield from _stream_generated_text(
                     state,
                     "lectureDoc",
@@ -257,10 +297,20 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     _lecture_fallback(state),
                 )
                 state["agentTrace"] = _trace(state, "课程讲解 Agent", "课程讲解文档生成完成")
-                yield _sse("status", {"message": "课程讲解文档生成完成", "agent": "课程讲解 Agent"})
+                yield _sse("status", {
+                    "message": "课程讲解文档生成完成",
+                    "agent": "课程讲解 Agent",
+                    "detail": "讲义内容已写入 lectureDoc",
+                    "state": "done",
+                })
 
             if "mindmap" in request.resourceTypes:
-                yield _sse("status", {"message": "正在流式生成思维导图", "agent": "思维导图 Agent"})
+                yield _sse("status", {
+                    "message": "流式生成思维导图",
+                    "agent": "思维导图 Agent",
+                    "detail": "提炼主题、概念层级和易错点，输出 Mermaid mindmap 源码",
+                    "state": "running",
+                })
                 state["mindmap"] = yield from _stream_generated_text(
                     state,
                     "mindmap",
@@ -268,19 +318,39 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     _mindmap_fallback(state),
                 )
                 state["agentTrace"] = _trace(state, "思维导图 Agent", "Mermaid 思维导图生成完成")
-                yield _sse("status", {"message": "Mermaid 思维导图生成完成", "agent": "思维导图 Agent"})
+                yield _sse("status", {
+                    "message": "Mermaid 思维导图生成完成",
+                    "agent": "思维导图 Agent",
+                    "detail": "导图源码已写入 mindmap，可在前端渲染",
+                    "state": "done",
+                })
 
             if "exercise" in request.resourceTypes:
-                yield _sse("status", {"message": "正在生成可作答练习题", "agent": "练习题 Agent"})
+                yield _sse("status", {
+                    "message": "生成可作答分层练习题",
+                    "agent": "练习题 Agent",
+                    "detail": "生成结构化题目 JSON，再转换为可提交、可判题的练习卡片",
+                    "state": "running",
+                })
                 items = _generate_exercise_items(state)
                 state["exerciseItems"] = items
                 state["exercises"] = _exercises_to_markdown(state, items)
                 state["agentTrace"] = _trace(state, "练习题 Agent", "可在线作答的分层练习题生成完成")
                 yield from _stream_text("exercises", state["exercises"])
-                yield _sse("status", {"message": "可在线作答的分层练习题生成完成", "agent": "练习题 Agent"})
+                yield _sse("status", {
+                    "message": "可在线作答的分层练习题生成完成",
+                    "agent": "练习题 Agent",
+                    "detail": "题目、答案和解析已写入 exerciseItems",
+                    "state": "done",
+                })
 
             if "reading" in request.resourceTypes:
-                yield _sse("status", {"message": "正在流式生成拓展阅读", "agent": "拓展阅读 Agent"})
+                yield _sse("status", {
+                    "message": "流式生成拓展阅读",
+                    "agent": "拓展阅读 Agent",
+                    "detail": "扩展相关知识、应用场景和递进学习路径，并逐段输出",
+                    "state": "running",
+                })
                 state["reading"] = yield from _stream_generated_text(
                     state,
                     "reading",
@@ -288,16 +358,37 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     _reading_fallback(state),
                 )
                 state["agentTrace"] = _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")
-                yield _sse("status", {"message": "知识延伸与学习路径生成完成", "agent": "拓展阅读 Agent"})
+                yield _sse("status", {
+                    "message": "知识延伸与学习路径生成完成",
+                    "agent": "拓展阅读 Agent",
+                    "detail": "拓展阅读已写入 reading",
+                    "state": "done",
+                })
 
+            yield _sse("status", {
+                "message": "执行质量审核",
+                "agent": "质量审核 Agent",
+                "detail": "检查资源是否覆盖短板、学习目标、完整性和难度匹配",
+                "state": "running",
+            })
             state.update(review_agent(state))
             yield from _stream_text("review", state.get("review", ""))
             trace = state.get("agentTrace", [])[-1]
-            yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+            yield _sse("status", {
+                "message": trace.get("summary", ""),
+                "agent": trace.get("agent", ""),
+                "detail": "审核结果已写入 review",
+                "state": "done",
+            })
 
             state.update(integration_agent(state))
             trace = state.get("agentTrace", [])[-1]
-            yield _sse("status", {"message": trace.get("summary", ""), "agent": trace.get("agent", "")})
+            yield _sse("status", {
+                "message": trace.get("summary", ""),
+                "agent": trace.get("agent", ""),
+                "detail": "合并讲义、导图、练习、阅读、审核与引用来源，返回统一结果",
+                "state": "done",
+            })
             yield _sse("done", {"result": _learning_result(state)})
         except ResourceError as exc:
             yield _sse("error", {"message": str(exc)})

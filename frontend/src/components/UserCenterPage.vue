@@ -1,18 +1,64 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { getDynamicProfile, listDynamicProfiles } from '../api/client'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
+import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 import HomePage from './HomePage.vue'
 
 const emit = defineEmits<{
   logout: []
-  navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account']
+  navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account' | 'portrait' | 'resources']
 }>()
 
 const userProfile = ref(loadUserProfile())
 const fileInput = ref<HTMLInputElement | null>(null)
 const userError = ref('')
 const userSuccess = ref('')
+const profileLoading = ref(false)
+const profileError = ref('')
+const subjectProfiles = ref<SubjectProfileSummary[]>([])
+const selectedCourse = ref('数据库系统')
+const portrait = ref<DynamicProfile | null>(null)
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
+const activeSubject = computed(() => subjectProfiles.value.find(item => item.course === selectedCourse.value))
+const radarMetrics = computed<[string, number][]>(() => {
+  const source = portrait.value?.radar_metrics || activeSubject.value?.radar_metrics || {}
+  const entries = Object.entries(source)
+  if (entries.length) return entries
+  return [
+    ['概念理解', 52],
+    ['应用迁移', 44],
+    ['练习表现', 58],
+    ['学习稳定性', 48],
+    ['资源偏好', 62],
+  ]
+})
+const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => {
+  const total = radarMetrics.value.length
+  const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
+  const radius = 84 * Math.max(0, Math.min(100, Number(value))) / 100
+  return `${110 + Math.cos(angle) * radius},${110 + Math.sin(angle) * radius}`
+}).join(' '))
+const radarAxes = computed(() => radarMetrics.value.map(([name], index) => {
+  const total = radarMetrics.value.length
+  const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
+  return {
+    name,
+    value,
+    x: 110 + Math.cos(angle) * 98,
+    y: 110 + Math.sin(angle) * 98,
+    lineX: 110 + Math.cos(angle) * 88,
+    lineY: 110 + Math.sin(angle) * 88,
+    anchor: Math.cos(angle) > 0.25 ? 'start' : Math.cos(angle) < -0.25 ? 'end' : 'middle',
+  }
+}))
+const radarRings = computed(() => [20, 40, 60, 80].map(radius => {
+  const count = Math.max(radarMetrics.value.length, 3)
+  return Array.from({ length: count }, (_, index) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / count
+    return `${110 + Math.cos(angle) * radius},${110 + Math.sin(angle) * radius}`
+  }).join(' ')
+}))
 
 function chooseAvatar() {
   fileInput.value?.click()
@@ -55,14 +101,61 @@ function reset() {
   userSuccess.value = '已恢复默认资料'
 }
 
+async function loadPortrait(course = selectedCourse.value) {
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    selectedCourse.value = course
+    const result = await getDynamicProfile(userProfile.value.userId, course)
+    portrait.value = result.profile
+  } catch (err) {
+    portrait.value = null
+    profileError.value = err instanceof Error ? err.message : '画像加载失败'
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+async function loadProfileOverview() {
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    const result = await listDynamicProfiles(userProfile.value.userId)
+    subjectProfiles.value = result.profiles
+    if (result.profiles[0]) {
+      await loadPortrait(result.profiles[0].course)
+    } else {
+      await loadPortrait(selectedCourse.value)
+    }
+  } catch (err) {
+    profileError.value = err instanceof Error ? err.message : '画像加载失败'
+  } finally {
+    profileLoading.value = false
+  }
+}
+
+onMounted(loadProfileOverview)
+
 </script>
 
 <template>
   <div class="user-center-container">
-    <div class="profile-section">
+    <section class="profile-hero">
+      <div>
+        <span>PERSONAL CENTER</span>
+        <h1>{{ userProfile.name }}的学习空间</h1>
+        <p>管理账号资料、查看学科画像，并快速回到最近的学习任务。</p>
+      </div>
+      <button type="button" @click="emit('navigate', 'portrait')">进入画像对话</button>
+    </section>
+
+    <div class="user-center-grid">
       <div class="profile-card">
         <div class="profile-header">
-          <h2>👤 个人资料</h2>
+          <div>
+            <span>ACCOUNT</span>
+            <h2>个人资料</h2>
+          </div>
         </div>
         
         <div class="profile-avatar-section">
@@ -117,9 +210,91 @@ function reset() {
         <div v-if="userSuccess" class="message success">{{ userSuccess }}</div>
         <div v-if="userError" class="message error">{{ userError }}</div>
       </div>
+
+      <section class="portrait-card">
+        <header>
+          <div>
+            <span>LEARNING PORTRAIT</span>
+            <h2>学科画像雷达图</h2>
+          </div>
+          <b>{{ portrait?.completion || activeSubject?.completion || 0 }}%</b>
+        </header>
+
+        <div class="subject-switcher">
+          <button
+            v-for="item in subjectProfiles"
+            :key="item.course"
+            type="button"
+            :class="{ active: item.course === selectedCourse }"
+            :disabled="profileLoading"
+            @click="loadPortrait(item.course)"
+          >
+            {{ item.course }}
+          </button>
+          <button v-if="!subjectProfiles.length" type="button" class="active">{{ selectedCourse }}</button>
+        </div>
+
+        <div class="portrait-radar-wrap">
+          <svg class="portrait-radar" viewBox="0 0 220 220" role="img" aria-label="学科画像雷达图">
+            <polygon
+              v-for="ring in radarRings"
+              :key="ring"
+              :points="ring"
+              class="radar-ring"
+            />
+            <line
+              v-for="axis in radarAxes"
+              :key="axis.name"
+              x1="110"
+              y1="110"
+              :x2="axis.lineX"
+              :y2="axis.lineY"
+              class="radar-axis"
+            />
+            <polygon :points="radarPoints" class="radar-area" />
+            <polyline :points="radarPoints" class="radar-line" />
+            <circle
+              v-for="point in radarPoints.split(' ')"
+              :key="point"
+              :cx="point.split(',')[0]"
+              :cy="point.split(',')[1]"
+              r="3.2"
+              class="radar-point"
+            />
+            <text
+              v-for="axis in radarAxes"
+              :key="`${axis.name}-label`"
+              :x="axis.x"
+              :y="axis.y"
+              :text-anchor="axis.anchor"
+              class="radar-label"
+            >
+              {{ axis.name }}
+            </text>
+          </svg>
+        </div>
+
+        <p class="portrait-summary">
+          {{ portrait?.llm_context?.summary || activeSubject?.summary || '还没有形成完整画像。可以进入画像对话，补充学习目标、薄弱点和学习偏好后生成雷达图。' }}
+        </p>
+
+        <div class="metric-list">
+          <article v-for="[name, value] in radarMetrics" :key="name">
+            <span>{{ name }}</span>
+            <b>{{ value }}</b>
+            <i><em :style="{ width: `${value}%` }"></em></i>
+          </article>
+        </div>
+
+        <p v-if="profileError" class="message error">{{ profileError }}</p>
+      </section>
     </div>
 
     <section class="account-dashboard-section">
+      <div class="section-title">
+        <span>OVERVIEW</span>
+        <h2>学习概览</h2>
+      </div>
       <HomePage @navigate="page => emit('navigate', page)" />
     </section>
   </div>
@@ -127,28 +302,81 @@ function reset() {
 
 <style scoped>
 .user-center-container {
-  display: flex !important;
-  flex-direction: column;
-  gap: 24px;
-  max-width: 1180px;
+  display: grid;
+  gap: 22px;
+  max-width: 1220px;
   margin: 0 auto;
+  color: #241d35;
 }
 
-.profile-section {
-  display: flex !important;
-  flex-direction: column !important;
-  width: min(760px, 100%);
-  margin: 0 auto;
+.profile-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  padding: 30px;
+  border: 1px solid #eee9ff;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(139, 92, 246, .18), transparent 18rem),
+    #fff;
+  box-shadow: 0 18px 45px rgba(93, 73, 170, .08);
+}
+
+.profile-hero span,
+.profile-header span,
+.portrait-card header span,
+.section-title span {
+  color: #8b75d7;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .14em;
+}
+
+.profile-hero h1 {
+  margin: 7px 0 8px;
+  color: #25144f;
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 780;
+}
+
+.profile-hero p {
+  margin: 0;
+  color: #80758f;
+  font-size: 14px;
+}
+
+.profile-hero button,
+.profile-actions .btn-primary {
+  border: 0;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5df2, #9d6cff);
+  box-shadow: 0 12px 24px rgba(109, 93, 242, .22);
+}
+
+.profile-hero button {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 760;
 }
 
 .account-dashboard-section {
   width: 100%;
 }
 
+.user-center-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 430px) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
 .profile-card {
   background: #fff !important;
-  border-radius: 16px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+  border: 1px solid #eee9ff !important;
+  border-radius: 22px !important;
+  box-shadow: 0 14px 38px rgba(93, 73, 170, .08) !important;
   overflow: hidden !important;
   display: block !important;
   width: auto !important;
@@ -156,7 +384,6 @@ function reset() {
   gap: 0 !important;
   padding: 0 !important;
   margin-bottom: 0 !important;
-  border: none !important;
   text-align: left !important;
 }
 
@@ -164,28 +391,28 @@ function reset() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 22px 24px 10px;
 }
 
 .profile-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+  margin: 5px 0 0;
+  color: #25144f;
+  font-size: 22px;
+  font-weight: 760;
 }
 
 .profile-avatar-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 20px;
+  padding: 20px 24px 26px;
 }
 
 .profile-avatar-large {
-  width: 100px;
-  height: 100px;
+  width: 108px;
+  height: 108px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #6d5df2, #a855f7);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -202,33 +429,43 @@ function reset() {
 }
 
 .profile-form {
-  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0 24px 22px;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 0;
+}
+
+.form-group:nth-child(1),
+.form-group:nth-child(2) {
+  grid-column: 1 / -1;
 }
 
 .form-group label {
   display: block;
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: #5f526f;
   margin-bottom: 8px;
 }
 
 .form-group input {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border: 1px solid #e7ddff;
+  border-radius: 12px;
+  color: #241d35;
   font-size: 14px;
   box-sizing: border-box;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #6366f1;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
 }
 
 .form-group input:disabled {
@@ -245,8 +482,15 @@ function reset() {
 
 .profile-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  padding: 0 20px 20px;
+  padding: 0 24px 24px;
+}
+
+.profile-actions button {
+  padding: 10px 13px;
+  border-radius: 11px;
+  font-weight: 720;
 }
 
 .message {
@@ -257,8 +501,8 @@ function reset() {
 }
 
 .message.success {
-  background: #ecfdf5;
-  color: #059669;
+  background: #f0ebff;
+  color: #5b35c8;
 }
 
 .message.error {
@@ -266,9 +510,184 @@ function reset() {
   color: #dc2626;
 }
 
+.portrait-card {
+  min-height: 100%;
+  padding: 24px;
+  border: 1px solid #eee9ff;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
+}
+
+.portrait-card header,
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.portrait-card h2,
+.section-title h2 {
+  margin: 5px 0 0;
+  color: #25144f;
+  font-size: 22px;
+}
+
+.portrait-card header b {
+  padding: 8px 11px;
+  border-radius: 999px;
+  color: #5b35c8;
+  background: #f0ebff;
+  font-size: 13px;
+}
+
+.subject-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 12px;
+}
+
+.subject-switcher button {
+  padding: 7px 10px;
+  border: 1px solid #e7ddff;
+  border-radius: 999px;
+  color: #6a5a7d;
+  background: #fff;
+  font-size: 12px;
+}
+
+.subject-switcher button.active {
+  color: #fff;
+  border-color: #7c5cff;
+  background: #7c5cff;
+}
+
+.portrait-radar-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  margin: 8px 0 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #fbfaff, #fff);
+}
+
+.portrait-radar {
+  width: min(360px, 100%);
+  height: auto;
+  overflow: visible;
+}
+
+.radar-ring {
+  fill: none;
+  stroke: #e8defd;
+  stroke-width: 1;
+}
+
+.radar-axis {
+  stroke: #efe8ff;
+  stroke-width: 1;
+}
+
+.radar-area {
+  fill: rgba(124, 92, 255, .24);
+  stroke: none;
+}
+
+.radar-line {
+  fill: none;
+  stroke: #7c5cff;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.radar-point {
+  fill: #fff;
+  stroke: #7c5cff;
+  stroke-width: 2.4;
+}
+
+.radar-label {
+  fill: #6d617e;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.portrait-summary {
+  margin: 0;
+  padding: 14px;
+  border-left: 3px solid #8b5cf6;
+  border-radius: 0 14px 14px 0;
+  color: #63566f;
+  background: #fbf9ff;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.metric-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.metric-list article {
+  padding: 12px;
+  border: 1px solid #eee9ff;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.metric-list span {
+  color: #6a5a7d;
+  font-size: 12px;
+}
+
+.metric-list b {
+  float: right;
+  color: #6d5df2;
+  font-size: 13px;
+}
+
+.metric-list i {
+  display: block;
+  height: 5px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #eee9ff;
+}
+
+.metric-list em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #6d5df2, #a855f7);
+}
+
+.section-title {
+  margin: 4px 0 14px;
+}
+
 @media (max-width: 900px) {
   .user-center-container {
     max-width: none;
+  }
+
+  .profile-hero,
+  .user-center-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .profile-form,
+  .metric-list {
+    grid-template-columns: 1fr;
   }
 }
 </style>

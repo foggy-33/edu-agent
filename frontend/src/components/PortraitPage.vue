@@ -127,44 +127,22 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="profile-chat-page">
-    <header class="chat-header">
-      <div class="assistant-identity">
-        <div class="assistant-avatar">AI</div>
-        <div>
-          <h2>{{ course }}画像助手</h2>
-          <p>
-            <span class="status-dot"></span>
-            {{ hasProfile ? `画像 V${portrait?.version} · 完成度 ${portrait?.completion}%` : '等待开始构建画像' }}
-          </p>
-        </div>
-      </div>
+  <div :class="['profile-chat-page', { idle: replies.length <= 1 && !loading }]">
+    <section v-if="replies.length <= 1 && !loading" class="empty-state">
+      <h2>准备好了，随时开始画像对话</h2>
+      <p>{{ course }} · {{ hasProfile ? `画像 V${portrait?.version} · 完成度 ${portrait?.completion}%` : '等待开始构建画像' }}</p>
+    </section>
 
-      <div class="header-actions">
-        <select v-model="course" :disabled="loading" aria-label="选择学科" @change="loadPortrait(course)">
-          <option v-for="item in courses" :key="item" :value="item">{{ item }}</option>
-        </select>
-        <button class="profile-overview-button" type="button" @click="showProfiles = true">
-          <span>◫</span>查看各科画像
-        </button>
-      </div>
-    </header>
-
-    <main ref="messageStream" class="message-stream">
+    <main v-if="replies.length > 1 || loading" ref="messageStream" class="message-stream">
       <div class="message-column">
         <article v-for="(item, index) in replies" :key="index" :class="['chat-row', item.role]">
-          <div v-if="item.role === 'assistant'" class="message-avatar">AI</div>
           <div class="message-body">
-            <span class="message-author">{{ item.role === 'assistant' ? '画像助手' : '你' }}</span>
+            <span class="message-author">{{ item.role === 'assistant' ? `${course}画像助手` : '你' }}</span>
             <p>{{ item.content }}</p>
-          </div>
-          <div v-if="item.role === 'user'" class="message-avatar user-avatar">
-            {{ userProfile.name.trim().slice(0, 1).toUpperCase() || 'U' }}
           </div>
         </article>
 
         <article v-if="loading" class="chat-row assistant">
-          <div class="message-avatar">AI</div>
           <div class="message-body">
             <span class="message-author">画像助手</span>
             <div class="typing"><i></i><i></i><i></i></div>
@@ -173,15 +151,9 @@ onMounted(async () => {
       </div>
     </main>
 
-    <div class="composer-area">
-      <p v-if="error" class="chat-warning">{{ error }}</p>
-      <div class="quick-actions">
-        <button type="button" :disabled="loading" @click="startInterview">
-          <span>✦</span>{{ hasProfile ? '让 AI 继续提问' : '开始画像访谈' }}
-        </button>
-        <span>Enter 发送 · Shift + Enter 换行</span>
-      </div>
-      <form class="chat-composer" @submit.prevent="sendMessage">
+    <section class="composer-section">
+      <p v-if="error" class="composer-error">{{ error }}</p>
+      <div class="composer">
         <textarea
           v-model="userMessage"
           rows="1"
@@ -189,10 +161,33 @@ onMounted(async () => {
           :placeholder="`告诉 AI 你学习《${course}》的情况……`"
           @keydown.enter.exact.prevent="sendMessage"
         ></textarea>
-        <button class="send-button" :disabled="loading || !userMessage.trim()" aria-label="发送消息">↑</button>
-      </form>
+
+        <div class="selected-tools">
+          <button type="button" class="subject-chip" :disabled="loading">
+            <span>画像</span>{{ course }}
+          </button>
+          <button type="button" :disabled="loading" @click="startInterview">
+            <span>✦</span>{{ hasProfile ? '继续提问' : '开始访谈' }}
+          </button>
+          <button type="button" :disabled="loading" @click="showProfiles = true">
+            <span>◫</span>各科画像
+          </button>
+        </div>
+
+        <div class="composer-actions">
+          <select v-model="course" :disabled="loading" aria-label="选择学科" @change="loadPortrait(course)">
+            <option v-for="item in courses" :key="item" :value="item">{{ item }}</option>
+          </select>
+          <span class="selection-label">
+            {{ hasProfile ? `完成度 ${portrait?.completion}%` : '直接补充画像信息' }}
+          </span>
+          <button class="send-button" :disabled="loading || !userMessage.trim()" aria-label="发送消息" @click="sendMessage">
+            {{ loading ? '…' : '↑' }}
+          </button>
+        </div>
+      </div>
       <p class="composer-hint">AI 只会将对话中有明确证据的信息写入当前学科画像。</p>
-    </div>
+    </section>
 
     <SubjectProfileDrawer
       v-if="showProfiles"
@@ -207,50 +202,47 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.profile-chat-page { position: relative; display: grid; grid-template-rows: auto minmax(420px, 1fr) auto; height: calc(100vh - 154px); min-height: 650px; overflow: hidden; border: 1px solid #e3e6ec; border-radius: 22px; color: #202938; background: #fff; box-shadow: 0 16px 45px rgba(31, 42, 68, .07); }
-.chat-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 15px 20px; border-bottom: 1px solid #e8eaef; background: rgba(255, 255, 255, .96); }
-.assistant-identity, .header-actions { display: flex; align-items: center; gap: 12px; }
-.assistant-avatar, .message-avatar { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border-radius: 12px; color: #fff; background: linear-gradient(135deg, #5146cf, #7b6dea); font-size: 12px; font-weight: 800; }
-.assistant-identity h2 { margin: 0 0 3px; font-size: 16px; }
-.assistant-identity p { display: flex; align-items: center; gap: 6px; margin: 0; color: #858d9b; font-size: 11px; }
-.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px #dcfce7; }
-.header-actions select { padding: 9px 30px 9px 11px; border: 1px solid #dfe3ea; border-radius: 10px; color: #424b5d; background: #fff; }
-.profile-overview-button { display: flex; align-items: center; gap: 7px; padding: 9px 13px; border: 1px solid #d8d4ff; border-radius: 10px; color: #4e43bc; background: #f4f2ff; font-weight: 700; }
-.message-stream { overflow-y: auto; scroll-behavior: smooth; background: linear-gradient(180deg, #fff 0%, #fbfbfd 100%); }
-.message-column { width: min(820px, calc(100% - 36px)); margin: 0 auto; padding: 34px 0 24px; }
-.chat-row { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 28px; }
+.profile-chat-page { display: grid; grid-template-rows: 1fr auto; width: min(980px, 100%); min-height: calc(100vh - 80px); margin: 0 auto; color: #202123; }
+.profile-chat-page.idle { grid-template-rows: auto auto; width: min(640px, 100%); align-content: center; gap: 28px; padding-bottom: 8vh; }
+.empty-state { display: grid; place-items: center; padding: 0; text-align: center; }
+.empty-state h2 { margin: 0; font-size: clamp(28px, 4vw, 38px); font-weight: 500; letter-spacing: 0; }
+.empty-state p { margin: 10px 0 0; color: #8a8a8a; font-size: 13px; }
+.message-stream { min-height: 320px; overflow-y: auto; scroll-behavior: smooth; }
+.message-column { width: min(820px, calc(100% - 36px)); margin: 0 auto; padding: 30px 0 28px; }
+.chat-row { display: flex; margin-bottom: 26px; }
 .chat-row.user { justify-content: flex-end; }
-.chat-row.user .message-body { align-items: flex-end; }
-.message-avatar { width: 32px; height: 32px; border-radius: 10px; font-size: 10px; }
-.user-avatar { color: #4f5668; background: #e9ebf0; }
-.message-body { display: flex; flex-direction: column; align-items: flex-start; max-width: min(680px, 78%); }
-.message-author { margin-bottom: 6px; color: #8c94a3; font-size: 11px; font-weight: 700; }
-.message-body p { margin: 0; padding: 12px 15px; border-radius: 5px 17px 17px 17px; color: #323b4d; background: #f0f1f4; font-size: 14px; line-height: 1.75; white-space: pre-wrap; }
-.chat-row.user .message-body p { border-radius: 17px 5px 17px 17px; color: #fff; background: #5d52cf; }
-.typing { display: flex; gap: 5px; padding: 15px 17px; border-radius: 5px 17px 17px 17px; background: #f0f1f4; }
+.message-body { max-width: min(700px, 86%); }
+.message-author { display: block; margin-bottom: 7px; color: #8c8c8c; font-size: 11px; font-weight: 700; }
+.message-body p { margin: 0; color: #202123; font-size: 15px; line-height: 1.8; white-space: pre-wrap; }
+.chat-row.user .message-body { padding: 12px 15px; border-radius: 18px; background: #f3f3f3; }
+.chat-row.user .message-author { text-align: right; }
+.typing { display: flex; gap: 5px; padding: 10px 0; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: #8f96a3; animation: typing 1.1s infinite ease-in-out; }
 .typing i:nth-child(2) { animation-delay: .16s; }.typing i:nth-child(3) { animation-delay: .32s; }
-.composer-area { padding: 10px 18px 14px; border-top: 1px solid #eceef2; background: #fff; }
-.quick-actions, .chat-composer, .composer-hint, .chat-warning { width: min(820px, 100%); margin-left: auto; margin-right: auto; }
-.quick-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.quick-actions button { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border: 0; border-radius: 999px; color: #5146cf; background: #f1efff; font-size: 12px; font-weight: 700; }
-.quick-actions > span { color: #a0a6b0; font-size: 10px; }
-.chat-composer { display: flex; align-items: flex-end; gap: 10px; padding: 10px 11px 10px 16px; border: 1px solid #d9dde5; border-radius: 19px; box-shadow: 0 5px 20px rgba(31, 42, 68, .07); }
-.chat-composer:focus-within { border-color: #7569df; box-shadow: 0 0 0 4px rgba(109, 93, 231, .09); }
-.chat-composer textarea { width: 100%; min-height: 28px; max-height: 130px; padding: 5px 0; overflow-y: auto; border: 0; outline: 0; resize: none; color: #242c3b; background: transparent; font: inherit; line-height: 1.55; }
-.send-button { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #24262b; font-size: 21px; }
-.send-button:disabled { cursor: default; opacity: .3; }
-.composer-hint { margin-top: 7px; margin-bottom: 0; color: #a0a6b0; text-align: center; font-size: 10px; }
-.chat-warning { margin-top: 0; margin-bottom: 8px; padding: 8px 11px; border-radius: 9px; color: #936816; background: #fff7df; font-size: 12px; }
+.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.profile-chat-page.idle .composer-section { position: static; padding: 0; background: transparent; }
+.composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
+.composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
+.composer textarea { width: 100%; min-height: 34px; max-height: 170px; padding: 5px 5px 10px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.55; }
+.composer textarea::placeholder { color: #929292; }
+.selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 9px; }
+.selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
+.selected-tools button.subject-chip { color: #4f43c5; border-color: #ddd8ff; background: #f4f2ff; }
+.selected-tools button span { font-size: 10px; font-weight: 850; }
+.composer-actions { display: flex; align-items: center; gap: 9px; }
+.composer-actions select { min-width: 116px; max-width: 160px; padding: 8px 28px 8px 10px; border: 0; border-radius: 999px; color: #565656; background: #f0f0f0; outline: 0; font-size: 12px; }
+.selection-label { flex: 1; color: #8b8b8b; font-size: 12px; }
+.send-button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 21px; }
+.send-button:disabled { background: #d0d0d0; cursor: default; }
+.composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
+.composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .55; }
 @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
 @media (max-width: 760px) {
-  .profile-chat-page { height: calc(100vh - 125px); min-height: 570px; border-radius: 15px; }
-  .chat-header { align-items: stretch; flex-direction: column; }
-  .header-actions { justify-content: space-between; }
+  .profile-chat-page { min-height: calc(100vh - 64px); }
   .message-column { width: calc(100% - 24px); padding-top: 24px; }
-  .message-body { max-width: 82%; }
-  .quick-actions > span { display: none; }
+  .message-body { max-width: 88%; }
+  .composer-actions select { max-width: 120px; }
 }
 </style>
