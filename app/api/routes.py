@@ -1,11 +1,11 @@
 import json
+import re
+from collections import Counter
 from typing import Any, Iterator
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
-from app.agents.evaluator_agent import EvaluatorAgent
-from app.agents.profile_agent import ProfileAgent
 from app.api.schemas import (
     CollaborativeLearningRequest,
     EvaluateRequest,
@@ -20,7 +20,6 @@ from app.api.schemas import (
     SmartEvaluateRequest,
 )
 from app.auth.service import AuthError, AuthService
-from app.graph.workflow import run_agent_workflow, workflow_description
 from app.learning.agents import (
     _context,
     _exercises_to_markdown,
@@ -34,6 +33,7 @@ from app.learning.agents import (
     profile_agent,
     review_agent,
 )
+from app.learning.workflow import NODES
 from app.learning.llm import stream_llm
 from app.learning.state import LearningState
 from app.learning.workflow import generate_learning_resources
@@ -58,6 +58,121 @@ def _collaborative_payload(request: CollaborativeLearningRequest) -> dict[str, A
     payload["source_context"] = source_context
     payload["sources"] = sources
     return payload
+
+
+def _basic_profile(course: str, message: str) -> dict[str, Any]:
+    weak_candidates = [
+        "函数依赖", "候选码", "范式判断", "关系模型", "SQL", "事务", "并发控制", "索引",
+        "存储管理", "数据结构", "算法", "进程调度", "内存管理", "计算机网络", "软件工程",
+    ]
+    weak_points = [item for item in weak_candidates if item in message] or ["需要通过后续学习行为进一步识别"]
+    preferences = []
+    preference_map = {
+        "文档": "讲解文档",
+        "讲解": "讲解文档",
+        "思维导图": "思维导图",
+        "练习": "练习题",
+        "题": "练习题",
+        "案例": "案例实践",
+        "视频": "教学视频",
+    }
+    for key, value in preference_map.items():
+        if key in message and value not in preferences:
+            preferences.append(value)
+    grade_level = next((grade for grade in ["大一", "大二", "大三", "大四", "研一", "研二", "研三"] if grade in message), "未明确")
+    return {
+        "major": "计算机科学与技术" if "计算机" in message else "未明确",
+        "course": course,
+        "grade_level": grade_level,
+        "learning_goal": "考试复习" if any(word in message for word in ["考试", "复习", "期末"]) else "课程学习",
+        "knowledge_level": "中等偏弱" if re.search(r"不太会|不会|薄弱|困难|看不懂", message) else "中等",
+        "weak_points": weak_points,
+        "learning_style": "步骤化讲解" if any(word in message for word in ["步骤", "例题", "一步"]) else "概念讲解结合练习",
+        "resource_preference": preferences or ["讲解文档", "练习题"],
+    }
+
+
+def _legacy_generate_response(request: LearningRequest) -> dict[str, Any]:
+    profile = _basic_profile(request.course, request.message)
+    result = generate_learning_resources(
+        {
+            "user_id": request.user_id,
+            "major": profile["major"],
+            "course": request.course,
+            "chapter": request.course,
+            "weakness": request.message,
+            "goal": profile["learning_goal"],
+            "resourceTypes": ["lecture", "mindmap", "exercise", "reading"],
+            "fileIds": [],
+            "sources": [],
+            "source_context": "",
+            "api_key": "",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "model": "Pro/deepseek-ai/DeepSeek-V3.2",
+        }
+    )
+    return {
+        "profile": profile,
+        "learning_path": [
+            {
+                "stage": item.get("order", index + 1),
+                "title": item.get("agent", "协作节点"),
+                "goal": item.get("summary", ""),
+                "tasks": [item.get("summary", "")],
+                "estimated_time": "按需学习",
+                "recommended_resources": profile["resource_preference"],
+            }
+            for index, item in enumerate(result.get("agentTrace", []))
+        ],
+        "resources": {
+            "document": result.get("lectureDoc", ""),
+            "mindmap": result.get("mindmap", ""),
+            "quiz": result.get("exerciseItems", []),
+            "practice_case": "CREATE TABLE learning_note (id INTEGER PRIMARY KEY, topic TEXT, summary TEXT);\n\n"
+            + result.get("reading", ""),
+            "extended_reading": result.get("sources", []),
+        },
+        "retrieval_meta": {"source": "app.learning.workflow", "sources": result.get("sources", [])},
+        "safety_report": {"status": "pass", "notes": [result.get("review", "已由质量审核 Agent 检查")]},
+    }
+
+
+def _evaluate_answers(payload: dict[str, Any]) -> dict[str, Any]:
+    answers = payload.get("answers", [])
+    total = len(answers)
+    incorrect = [item for item in answers if item.get("is_correct") is False]
+    correct_count = sum(1 for item in answers if item.get("is_correct") is True)
+    topic_counter = Counter(item.get("topic") or "综合应用" for item in incorrect)
+    weak_points = [topic for topic, _ in topic_counter.most_common()] or ["函数依赖", "候选码"]
+    accuracy = round(correct_count / total, 2) if total else None
+    return {
+        "user_id": payload.get("user_id"),
+        "course": payload.get("course", "数据库系统"),
+        "score_summary": {
+            "total": total,
+            "correct": correct_count,
+            "incorrect": len(incorrect),
+            "accuracy": accuracy,
+        },
+        "weak_points": weak_points,
+        "analysis": "学生在概念辨析和步骤化推理上仍需加强，建议优先复盘错题对应知识点。",
+        "next_steps": [
+            f"重新学习{weak_points[0]}的概念和例题",
+            "写出完整推导步骤，避免只记结论",
+            "完成同类变式题并记录错误原因",
+        ],
+    }
+
+
+def _workflow_description() -> dict[str, Any]:
+    return {
+        "name": "个性化资源生成多 Agent 工作流",
+        "engine": "app.learning.workflow: LangGraph if installed, otherwise Python sequential fallback",
+        "steps": [
+            {"order": index + 1, "node": name, "description": node.__name__}
+            for index, (name, node) in enumerate(NODES)
+        ],
+    }
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -185,25 +300,12 @@ def logout(authorization: str | None = Header(default=None)) -> None:
 
 @router.post("/analyze")
 def analyze(request: LearningRequest) -> dict:
-    profile = ProfileAgent().run(
-        {
-            "user_id": request.user_id,
-            "course": request.course,
-            "message": request.message,
-        }
-    )
-    return {"profile": profile}
+    return {"profile": _basic_profile(request.course, request.message)}
 
 
 @router.post("/generate")
 def generate(request: LearningRequest) -> dict:
-    return run_agent_workflow(
-        {
-            "user_id": request.user_id,
-            "course": request.course,
-            "message": request.message,
-        }
-    )
+    return _legacy_generate_response(request)
 
 
 @router.post("/learning/generate")
@@ -619,7 +721,7 @@ def course_catalog() -> dict:
 
 @router.post("/evaluate")
 def evaluate(request: EvaluateRequest) -> dict:
-    result = EvaluatorAgent().run(request.model_dump())
+    result = _evaluate_answers(request.model_dump())
     result["dynamic_profile"] = profile_service.update_from_evaluation(
         user_id=request.user_id, course=request.course, result=result
     )
@@ -628,7 +730,7 @@ def evaluate(request: EvaluateRequest) -> dict:
 
 @router.get("/workflow")
 def workflow() -> dict:
-    return workflow_description()
+    return _workflow_description()
 
 
 @router.get("/profiles/{user_id}/subjects")

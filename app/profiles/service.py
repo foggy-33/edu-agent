@@ -5,7 +5,6 @@ import re
 from threading import Lock
 from typing import Any
 
-from app.agents.profile_agent import ProfileAgent
 from app.core.llm_client import LLMClient
 from app.profiles.store import ProfileStore, utc_now
 
@@ -189,14 +188,32 @@ class DynamicProfileService:
 
     @staticmethod
     def _extract_with_rules(*, course: str, message: str) -> dict[str, Any]:
-        basic = ProfileAgent().run({"course": course, "message": message})
+        weak_candidates = [
+            "函数依赖", "候选码", "范式判断", "关系模型", "SQL", "事务", "并发控制", "索引",
+            "存储管理", "数据结构", "算法", "进程调度", "内存管理", "计算机网络", "软件工程",
+        ]
+        weak_points = [item for item in weak_candidates if item in message] or ["需要通过后续学习行为进一步识别"]
+        preference_map = {
+            "文档": "讲解文档",
+            "讲解": "讲解文档",
+            "思维导图": "思维导图",
+            "练习": "练习题",
+            "题": "练习题",
+            "案例": "案例实践",
+            "视频": "教学视频",
+        }
+        preferences: list[str] = []
+        for key, value in preference_map.items():
+            if key in message and value not in preferences:
+                preferences.append(value)
+        grade_level = next((grade for grade in ["大一", "大二", "大三", "大四", "研一", "研二", "研三"] if grade in message), "未明确")
         dimensions: dict[str, Any] = {
-            "专业与年级": f"{basic['major']} / {basic['grade_level']}",
-            "学习目标": basic["learning_goal"],
-            "知识基础": basic["knowledge_level"],
-            "认知风格": basic["learning_style"],
-            "易错点": basic["weak_points"],
-            "资源偏好": basic["resource_preference"],
+            "专业与年级": f"{'计算机科学与技术' if '计算机' in message else '未明确'} / {grade_level}",
+            "学习目标": "考试复习" if any(word in message for word in ["考试", "复习", "期末"]) else "课程学习",
+            "知识基础": "中等偏弱" if re.search(r"不太会|不会|薄弱|困难|看不懂", message) else "中等",
+            "认知风格": "步骤化讲解" if any(word in message for word in ["步骤", "例题", "一步"]) else "概念讲解结合练习",
+            "易错点": weak_points,
+            "资源偏好": preferences or ["讲解文档", "练习题"],
         }
         if re.search(r"每天|周末|晚上|早上|分钟|小时", message):
             dimensions["学习节奏"] = message[:100]
