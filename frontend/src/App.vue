@@ -28,8 +28,9 @@ const authChecking = ref(true)
 const loggingOut = ref(false)
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const selectedCourse = ref<Course | null>(null)
-const conversationHistory = ref<ConversationHistoryItem[]>(loadConversationHistory())
-const selectedHistoryId = ref<string | null>(null)
+const initialConversationHistory = loadConversationHistory()
+const conversationHistory = ref<ConversationHistoryItem[]>(initialConversationHistory)
+const selectedHistoryId = ref<string | null>(initialConversationHistory[0]?.id || null)
 
 const navIcons = {
   newChat: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z'],

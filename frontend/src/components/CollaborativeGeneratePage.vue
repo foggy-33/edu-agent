@@ -46,6 +46,7 @@ const resourceOptions: {
 ]
 
 const prompt = ref('')
+const currentQuestion = ref('')
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
 const promptInput = ref<HTMLTextAreaElement | null>(null)
@@ -94,6 +95,7 @@ const selectedFiles = computed(() => resources.value.filter(item => selectedFile
 const hasStreamingOutput = computed(() => Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeContent = computed(() => streamContent.value[activeTab.value] || result.value?.[activeTab.value] || '')
 const exerciseItems = computed(() => result.value?.exerciseItems || [])
+const conversationQuestion = computed(() => currentQuestion.value.trim())
 
 function toggleResource(key: CollaborativeResourceType) {
   selectedTypes.value = selectedTypes.value.includes(key)
@@ -173,6 +175,7 @@ function resetStreamState() {
 
 function resetConversation() {
   prompt.value = ''
+  currentQuestion.value = ''
   result.value = null
   error.value = ''
   submittedTypes.value = []
@@ -190,7 +193,8 @@ function hydrateFromHistory(id: string | null | undefined) {
   }
   const item = getConversationHistoryItem(id)
   if (!item) return
-  prompt.value = item.question
+  prompt.value = ''
+  currentQuestion.value = item.question
   result.value = item.result
   submittedTypes.value = [...item.resourceTypes]
   activeTab.value = resourceOptions.find(option => submittedTypes.value.includes(option.key))?.resultKey || 'lectureDoc'
@@ -339,6 +343,7 @@ async function submit() {
     return
   }
   const config = loadSiliconFlowConfig()
+  currentQuestion.value = question
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
     major: '未指定',
@@ -354,6 +359,7 @@ async function submit() {
   loading.value = true
   error.value = ''
   result.value = null
+  prompt.value = ''
   resetStreamState()
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
@@ -404,112 +410,123 @@ watch(prompt, resizePromptInput)
       </div>
     </section>
 
-    <section v-if="result || hasStreamingOutput" class="result-card">
-      <div v-if="result?.sources.length" class="result-sources">
-        <span>参考资料</span>
-        <b v-for="source in result.sources" :key="source.id">{{ source.name }}</b>
-      </div>
-      <div v-if="availableTabs.length > 1" class="result-tabs">
-        <button
-          v-for="tab in availableTabs"
-          :key="tab.key"
-          :class="{ active: activeTab === tab.key }"
-          @click="activeTab = tab.key"
-        >
-          {{ tab.label }}
-        </button>
-      </div>
-      <div class="result-content">
-        <div v-if="processSteps.length" :class="['thinking-trace', processCollapsed ? 'thinking-trace-collapsed' : '']">
-          <div class="trace-head" role="button" tabindex="0" @click="processCollapsed = !processCollapsed">
-            <span>处理过程</span>
-            <b>
-              {{ processCollapsed ? '已完成，点击展开' : `${processSteps.filter(step => step.state === 'done').length}/${processSteps.length}` }}
-            </b>
+    <section v-if="result || hasStreamingOutput" class="chat-thread">
+      <article v-if="conversationQuestion" class="chat-message user-message">
+        <div class="message-bubble">{{ conversationQuestion }}</div>
+      </article>
+
+      <article class="chat-message assistant-message">
+        <div class="assistant-body">
+          <div v-if="processSteps.length" :class="['thinking-trace', processCollapsed ? 'thinking-trace-collapsed' : '']">
+            <div class="trace-head" role="button" tabindex="0" @click="processCollapsed = !processCollapsed">
+              <span>处理过程</span>
+              <b>
+                {{ processCollapsed ? '已完成，点击展开' : `${processSteps.filter(step => step.state === 'done').length}/${processSteps.length}` }}
+              </b>
+            </div>
+            <ol v-if="!processCollapsed" class="agent-flow">
+              <li
+                v-for="step in processSteps"
+                :key="step.id"
+                :class="['agent-step', `agent-step-${step.state}`]"
+              >
+                <i></i>
+                <div>
+                  <strong>{{ step.agent }}</strong>
+                  <p>{{ step.message }}</p>
+                  <small>{{ step.detail }}</small>
+                </div>
+              </li>
+            </ol>
           </div>
-          <ol v-if="!processCollapsed" class="agent-flow">
-            <li
-              v-for="step in processSteps"
-              :key="step.id"
-              :class="['agent-step', `agent-step-${step.state}`]"
+
+          <div v-if="result?.sources.length" class="result-sources">
+            <span>参考资料</span>
+            <b v-for="source in result.sources" :key="source.id">{{ source.name }}</b>
+          </div>
+
+          <div v-if="availableTabs.length > 1" class="result-tabs">
+            <button
+              v-for="tab in availableTabs"
+              :key="tab.key"
+              :class="{ active: activeTab === tab.key }"
+              @click="activeTab = tab.key"
             >
-              <i></i>
-              <div>
-                <strong>{{ step.agent }}</strong>
-                <p>{{ step.message }}</p>
-                <small>{{ step.detail }}</small>
-              </div>
-            </li>
-          </ol>
-        </div>
-        <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
-        <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
-          <article
-            v-for="(item, index) in exerciseItems"
-            :key="item.id"
-            :class="[
-              'practice-card',
-              exerciseSubmitted[item.id] ? (isExerciseCorrect(item) ? 'practice-correct' : 'practice-wrong') : ''
-            ]"
-          >
-            <div class="practice-head">
-              <span>{{ item.level }}</span>
-              <b>{{ index + 1 }}</b>
-            </div>
-            <h3>{{ item.question }}</h3>
+              {{ tab.label }}
+            </button>
+          </div>
 
-            <div v-if="item.type === 'single' || item.type === 'judge'" class="practice-options">
-              <button
-                v-for="option in item.options"
-                :key="option.label"
-                type="button"
-                :class="{ selected: exerciseAnswers[item.id] === option.label }"
-                :disabled="exerciseSubmitted[item.id]"
-                @click="setExerciseAnswer(item.id, option.label)"
+          <div class="result-content">
+            <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="activeContent" />
+            <div v-else-if="activeTab === 'exercises' && exerciseItems.length" class="practice-list">
+              <article
+                v-for="(item, index) in exerciseItems"
+                :key="item.id"
+                :class="[
+                  'practice-card',
+                  exerciseSubmitted[item.id] ? (isExerciseCorrect(item) ? 'practice-correct' : 'practice-wrong') : ''
+                ]"
               >
-                <span>{{ option.label }}</span>
-                {{ option.text }}
-              </button>
+                <div class="practice-head">
+                  <span>{{ item.level }}</span>
+                  <b>{{ index + 1 }}</b>
+                </div>
+                <h3>{{ item.question }}</h3>
+
+                <div v-if="item.type === 'single' || item.type === 'judge'" class="practice-options">
+                  <button
+                    v-for="option in item.options"
+                    :key="option.label"
+                    type="button"
+                    :class="{ selected: exerciseAnswers[item.id] === option.label }"
+                    :disabled="exerciseSubmitted[item.id]"
+                    @click="setExerciseAnswer(item.id, option.label)"
+                  >
+                    <span>{{ option.label }}</span>
+                    {{ option.text }}
+                  </button>
+                </div>
+
+                <textarea
+                  v-else-if="item.type === 'short'"
+                  :value="exerciseAnswers[item.id] || ''"
+                  :disabled="exerciseSubmitted[item.id]"
+                  rows="3"
+                  placeholder="请输入你的答案"
+                  @input="updateExerciseAnswer(item.id, $event)"
+                ></textarea>
+
+                <input
+                  v-else
+                  :value="exerciseAnswers[item.id] || ''"
+                  :disabled="exerciseSubmitted[item.id]"
+                  placeholder="请输入答案"
+                  @input="updateExerciseAnswer(item.id, $event)"
+                />
+
+                <div class="practice-actions">
+                  <button
+                    v-if="!exerciseSubmitted[item.id]"
+                    type="button"
+                    :disabled="!exerciseAnswers[item.id]?.trim()"
+                    @click="submitExercise(item)"
+                  >
+                    提交答案
+                  </button>
+                  <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
+                </div>
+
+                <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
+                  <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
+                  <p>正确答案：{{ item.answer }}</p>
+                  <p>{{ item.explanation }}</p>
+                </div>
+              </article>
             </div>
-
-            <textarea
-              v-else-if="item.type === 'short'"
-              :value="exerciseAnswers[item.id] || ''"
-              :disabled="exerciseSubmitted[item.id]"
-              rows="3"
-              placeholder="请输入你的答案"
-              @input="updateExerciseAnswer(item.id, $event)"
-            ></textarea>
-
-            <input
-              v-else
-              :value="exerciseAnswers[item.id] || ''"
-              :disabled="exerciseSubmitted[item.id]"
-              placeholder="请输入答案"
-              @input="updateExerciseAnswer(item.id, $event)"
-            />
-
-            <div class="practice-actions">
-              <button
-                v-if="!exerciseSubmitted[item.id]"
-                type="button"
-                :disabled="!exerciseAnswers[item.id]?.trim()"
-                @click="submitExercise(item)"
-              >
-                提交答案
-              </button>
-              <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
-            </div>
-
-            <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
-              <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
-              <p>正确答案：{{ item.answer }}</p>
-              <p>{{ item.explanation }}</p>
-            </div>
-          </article>
+            <MarkdownRenderer v-else :content="activeContent" />
+          </div>
         </div>
-        <MarkdownRenderer v-else :content="activeContent" />
-      </div>
+      </article>
     </section>
 
     <section class="composer-section">
@@ -615,13 +632,18 @@ watch(prompt, resizePromptInput)
 .generating-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #202123; animation: pulse 1.2s infinite; }
 .generating-state strong { font-size: 16px; }
 .generating-state p { margin: 5px 0 0; color: #8a8a8a; font-size: 13px; }
-.result-card { min-height: 320px; overflow: hidden; border: 0; border-radius: 0; background: transparent; }
-.result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 12px 16px 0; color: #858585; font-size: 10px; }
+.chat-thread { display: grid; gap: 28px; min-height: 320px; padding: 22px 0 12px; }
+.chat-message { display: flex; width: 100%; }
+.user-message { justify-content: flex-end; }
+.message-bubble { max-width: min(78%, 720px); padding: 12px 16px; border-radius: 22px; color: #202123; background: #f0f0f0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-message { align-items: flex-start; }
+.assistant-body { min-width: 0; flex: 1; }
+.result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 0 0 10px; color: #858585; font-size: 10px; }
 .result-sources b { padding: 5px 8px; border-radius: 999px; color: #7d3434; background: #fff0f0; font-weight: 650; }
-.result-tabs { display: flex; gap: 4px; padding: 12px 16px 0; overflow-x: auto; border-bottom: 1px solid #ececec; }
+.result-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; border-bottom: 1px solid #ececec; }
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
-.result-content { padding: 26px 0; }
+.result-content { padding: 0; }
 .thinking-trace { margin-bottom: 18px; padding: 10px 12px; border: 1px solid #ececec; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.6; transition: padding .2s ease, box-shadow .2s ease; }
 .thinking-trace-collapsed { padding: 9px 12px; box-shadow: none; }
 .trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; cursor: pointer; user-select: none; }
@@ -710,7 +732,8 @@ button:disabled { cursor: default; opacity: .65; }
 }
 @media (max-width: 620px) {
   .generate-page { min-height: calc(100vh - 64px); }
+  .chat-thread { padding-top: 10px; }
+  .message-bubble { max-width: 88%; }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }
-  .result-content { padding: 18px; }
 }
 </style>

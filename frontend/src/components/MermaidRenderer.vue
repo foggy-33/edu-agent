@@ -20,6 +20,15 @@ const hasError = ref(false)
 
 const cleanedChart = computed(() => cleanChartSource(props.chart))
 const mindMap = computed(() => parseMindMap(cleanedChart.value))
+const leftBranches = computed(() => mindMap.value?.children.filter((_, index) => index % 2 === 1) || [])
+const rightBranches = computed(() => mindMap.value?.children.filter((_, index) => index % 2 === 0) || [])
+
+const branchPalette = ['#75b8d8', '#efc94c', '#78b785', '#d48b71', '#c891c8', '#8fb8e8']
+
+function branchColor(index: number, side: 'left' | 'right') {
+  const offset = side === 'left' ? 3 : 0
+  return branchPalette[(index + offset) % branchPalette.length]
+}
 
 function cleanChartSource(value: string) {
   let source = value.trim()
@@ -151,22 +160,45 @@ watch(() => props.chart, async () => {
 <template>
   <div class="diagram-container" :class="className">
     <div v-if="mindMap" class="code-mindmap">
-      <div class="mind-node mind-root">
-        <span>{{ mindMap.label }}</span>
-      </div>
-      <div class="mind-branches">
-        <div v-for="branch in mindMap.children" :key="branch.id" class="mind-branch">
-          <div class="mind-node">
+      <div class="mind-side mind-side-left">
+        <div
+          v-for="(branch, index) in leftBranches"
+          :key="branch.id"
+          class="mind-branch mind-branch-left"
+          :style="{ '--branch-color': branchColor(index, 'left') }"
+        >
+          <div class="mind-branch-node">
             <span>{{ branch.label }}</span>
           </div>
-          <div v-if="branch.children.length" class="mind-children">
-            <div v-for="child in branch.children" :key="child.id" class="mind-child">
-              <div class="mind-node mind-node-small">
-                <span>{{ child.label }}</span>
-              </div>
-              <div v-if="child.children.length" class="mind-leaves">
-                <span v-for="leaf in child.children" :key="leaf.id">{{ leaf.label }}</span>
-              </div>
+          <div class="mind-items">
+            <div v-for="child in branch.children" :key="child.id" class="mind-item">
+              <span>{{ child.label }}</span>
+              <small v-for="leaf in child.children" :key="leaf.id">{{ leaf.label }}</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mind-center">
+        <div class="mind-root">
+          {{ mindMap.label }}
+        </div>
+      </div>
+
+      <div class="mind-side mind-side-right">
+        <div
+          v-for="(branch, index) in rightBranches"
+          :key="branch.id"
+          class="mind-branch mind-branch-right"
+          :style="{ '--branch-color': branchColor(index, 'right') }"
+        >
+          <div class="mind-branch-node">
+            <span>{{ branch.label }}</span>
+          </div>
+          <div class="mind-items">
+            <div v-for="child in branch.children" :key="child.id" class="mind-item">
+              <span>{{ child.label }}</span>
+              <small v-for="leaf in child.children" :key="leaf.id">{{ leaf.label }}</small>
             </div>
           </div>
         </div>
@@ -200,90 +232,188 @@ watch(() => props.chart, async () => {
 }
 
 .code-mindmap {
-  min-width: 680px;
+  position: relative;
+  min-width: 1040px;
+  min-height: 560px;
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(360px, 1fr) 210px minmax(360px, 1fr);
   align-items: center;
-  gap: 34px;
+  gap: 32px;
+  padding: 36px 8px;
+}
+
+.mind-side {
+  display: grid;
+  gap: 24px;
+  align-content: center;
+}
+
+.mind-side-left {
+  justify-items: end;
+}
+
+.mind-side-right {
+  justify-items: start;
+}
+
+.mind-center {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .mind-root {
-  min-height: 92px;
-  font-size: 18px;
+  position: relative;
+  z-index: 2;
+  min-width: 160px;
+  padding: 18px 24px;
+  border: 1px solid #b9d6d7;
+  color: #4b6668;
+  background: #dceff0;
+  box-shadow: 0 8px 20px rgba(78, 130, 132, .12);
+  text-align: center;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0;
+  animation: nodePop .42s ease both;
 }
 
-.mind-branches {
-  display: grid;
-  gap: 18px;
-  position: relative;
+.mind-center::before,
+.mind-center::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 48px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, #9bc9d0);
+  transform: translateY(-50%);
+  border-radius: 999px;
+  animation: centerLineGrow .55s ease both;
 }
 
-.mind-branch,
-.mind-child {
+.mind-center::before {
+  right: calc(100% - 8px);
+}
+
+.mind-center::after {
+  left: calc(100% - 8px);
+  background: linear-gradient(90deg, #9bc9d0, transparent);
+}
+
+.mind-branch {
+  --branch-color: #75b8d8;
   position: relative;
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 22px;
+  display: flex;
   align-items: center;
+  gap: 18px;
+  width: min(100%, 430px);
   animation: branchIn .46s ease both;
 }
 
-.mind-branch::before,
-.mind-child::before {
+.mind-branch-left {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.mind-branch-right {
+  text-align: left;
+}
+
+.mind-branch::before {
   content: "";
   position: absolute;
-  left: -26px;
   top: 50%;
-  width: 24px;
-  height: 1px;
-  background: #d6d6d6;
+  width: 58px;
+  height: 38px;
+  border-top: 4px solid var(--branch-color);
+  transform: translateY(-50%);
+  opacity: .86;
+  animation: curveDraw .6s ease both;
+}
+
+.mind-branch-right::before {
+  right: 100%;
+  border-left: 4px solid var(--branch-color);
+  border-top-left-radius: 38px;
+}
+
+.mind-branch-left::before {
+  left: 100%;
+  border-right: 4px solid var(--branch-color);
+  border-top-right-radius: 38px;
+}
+
+.mind-branch-node {
+  position: relative;
+  min-width: 128px;
+  padding: 10px 18px;
+  border: 1px solid color-mix(in srgb, var(--branch-color) 62%, #ffffff);
+  color: #4e5054;
+  background: color-mix(in srgb, var(--branch-color) 18%, #ffffff);
+  text-align: center;
+  font-size: 18px;
+  font-weight: 500;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .04);
+  animation: nodePop .38s ease both;
+}
+
+.mind-branch-node::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 3px;
+  background: var(--branch-color);
+  transform: translateY(-50%);
+}
+
+.mind-branch-right .mind-branch-node::before {
+  left: -22px;
+}
+
+.mind-branch-left .mind-branch-node::before {
+  right: -22px;
+}
+
+.mind-items {
+  display: grid;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.mind-item {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding-bottom: 5px;
+  color: #555f66;
+  font-size: 14px;
+  line-height: 1.45;
+  animation: leafIn .35s ease both;
+}
+
+.mind-item::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: color-mix(in srgb, var(--branch-color) 72%, #ffffff);
+  border-radius: 999px;
   transform-origin: left center;
   animation: lineGrow .5s ease both;
 }
 
-.mind-children {
-  display: grid;
-  gap: 12px;
+.mind-branch-left .mind-item::after {
+  transform-origin: right center;
 }
 
-.mind-leaves {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.mind-leaves span {
-  padding: 6px 10px;
-  border: 1px solid #e6e6e6;
-  border-radius: 999px;
-  color: #555;
-  background: #fafafa;
+.mind-item small {
+  display: block;
+  color: #8a8f94;
   font-size: 12px;
-  animation: leafIn .35s ease both;
-}
-
-.mind-node {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 10px 14px;
-  border: 1px solid #dedede;
-  border-radius: 14px;
-  color: #222;
-  background: linear-gradient(180deg, #fff, #f7f7f7);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, .06);
-  text-align: center;
-  font-weight: 650;
-  animation: nodePop .38s ease both;
-}
-
-.mind-node-small {
-  min-height: 40px;
-  color: #333;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow: none;
+  line-height: 1.4;
 }
 
 .mermaid-chart {
@@ -388,6 +518,16 @@ watch(() => props.chart, async () => {
 @keyframes lineGrow {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
+}
+
+@keyframes centerLineGrow {
+  from { transform: translateY(-50%) scaleX(0); }
+  to { transform: translateY(-50%) scaleX(1); }
+}
+
+@keyframes curveDraw {
+  from { opacity: 0; transform: translateY(-50%) scaleX(.2); }
+  to { opacity: .86; transform: translateY(-50%) scaleX(1); }
 }
 
 @keyframes dashMove {
