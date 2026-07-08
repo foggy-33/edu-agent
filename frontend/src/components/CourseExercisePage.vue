@@ -25,12 +25,6 @@ const correctCount = ref(0)
 const currentQuestion = computed(() => questions.value[currentQuestionIndex.value])
 const currentQuestionId = computed(() => String(currentQuestion.value?.id || ''))
 
-const exerciseProgress = computed(() => {
-  return questions.value.length > 0
-    ? ((currentQuestionIndex.value + 1) / questions.value.length) * 100
-    : 0
-})
-
 const accuracy = computed(() => {
   return answeredCount.value > 0
     ? Math.round((correctCount.value / answeredCount.value) * 100)
@@ -107,6 +101,14 @@ async function generateAiQuestions() {
 
 function selectAnswer(answer: string) {
   if (showResult.value || !currentQuestion.value) return
+  if (currentQuestion.value.type === 'multiple') {
+    const current = selectedAnswers.value[currentQuestionId.value]?.split('').filter(Boolean) || []
+    const next = current.includes(answer)
+      ? current.filter(item => item !== answer)
+      : [...current, answer].sort()
+    selectedAnswers.value = { ...selectedAnswers.value, [currentQuestionId.value]: next.join('') }
+    return
+  }
   selectedAnswers.value = { ...selectedAnswers.value, [currentQuestionId.value]: answer }
 }
 
@@ -173,10 +175,15 @@ function optionsFor(question: Question) {
 
 function getOptionClass(optionLabel: string) {
   if (!currentQuestion.value) return ''
-  const selected = selectedAnswers.value[currentQuestionId.value] === optionLabel
+  const selectedValue = selectedAnswers.value[currentQuestionId.value] || ''
+  const selected = currentQuestion.value.type === 'multiple'
+    ? selectedValue.includes(optionLabel)
+    : selectedValue === optionLabel
   if (!showResult.value) return selected ? 'option-selected' : ''
 
-  const correct = normalizeAnswer(optionLabel) === normalizeAnswer(currentQuestion.value.answer)
+  const correct = Array.isArray(currentQuestion.value.answer)
+    ? currentQuestion.value.answer.map(String).includes(optionLabel)
+    : normalizeAnswer(optionLabel) === normalizeAnswer(currentQuestion.value.answer)
   if (correct) return 'option-correct'
   if (selected && !correct) return 'option-wrong'
   return 'option-muted'
@@ -186,193 +193,331 @@ onMounted(generateAiQuestions)
 </script>
 
 <template>
-  <div class="space-y-6">
-    <section class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div class="flex items-center gap-4">
-          <div class="w-14 h-14 bg-gray-100 border border-gray-200 rounded-xl flex items-center justify-center text-sm font-bold text-gray-700">
-            {{ course.icon }}
+  <div class="quiz-page">
+    <section class="quiz-shell">
+      <header class="quiz-header">
+        <div>
+          <h1>{{ course.name }}测试题</h1>
+          <p>答对 {{ correctCount }} 题 · 已答 {{ answeredCount }} 题 · 正确率 {{ accuracy }}%</p>
+        </div>
+        <div class="quiz-header-actions">
+          <button type="button" title="返回详情" @click="emit('navigate', 'detail')">↩</button>
+          <button type="button" title="退出练习" @click="emit('navigate', 'courses')">×</button>
+        </div>
+      </header>
+
+      <div class="quiz-progress">
+        <div class="progress-segments">
+          <span
+            v-for="(_, index) in questions"
+            :key="index"
+            :class="{ active: index <= currentQuestionIndex, answered: index < currentQuestionIndex || (index === currentQuestionIndex && showResult) }"
+          ></span>
+        </div>
+        <b>{{ questions.length ? currentQuestionIndex + 1 : 0 }} / {{ questions.length || 1 }}</b>
+      </div>
+
+      <div v-if="loading" class="quiz-loading">
+        <div></div>
+        <strong>AI 正在生成《{{ course.name }}》练习题</strong>
+        <p>会根据课程章节、学习建议和当前模型配置生成分层题目。</p>
+      </div>
+
+      <article v-else-if="currentQuestion" class="quiz-card">
+        <div v-if="generationError" class="quiz-warning">{{ generationError }}</div>
+
+        <div class="question-meta">
+          <span>{{ currentQuestion.chapter }}</span>
+          <span>{{ getQuestionTypeLabel(currentQuestion.type) }}</span>
+        </div>
+
+        <div class="question-stack">
+          <h2>第 {{ currentQuestionIndex + 1 }} 题</h2>
+          <p>{{ currentQuestion.question }}</p>
+
+          <div v-if="currentQuestion.type === 'single' || currentQuestion.type === 'multiple' || currentQuestion.type === 'judge'" class="stacked-options">
+            <button
+              v-for="option in optionsFor(currentQuestion)"
+              :key="option.label"
+              type="button"
+              :disabled="showResult"
+              :class="['exercise-option', getOptionClass(option.label)]"
+              @click="selectAnswer(option.label)"
+            >
+              <b>{{ option.label }}.</b>
+              <span>{{ option.text }}</span>
+            </button>
           </div>
-          <div>
-            <h1 class="text-2xl font-bold text-gray-900">{{ course.name }} · AI 练习</h1>
-            <div class="text-gray-500">第 {{ currentQuestionIndex + 1 }} / {{ questions.length || 1 }} 题</div>
-          </div>
-        </div>
-        <div class="flex items-center gap-3">
-          <button @click="emit('navigate', 'detail')" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-all">
-            返回详情
-          </button>
-          <button @click="emit('navigate', 'courses')" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-all">
-            退出练习
-          </button>
-        </div>
-      </div>
-    </section>
 
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <div class="text-3xl font-bold text-gray-900 text-center">{{ questions.length }}</div>
-        <div class="text-sm text-gray-500 text-center mt-1">题目总数</div>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <div class="text-3xl font-bold text-blue-600 text-center">{{ answeredCount }}</div>
-        <div class="text-sm text-gray-500 text-center mt-1">已答题目</div>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <div class="text-3xl font-bold text-green-600 text-center">{{ correctCount }}</div>
-        <div class="text-sm text-gray-500 text-center mt-1">答对题目</div>
-      </div>
-      <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <div class="text-3xl font-bold text-amber-600 text-center">{{ accuracy }}%</div>
-        <div class="text-sm text-gray-500 text-center mt-1">正确率</div>
-      </div>
-    </div>
-
-    <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-      <div v-if="loading" class="py-20 text-center">
-        <div class="mx-auto mb-5 h-10 w-10 rounded-full border-2 border-gray-200 border-t-gray-900 animate-spin"></div>
-        <h2 class="text-lg font-semibold text-gray-900">AI 正在生成《{{ course.name }}》练习题</h2>
-        <p class="text-sm text-gray-500 mt-2">会根据课程章节、学习建议和当前模型配置生成分层题目。</p>
-      </div>
-
-      <div v-else-if="currentQuestion" class="space-y-6">
-        <div v-if="generationError" class="rounded-xl bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 text-sm">
-          {{ generationError }}
-        </div>
-
-        <div class="h-3 bg-gray-200 rounded-full overflow-hidden">
-          <div class="h-full bg-gray-900 rounded-full transition-all duration-500" :style="{ width: exerciseProgress + '%' }"></div>
-        </div>
-
-        <div class="flex items-center gap-3 flex-wrap">
-          <span class="px-4 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">
-            {{ currentQuestion.chapter }}
-          </span>
-          <span class="px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
-            {{ getQuestionTypeLabel(currentQuestion.type) }}
-          </span>
-        </div>
-
-        <div class="bg-gray-50 rounded-xl p-6">
-          <div class="text-xl font-medium text-gray-900 leading-relaxed">{{ currentQuestion.question }}</div>
-        </div>
-
-        <div v-if="currentQuestion.type === 'single' || currentQuestion.type === 'judge'" class="space-y-3">
-          <button
-            v-for="option in optionsFor(currentQuestion)"
-            :key="option.label"
-            @click="selectAnswer(option.label)"
+          <textarea
+            v-else-if="currentQuestion.type === 'short'"
+            :value="currentAnswer"
             :disabled="showResult"
-            :class="['exercise-option', getOptionClass(option.label)]"
-          >
-            <span>{{ option.label }}</span>
-            {{ option.text }}
-          </button>
+            rows="5"
+            class="answer-input"
+            placeholder="请输入你的答案"
+            @input="updateTextAnswer"
+          ></textarea>
+
+          <input
+            v-else
+            :value="currentAnswer"
+            :disabled="showResult"
+            class="answer-input"
+            placeholder="请输入答案"
+            @input="updateTextAnswer"
+          />
+
+          <details class="question-hint">
+            <summary>提示</summary>
+            <p>先判断题目考查的概念，再排除明显不符合定义的选项。</p>
+          </details>
         </div>
-
-        <textarea
-          v-else-if="currentQuestion.type === 'short'"
-          :value="currentAnswer"
-          :disabled="showResult"
-          rows="4"
-          class="answer-input"
-          placeholder="请输入你的答案"
-          @input="updateTextAnswer"
-        ></textarea>
-
-        <input
-          v-else
-          :value="currentAnswer"
-          :disabled="showResult"
-          class="answer-input"
-          placeholder="请输入答案"
-          @input="updateTextAnswer"
-        />
 
         <div v-if="showResult" :class="['result-panel', checkAnswer() ? 'result-correct' : 'result-wrong']">
-          <div class="font-bold text-lg">{{ checkAnswer() ? '回答正确' : '回答错误' }}</div>
-          <p class="mt-2">参考答案：{{ currentQuestion.answer }}</p>
-          <p class="mt-2 leading-relaxed">{{ currentQuestion.analysis }}</p>
+          <strong>{{ checkAnswer() ? '回答正确' : '回答错误' }}</strong>
+          <p>参考答案：{{ currentQuestion.answer }}</p>
+          <p>{{ currentQuestion.analysis }}</p>
         </div>
 
-        <div class="flex items-center justify-between pt-6 border-t border-gray-100">
-          <button
-            @click="prevQuestion"
-            :disabled="currentQuestionIndex === 0"
-            class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            上一题
+        <footer class="quiz-footer">
+          <button type="button" class="ghost-button" :disabled="currentQuestionIndex === 0" @click="prevQuestion">
+            上一个
           </button>
-
-          <div class="flex-1 flex justify-center">
-            <button
-              v-if="!showResult"
-              @click="submitAnswer"
-              :disabled="!currentAnswer.trim()"
-              class="px-8 py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-black transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              提交答案
-            </button>
-            <button
-              v-else-if="currentQuestionIndex < questions.length - 1"
-              @click="nextQuestion"
-              class="px-8 py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-black transition-all shadow-sm"
-            >
-              下一题
-            </button>
-            <button
-              v-else
-              @click="emit('navigate', 'detail')"
-              class="px-8 py-3 bg-green-600 text-white font-medium rounded-xl hover:bg-green-700 transition-all shadow-sm"
-            >
-              完成练习
-            </button>
-          </div>
-
           <button
+            v-if="!showResult"
+            type="button"
+            class="primary-button"
+            :disabled="!currentAnswer.trim()"
+            @click="submitAnswer"
+          >
+            提交
+          </button>
+          <button
+            v-else-if="currentQuestionIndex < questions.length - 1"
+            type="button"
+            class="primary-button"
             @click="nextQuestion"
-            :disabled="currentQuestionIndex === questions.length - 1 || !showResult"
-            class="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            下一题
+            下一个
           </button>
-        </div>
-      </div>
+          <button v-else type="button" class="primary-button" @click="emit('navigate', 'detail')">
+            完成
+          </button>
+        </footer>
+      </article>
     </section>
   </div>
 </template>
 
 <style scoped>
-.exercise-option {
-  width: 100%;
+.quiz-page {
+  min-height: calc(100vh - 72px);
+  padding: 10px;
+  background: #fff;
+  color: #202123;
+}
+
+.quiz-shell {
+  width: min(1180px, 100%);
+  min-height: calc(100vh - 96px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 28px;
+  padding: 30px 34px;
+  border: 1px solid #e5e7eb;
+  border-radius: 30px;
+  background: #fff;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .06);
+}
+
+.quiz-header,
+.quiz-progress,
+.quiz-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.quiz-header h1 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.quiz-header p {
+  margin: 7px 0 0;
+  color: #8b8f98;
+  font-size: 12px;
+}
+
+.quiz-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.quiz-header-actions button {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  color: #6b7280;
+  background: #f3f4f6;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.progress-segments {
+  flex: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(18px, 1fr);
+  gap: 4px;
+}
+
+.progress-segments span {
+  height: 6px;
+  border-radius: 999px;
+  background: #eceff3;
+  transition: background .2s ease, transform .2s ease;
+}
+
+.progress-segments span.active {
+  background: #d1d5db;
+}
+
+.progress-segments span.answered {
+  background: #4b5563;
+}
+
+.quiz-progress b {
+  min-width: 58px;
+  color: #4b5563;
+  text-align: right;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.quiz-loading {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  justify-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  text-align: center;
+}
+
+.quiz-loading div {
+  width: 38px;
+  height: 38px;
+  border: 2px solid #e5e7eb;
+  border-top-color: #111827;
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+
+.quiz-loading strong {
+  color: #111827;
+}
+
+.quiz-loading p {
+  margin: 0;
+  color: #8b8f98;
+}
+
+.quiz-card {
+  width: min(760px, 100%);
+  justify-self: center;
+  display: grid;
+  align-content: start;
+  gap: 22px;
+}
+
+.quiz-warning {
+  padding: 12px 14px;
+  border: 1px solid #f6d58a;
   border-radius: 14px;
-  color: #374151;
-  background: #fff;
+  color: #8a5a00;
+  background: #fff8e7;
+  font-size: 13px;
+}
+
+.question-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.question-meta span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #4b5563;
+  background: #f3f4f6;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.question-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.question-stack h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.question-stack > p {
+  margin: 0 0 8px;
+  color: #1f2937;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.75;
+}
+
+.stacked-options {
+  display: grid;
+  gap: 10px;
+}
+
+.exercise-option {
+  width: 100%;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  color: #1f2937;
+  background: #f8fafc;
   text-align: left;
-  transition: all .2s ease;
+  font-size: 17px;
+  font-weight: 620;
+  transition: border-color .2s ease, background .2s ease, transform .2s ease;
 }
 
 .exercise-option:hover:not(:disabled),
 .option-selected {
   border-color: #111827;
-  background: #f9fafb;
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.exercise-option b {
+  min-width: 28px;
+  color: #374151;
+  font-size: 18px;
 }
 
 .exercise-option span {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: #f3f4f6;
-  color: #111827;
-  font-weight: 700;
+  min-width: 0;
 }
 
 .option-correct {
@@ -388,28 +533,54 @@ onMounted(generateAiQuestions)
 }
 
 .option-muted {
-  opacity: .55;
+  opacity: .56;
 }
 
 .answer-input {
   width: 100%;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid #d1d5db;
-  border-radius: 14px;
+  border-radius: 18px;
   outline: 0;
   resize: vertical;
   color: #111827;
   background: #fff;
+  line-height: 1.7;
 }
 
 .answer-input:focus {
   border-color: #111827;
 }
 
+.question-hint {
+  width: fit-content;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.question-hint summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.question-hint p {
+  max-width: 560px;
+  margin: 10px 0 0;
+  color: #6b7280;
+  line-height: 1.65;
+}
+
 .result-panel {
-  padding: 18px;
-  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 18px;
   border: 1px solid;
+}
+
+.result-panel p {
+  margin: 0;
+  line-height: 1.7;
 }
 
 .result-correct {
@@ -422,5 +593,52 @@ onMounted(generateAiQuestions)
   border-color: #fecaca;
   background: #fef2f2;
   color: #991b1b;
+}
+
+.quiz-footer {
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.ghost-button,
+.primary-button {
+  min-width: 92px;
+  padding: 12px 20px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 750;
+}
+
+.ghost-button {
+  color: #4b5563;
+  background: #f3f4f6;
+}
+
+.primary-button {
+  color: #fff;
+  background: #3746b3;
+}
+
+.ghost-button:disabled,
+.primary-button:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+button {
+  cursor: pointer;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 760px) {
+  .quiz-page { padding: 0; }
+  .quiz-shell { min-height: calc(100vh - 64px); padding: 22px 16px; border-radius: 0; border-left: 0; border-right: 0; }
+  .quiz-header, .quiz-footer { align-items: flex-start; }
+  .quiz-card { width: 100%; }
+  .question-stack > p { font-size: 16px; }
+  .exercise-option { min-height: 58px; padding: 15px 16px; font-size: 15px; }
 }
 </style>

@@ -219,10 +219,10 @@ onMounted(async () => {
 .typing { display: flex; gap: 5px; padding: 10px 0; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: #8f96a3; animation: typing 1.1s infinite ease-in-out; }
 .typing i:nth-child(2) { animation-delay: .16s; }.typing i:nth-child(3) { animation-delay: .32s; }
-.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 18px 0 10px; background: #f7f8fb; box-shadow: 0 -22px 34px #f7f8fb; }
 .profile-chat-page.idle .composer-section { position: static; padding: 0; background: transparent; }
-.composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
-.composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
+.composer { padding: 13px 14px 11px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); outline: none; }
+.composer:focus-within { border-color: #d9d9d9; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
 .composer textarea { width: 100%; min-height: 34px; max-height: 170px; padding: 5px 5px 10px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.55; }
 .composer textarea::placeholder { color: #929292; }
 .selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 9px; }
@@ -236,6 +236,7 @@ onMounted(async () => {
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
+.composer-section:focus-within, .composer:focus, .composer textarea:focus, .composer-actions select:focus, .composer-actions button:focus { outline: none; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .55; }
 @keyframes typing { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }

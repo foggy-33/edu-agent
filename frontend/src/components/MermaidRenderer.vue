@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUpdate, onMounted, onUnmounted, ref, watch } from 'vue'
 import mermaid from 'mermaid'
 
 interface MindMapNode {
@@ -7,6 +7,12 @@ interface MindMapNode {
   label: string
   depth: number
   children: MindMapNode[]
+}
+
+interface MindMapConnection {
+  id: string
+  color: string
+  d: string
 }
 
 const props = defineProps<{
@@ -17,6 +23,10 @@ const props = defineProps<{
 const chartId = ref(`mermaid-${Date.now()}`)
 const svgContent = ref('')
 const hasError = ref(false)
+const mindMapEl = ref<HTMLElement | null>(null)
+const rootEl = ref<HTMLElement | null>(null)
+const branchNodeEls = new Map<string, HTMLElement>()
+const connectionPaths = ref<MindMapConnection[]>([])
 
 const cleanedChart = computed(() => cleanChartSource(props.chart))
 const mindMap = computed(() => parseMindMap(cleanedChart.value))
@@ -28,6 +38,48 @@ const branchPalette = ['#75b8d8', '#efc94c', '#78b785', '#d48b71', '#c891c8', '#
 function branchColor(index: number, side: 'left' | 'right') {
   const offset = side === 'left' ? 3 : 0
   return branchPalette[(index + offset) % branchPalette.length]
+}
+
+function setBranchNode(el: unknown, id: string) {
+  if (el instanceof HTMLElement) branchNodeEls.set(id, el)
+}
+
+function branchEntries() {
+  return [
+    ...leftBranches.value.map((branch, index) => ({ branch, side: 'left' as const, index, color: branchColor(index, 'left') })),
+    ...rightBranches.value.map((branch, index) => ({ branch, side: 'right' as const, index, color: branchColor(index, 'right') })),
+  ]
+}
+
+async function updateMindMapConnections() {
+  await nextTick()
+  if (!mindMapEl.value || !rootEl.value || !mindMap.value) {
+    connectionPaths.value = []
+    return
+  }
+
+  const canvas = mindMapEl.value.getBoundingClientRect()
+  const root = rootEl.value.getBoundingClientRect()
+  const rootLeft = root.left - canvas.left
+  const rootRight = root.right - canvas.left
+  const rootY = root.top - canvas.top + root.height / 2
+
+  connectionPaths.value = branchEntries().flatMap(({ branch, side, color }) => {
+    const target = branchNodeEls.get(branch.id)
+    if (!target) return []
+    const rect = target.getBoundingClientRect()
+    const targetY = rect.top - canvas.top + rect.height / 2
+    const targetX = side === 'left' ? rect.right - canvas.left : rect.left - canvas.left
+    const startX = side === 'left' ? rootLeft : rootRight
+    const curve = Math.max(80, Math.abs(targetX - startX) * 0.55)
+    const c1x = side === 'left' ? startX - curve : startX + curve
+    const c2x = side === 'left' ? targetX + curve : targetX - curve
+    return [{
+      id: branch.id,
+      color,
+      d: `M ${startX} ${rootY} C ${c1x} ${rootY}, ${c2x} ${targetY}, ${targetX} ${targetY}`,
+    }]
+  })
 }
 
 function cleanChartSource(value: string) {
@@ -149,17 +201,39 @@ onMounted(async () => {
   initMermaid()
   await nextTick()
   renderMermaid()
+  updateMindMapConnections()
+  window.addEventListener('resize', updateMindMapConnections)
+})
+
+onBeforeUpdate(() => {
+  branchNodeEls.clear()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateMindMapConnections)
 })
 
 watch(() => props.chart, async () => {
   await nextTick()
   renderMermaid()
+  updateMindMapConnections()
 })
+
+watch(mindMap, updateMindMapConnections)
 </script>
 
 <template>
   <div class="diagram-container" :class="className">
-    <div v-if="mindMap" class="code-mindmap">
+    <div v-if="mindMap" ref="mindMapEl" class="code-mindmap">
+      <svg class="mind-connections" aria-hidden="true">
+        <path
+          v-for="path in connectionPaths"
+          :key="path.id"
+          :d="path.d"
+          :stroke="path.color"
+        />
+      </svg>
+
       <div class="mind-side mind-side-left">
         <div
           v-for="(branch, index) in leftBranches"
@@ -167,7 +241,7 @@ watch(() => props.chart, async () => {
           class="mind-branch mind-branch-left"
           :style="{ '--branch-color': branchColor(index, 'left') }"
         >
-          <div class="mind-branch-node">
+          <div class="mind-branch-node" :ref="el => setBranchNode(el, branch.id)">
             <span>{{ branch.label }}</span>
           </div>
           <div class="mind-items">
@@ -180,7 +254,7 @@ watch(() => props.chart, async () => {
       </div>
 
       <div class="mind-center">
-        <div class="mind-root">
+        <div ref="rootEl" class="mind-root">
           {{ mindMap.label }}
         </div>
       </div>
@@ -192,7 +266,7 @@ watch(() => props.chart, async () => {
           class="mind-branch mind-branch-right"
           :style="{ '--branch-color': branchColor(index, 'right') }"
         >
-          <div class="mind-branch-node">
+          <div class="mind-branch-node" :ref="el => setBranchNode(el, branch.id)">
             <span>{{ branch.label }}</span>
           </div>
           <div class="mind-items">
@@ -242,7 +316,30 @@ watch(() => props.chart, async () => {
   padding: 36px 8px;
 }
 
+.mind-connections {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mind-connections path {
+  fill: none;
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: .82;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, .05));
+  stroke-dasharray: 900;
+  stroke-dashoffset: 900;
+  animation: pathDraw .9s ease forwards;
+}
+
 .mind-side {
+  position: relative;
+  z-index: 2;
   display: grid;
   gap: 24px;
   align-content: center;
@@ -258,6 +355,7 @@ watch(() => props.chart, async () => {
 
 .mind-center {
   position: relative;
+  z-index: 3;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -281,24 +379,7 @@ watch(() => props.chart, async () => {
 
 .mind-center::before,
 .mind-center::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 48px;
-  height: 4px;
-  background: linear-gradient(90deg, transparent, #9bc9d0);
-  transform: translateY(-50%);
-  border-radius: 999px;
-  animation: centerLineGrow .55s ease both;
-}
-
-.mind-center::before {
-  right: calc(100% - 8px);
-}
-
-.mind-center::after {
-  left: calc(100% - 8px);
-  background: linear-gradient(90deg, #9bc9d0, transparent);
+  display: none;
 }
 
 .mind-branch {
@@ -321,15 +402,7 @@ watch(() => props.chart, async () => {
 }
 
 .mind-branch::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  width: 58px;
-  height: 38px;
-  border-top: 4px solid var(--branch-color);
-  transform: translateY(-50%);
-  opacity: .86;
-  animation: curveDraw .6s ease both;
+  display: none;
 }
 
 .mind-branch-right::before {
@@ -523,6 +596,10 @@ watch(() => props.chart, async () => {
 @keyframes centerLineGrow {
   from { transform: translateY(-50%) scaleX(0); }
   to { transform: translateY(-50%) scaleX(1); }
+}
+
+@keyframes pathDraw {
+  to { stroke-dashoffset: 0; }
 }
 
 @keyframes curveDraw {

@@ -63,7 +63,7 @@ const containerClass = computed(() => {
   color: #1f2937;
   margin: 1.25rem 0 0.75rem;
   padding-left: 0.75rem;
-  border-left: 4px solid #6366f1;
+  border-left: 4px solid #9ca3af;
 }
 
 .markdown-body :deep(h3) {
@@ -132,8 +132,8 @@ const containerClass = computed(() => {
 }
 
 .markdown-body :deep(blockquote) {
-  border-left: 4px solid #6366f1;
-  background: linear-gradient(90deg, #eef2ff 0%, transparent 100%);
+  border-left: 4px solid #d1d5db;
+  background: linear-gradient(90deg, #f3f4f6 0%, transparent 100%);
   padding: 0.75rem 1rem;
   margin: 1rem 0;
   border-radius: 0 0.5rem 0.5rem 0;
@@ -145,14 +145,14 @@ const containerClass = computed(() => {
 }
 
 .markdown-body :deep(a) {
-  color: #6366f1;
+  color: #374151;
   text-decoration: none;
-  border-bottom: 1px dashed #6366f1;
+  border-bottom: 1px dashed #9ca3af;
   transition: all 0.2s;
 }
 
 .markdown-body :deep(a:hover) {
-  color: #4f46e5;
+  color: #111827;
   border-bottom-style: solid;
 }
 

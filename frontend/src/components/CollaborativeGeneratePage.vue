@@ -6,7 +6,7 @@ import {
   saveConversationHistoryItem,
 } from '../api/conversationHistory'
 import { listResources } from '../api/client'
-import { loadSiliconFlowConfig } from '../api/settings'
+import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
@@ -21,6 +21,15 @@ interface AgentProcessStep {
   message: string
   detail: string
   state: ProcessState
+}
+
+interface ComposerModelOption {
+  label: string
+  model: string
+}
+
+interface ComposerModeOption extends ComposerModelOption {
+  key: 'smart' | 'fast' | 'balanced' | 'advanced'
 }
 
 const props = defineProps<{
@@ -45,8 +54,23 @@ const resourceOptions: {
   { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '◉' },
 ]
 
+const modelModes: ComposerModeOption[] = [
+  { key: 'smart', label: '智能', model: 'zai-org/GLM-5.2' },
+  { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
+  { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
+  { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+]
+
+const composerModels: ComposerModelOption[] = [
+  { label: 'DeepSeek-V4-Pro', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+  { label: 'DeepSeek-V4-Flash', model: 'deepseek-ai/DeepSeek-V4-Flash' },
+  { label: 'DeepSeek-V3.2 Pro', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
+  { label: 'GLM-5.2', model: 'zai-org/GLM-5.2' },
+]
+
 const prompt = ref('')
 const currentQuestion = ref('')
+const modelConfig = ref(loadSiliconFlowConfig())
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
 const promptInput = ref<HTMLTextAreaElement | null>(null)
@@ -54,6 +78,8 @@ const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
 const menuOpen = ref(false)
+const modelMenuOpen = ref(false)
+const modelSubmenuOpen = ref(false)
 const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
@@ -96,6 +122,9 @@ const hasStreamingOutput = computed(() => Object.values(streamContent.value).som
 const activeContent = computed(() => streamContent.value[activeTab.value] || result.value?.[activeTab.value] || '')
 const exerciseItems = computed(() => result.value?.exerciseItems || [])
 const conversationQuestion = computed(() => currentQuestion.value.trim())
+const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
+const activeComposerModel = computed(() => composerModels.find(item => item.model === modelConfig.value.model))
+const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
 
 function toggleResource(key: CollaborativeResourceType) {
   selectedTypes.value = selectedTypes.value.includes(key)
@@ -111,6 +140,13 @@ function toggleFile(fileId: string) {
   selectedFileIds.value = selectedFileIds.value.includes(fileId)
     ? selectedFileIds.value.filter(item => item !== fileId)
     : [...selectedFileIds.value, fileId]
+}
+
+function selectComposerModel(option: ComposerModelOption) {
+  modelConfig.value = { ...modelConfig.value, model: option.model }
+  saveSiliconFlowConfig(modelConfig.value)
+  modelMenuOpen.value = false
+  modelSubmenuOpen.value = false
 }
 
 function normalizeAnswer(value: string) {
@@ -342,7 +378,7 @@ async function submit() {
     error.value = '请输入你想学习的内容'
     return
   }
-  const config = loadSiliconFlowConfig()
+  const config = { ...modelConfig.value }
   currentQuestion.value = question
   const payload: CollaborativeLearningRequest = {
     user_id: userProfile.value.userId,
@@ -364,6 +400,8 @@ async function submit() {
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   menuOpen.value = false
+  modelMenuOpen.value = false
+  modelSubmenuOpen.value = false
   submittedTypes.value = [...selectedTypes.value]
   activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'lectureDoc'
 
@@ -611,6 +649,55 @@ watch(prompt, resizePromptInput)
             @keydown.enter.exact.prevent="submit"
           ></textarea>
 
+          <div class="model-picker">
+            <button
+              type="button"
+              class="model-button"
+              :disabled="loading"
+              @click="modelMenuOpen = !modelMenuOpen"
+            >
+              {{ activeMode.label }}
+              <span>⌄</span>
+            </button>
+
+            <div v-if="modelMenuOpen" class="model-menu">
+              <button
+                v-for="mode in modelModes"
+                :key="mode.key"
+                type="button"
+                class="model-menu-item"
+                @click="selectComposerModel(mode)"
+              >
+                <span>{{ mode.label }}</span>
+                <b v-if="modelConfig.model === mode.model">✓</b>
+              </button>
+
+              <div class="model-menu-divider"></div>
+
+              <button
+                type="button"
+                class="model-menu-item model-menu-parent"
+                @click="modelSubmenuOpen = !modelSubmenuOpen"
+              >
+                <span>{{ activeModelLabel }}</span>
+                <b>›</b>
+              </button>
+
+              <div v-if="modelSubmenuOpen" class="model-submenu">
+                <button
+                  v-for="model in composerModels"
+                  :key="model.model"
+                  type="button"
+                  class="model-menu-item"
+                  @click="selectComposerModel(model)"
+                >
+                  <span>{{ model.label }}</span>
+                  <b v-if="modelConfig.model === model.model">✓</b>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button class="send-button" :disabled="loading || !prompt.trim()" aria-label="发送" @click="submit">
             {{ loading ? '…' : '↑' }}
           </button>
@@ -684,10 +771,10 @@ watch(prompt, resizePromptInput)
 .practice-feedback { display: grid; gap: 6px; padding: 12px; border-radius: 12px; background: #f7f7f7; }
 .practice-feedback strong { color: #202123; }
 .practice-feedback p { margin: 0; color: #5f5f5f; font-size: 13px; line-height: 1.65; }
-.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 12px 0 4px; background: linear-gradient(180deg, rgba(247, 248, 251, 0), #f7f8fb 24%); }
+.composer-section { position: sticky; bottom: 0; z-index: 5; width: min(760px, 100%); margin: 0 auto; padding: 18px 0 10px; background: #f7f8fb; box-shadow: 0 -22px 34px #f7f8fb; }
 .generate-page.idle .composer-section { position: static; padding: 0; background: transparent; }
-.composer { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); }
-.composer:focus-within { border-color: #b8b8b8; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
+.composer { padding: 8px 10px; border: 1px solid #d9d9d9; border-radius: 26px; background: #fff; box-shadow: 0 8px 30px rgba(0, 0, 0, .08); outline: none; }
+.composer:focus-within { border-color: #d9d9d9; box-shadow: 0 8px 32px rgba(0, 0, 0, .11); }
 .composer textarea { min-width: 0; width: 100%; min-height: 24px; max-height: 150px; padding: 6px 4px; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 16px; line-height: 1.5; }
 .composer textarea::placeholder { color: #929292; }
 .selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 7px; }
@@ -714,8 +801,22 @@ watch(prompt, resizePromptInput)
 .tool-menu b { font-size: 13px; }
 .tool-menu small { color: #8a8a8a; font-size: 10px; }
 .tool-menu i { color: #202123; text-align: center; font-style: normal; }
+.model-picker { position: relative; flex: 0 0 auto; }
+.model-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; min-width: 76px; padding: 0 12px; border: 0; border-radius: 999px; color: #777; background: #f1f1f1; font-size: 15px; font-weight: 650; white-space: nowrap; }
+.model-button:hover { color: #333; background: #e9e9e9; }
+.model-button span { color: #8c8c8c; font-size: 13px; line-height: 1; }
+.model-menu, .model-submenu { position: absolute; min-width: 160px; padding: 8px; border: 1px solid #d9d9d9; border-radius: 17px; background: #fff; box-shadow: 0 18px 44px rgba(0, 0, 0, .14); }
+.model-menu { right: 0; bottom: 46px; z-index: 12; }
+.generate-page.idle .model-menu { top: 46px; bottom: auto; }
+.model-submenu { left: calc(100% + 6px); bottom: 0; z-index: 13; min-width: 178px; }
+.generate-page.idle .model-submenu { top: auto; bottom: 0; }
+.model-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 42px; padding: 9px 12px; border: 0; border-radius: 11px; color: #222; background: transparent; text-align: left; font-size: 15px; line-height: 1.25; white-space: nowrap; }
+.model-menu-item:hover, .model-menu-parent { background: #f2f2f2; }
+.model-menu-item b { color: #111; font-size: 18px; font-weight: 500; }
+.model-menu-divider { height: 1px; margin: 7px 8px; background: #ededed; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 20px; line-height: 1; }
 .send-button:disabled { background: #d0d0d0; cursor: default; }
+.composer-section:focus-within, .composer:focus, .composer textarea:focus, .add-button:focus, .model-button:focus, .model-menu-item:focus, .send-button:focus { outline: none; }
 .composer-hint { margin: 8px 0 0; color: #9a9a9a; text-align: center; font-size: 10px; }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }
@@ -735,5 +836,8 @@ button:disabled { cursor: default; opacity: .65; }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }
+  .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
+  .model-menu { right: -48px; }
+  .model-submenu { left: auto; right: 0; bottom: calc(100% + 6px); }
 }
 </style>
