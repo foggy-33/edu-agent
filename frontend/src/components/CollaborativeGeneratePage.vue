@@ -115,6 +115,7 @@ const processQueue = ref<AgentProcessStep[]>([])
 const processCollapsed = ref(false)
 const processCompleted = ref(false)
 let processTimer: ReturnType<typeof setTimeout> | null = null
+const PROCESS_STEP_DELAY_MS = 460
 
 const emptyStreamContent = (): Record<ResultKey, string> => ({
   lectureDoc: '',
@@ -126,11 +127,11 @@ const emptyStreamContent = (): Record<ResultKey, string> => ({
 
 const availableTabs = computed(() => [
 
-  ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '瀵硅瘽鍥炵瓟' }] : []),
+  ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
   ...resourceOptions
     .filter(item => submittedTypes.value.includes(item.key))
     .map(item => ({ key: item.resultKey, label: item.label })),
-  ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '瀹℃牳缁撴灉' }] : []),
+  ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
 ])
 
 void availableTabs.value
@@ -144,11 +145,11 @@ const activeModelLabel = computed(() => activeComposerModel.value?.label || mode
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
-    ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '瀵硅瘽鍥炵瓟' }] : []),
+    ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
     ...resourceOptions
       .filter(item => turn.resourceTypes.includes(item.key))
       .map(item => ({ key: item.resultKey, label: item.label })),
-    ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '瀹℃牳缁撴灉' }] : []),
+    ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
   ]
 }
 
@@ -399,9 +400,9 @@ function buildProcessStep(data: any): AgentProcessStep | null {
   if (!data.message) return null
   return {
     id: `${Date.now()}-${processSteps.value.length}-${processQueue.value.length}`,
-    agent: data.agent || '鍗忎綔璋冨害',
+    agent: data.agent || '协作调度',
     message: data.message,
-    detail: data.detail || '姝ｅ湪鎺ㄨ繘澶?Agent 鍗忎綔娴佺▼',
+    detail: data.detail || '正在推进多 Agent 协作流程',
     state: data.state === 'done' ? 'done' : 'running',
   }
 }
@@ -429,7 +430,7 @@ function collapseCompletedProcess() {
       processCollapsed.value = true
       syncActiveTurn(targetId)
     }
-  }, 1200)
+  }, PROCESS_STEP_DELAY_MS)
 }
 
 function pumpProcessQueue() {
@@ -444,7 +445,7 @@ function pumpProcessQueue() {
     if (step) showProcessStep(step)
     processTimer = null
     pumpProcessQueue()
-  }, processSteps.value.length ? 520 : 140)
+  }, PROCESS_STEP_DELAY_MS)
 }
 
 function appendProcessStep(data: any) {
@@ -459,7 +460,7 @@ function appendProcessStep(data: any) {
 function applyStreamEvent(event: string, data: any) {
   if (event === 'status') {
     if (data.message) {
-      thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}锛?{data.message}` : data.message]
+      thinkingSteps.value = [...thinkingSteps.value, data.agent ? `${data.agent}：${data.message}` : data.message]
       appendProcessStep(data)
     }
     return
@@ -478,12 +479,12 @@ function applyStreamEvent(event: string, data: any) {
     return
   }
   if (event === 'error') {
-    throw new Error(data.message || '璧勬簮鐢熸垚澶辫触')
+    throw new Error(data.message || '资源生成失败')
   }
 }
 
 async function readStream(response: Response) {
-  if (!response.body) throw new Error('娴忚鍣ㄤ笉鏀寔娴佸紡璇诲彇')
+  if (!response.body) throw new Error('浏览器不支持流式读取')
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
@@ -507,7 +508,7 @@ async function readStream(response: Response) {
 async function submit() {
   const question = prompt.value.trim()
   if (!question) {
-    error.value = '璇疯緭鍏ヤ綘鎯冲涔犵殑鍐呭'
+    error.value = '请输入你想学习的内容'
     return
   }
   const config = { ...modelConfig.value }
@@ -517,7 +518,7 @@ async function submit() {
     user_id: userProfile.value.userId,
     major: '未指定',
     course: '自定义学习主题',
-    chapter: '鐢ㄦ埛褰撳墠闂',
+    chapter: '用户当前问题',
     weakness: question,
     goal: '理解并掌握相关知识',
     resourceTypes: [...selectedTypes.value],
@@ -562,12 +563,12 @@ async function submit() {
     })
     if (!response.ok) {
       const data = await response.json().catch(() => null)
-      throw new Error(data?.detail || `璇锋眰澶辫触: ${response.status}`)
+      throw new Error(data?.detail || `请求失败: ${response.status}`)
     }
     await readStream(response)
     saveCompletedConversation(question)
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '璧勬簮鐢熸垚澶辫触'
+    error.value = reason instanceof Error ? reason.message : '资源生成失败'
   } finally {
     loading.value = false
     streamingTurnId.value = ''
@@ -594,7 +595,7 @@ watch(prompt, resizePromptInput)
     <section v-if="loading && !conversationTurns.length && !hasStreamingOutput" class="generating-state">
       <span class="generating-mark">✦</span>
       <div>
-        <strong>姝ｅ湪鐞嗚В闂</strong>
+        <strong>正在理解问题</strong>
         <p>正在连接协作 Agent...</p>
       </div>
     </section>
@@ -609,7 +610,7 @@ watch(prompt, resizePromptInput)
         <div class="assistant-body">
           <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
             <div class="trace-head" role="button" tabindex="0" @click="setTurnCollapsed(turn.id, !turn.processCollapsed)">
-              <span>澶勭悊杩囩▼</span>
+              <span>处理过程</span>
               <b>
                 {{ turn.processCollapsed ? activeProcessSummary(turn) : `${turn.processSteps.filter(step => step.state === 'done').length}/${turn.processSteps.length}` }}
               </b>
@@ -701,13 +702,13 @@ watch(prompt, resizePromptInput)
                     :disabled="!exerciseAnswers[item.id]?.trim()"
                     @click="submitExercise(item)"
                   >
-                    鎻愪氦绛旀
+                    提交答案
                   </button>
-                  <button v-else type="button" @click="retryExercise(item.id)">閲嶆柊浣滅瓟</button>
+                  <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
                 </div>
 
                 <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
-                  <strong>{{ isExerciseCorrect(item) ? '鍥炵瓟姝ｇ‘' : '鍥炵瓟閿欒' }}</strong>
+                  <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
                   <p>正确答案：{{ item.answer }}</p>
                   <p>{{ item.explanation }}</p>
                 </div>
@@ -733,7 +734,7 @@ watch(prompt, resizePromptInput)
             :disabled="loading"
             @click="toggleFile(file.id)"
           >
-            <span>PDF</span>{{ file.name }}<i>脳</i>
+            <span>PDF</span>{{ file.name }}<i>×</i>
           </button>
           <button
             v-for="item in selectedOptions"
@@ -742,7 +743,7 @@ watch(prompt, resizePromptInput)
             :disabled="loading"
             @click="removeResource(item.key)"
           >
-            <span>{{ item.icon }}</span>{{ item.label }}<i>脳</i>
+            <span>{{ item.icon }}</span>{{ item.label }}<i>×</i>
           </button>
         </div>
 
@@ -777,7 +778,7 @@ watch(prompt, resizePromptInput)
               </div>
               <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
               <div class="menu-divider"></div>
-              <div class="menu-title">閫夋嫨鐢熸垚鍐呭</div>
+              <div class="menu-title">选择生成内容</div>
               <button
                 v-for="item in resourceOptions"
                 :key="item.key"
@@ -884,12 +885,13 @@ watch(prompt, resizePromptInput)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 0; }
-.thinking-trace { margin-bottom: 12px; padding: 7px 11px; border: 1px solid #eeeeee; border-radius: 14px; color: #606060; background: #fff; box-shadow: 0 3px 14px rgba(0, 0, 0, .03); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
+.thinking-trace { width: min(360px, 48vw); max-width: 100%; margin-bottom: 12px; padding: 7px 11px; border: 1px solid #eeeeee; border-radius: 14px; color: #606060; background: #fff; box-shadow: 0 3px 14px rgba(0, 0, 0, .03); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
 .thinking-trace-collapsed { padding: 7px 11px; box-shadow: none; }
 .trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; cursor: pointer; user-select: none; }
 .thinking-trace-collapsed .trace-head { margin-bottom: 0; }
 .trace-head span { color: #8a8a8a; font-size: 11px; font-weight: 750; }
 .trace-head b { min-width: 0; overflow: hidden; color: #9a9a9a; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.thinking-trace-collapsed .trace-head { max-width: 100%; }
 .agent-flow { display: grid; gap: 5px; max-height: 170px; margin: 0; padding: 0 2px 0 0; overflow-y: auto; list-style: none; }
 .agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 6px 8px; border-radius: 10px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
 .agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
@@ -988,6 +990,7 @@ button:disabled { cursor: default; opacity: .65; }
   .generate-page { min-height: calc(100vh - 64px); }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
+  .thinking-trace { width: min(320px, 88vw); }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }

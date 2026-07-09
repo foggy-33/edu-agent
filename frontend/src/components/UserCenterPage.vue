@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getDynamicProfile, listDynamicProfiles } from '../api/client'
+import { getDynamicProfile, listDynamicProfiles, testSiliconFlow } from '../api/client'
+import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
 import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 import HomePage from './HomePage.vue'
@@ -19,6 +20,13 @@ const profileError = ref('')
 const subjectProfiles = ref<SubjectProfileSummary[]>([])
 const selectedCourse = ref('数据库系统')
 const portrait = ref<DynamicProfile | null>(null)
+
+const apiConfig = ref(loadSiliconFlowConfig())
+const apiShowKey = ref(false)
+const apiTesting = ref(false)
+const apiMessage = ref('')
+const apiError = ref(false)
+
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const activeSubject = computed(() => subjectProfiles.value.find(item => item.course === selectedCourse.value))
 const radarMetrics = computed<[string, number][]>(() => {
@@ -101,6 +109,42 @@ function reset() {
   userSuccess.value = '已恢复默认资料'
 }
 
+function normalizeApiConfig() {
+  apiConfig.value = {
+    ...apiConfig.value,
+    api_key: apiConfig.value.api_key.trim(),
+    base_url: apiConfig.value.base_url.trim() || 'https://api.siliconflow.cn/v1',
+    model: apiConfig.value.model.trim() || 'deepseek-ai/DeepSeek-V4-Pro',
+  }
+}
+
+function saveApiSettings() {
+  normalizeApiConfig()
+  saveSiliconFlowConfig(apiConfig.value)
+  apiError.value = false
+  apiMessage.value = 'API 设置已保存到当前浏览器，首页对话、资源生成和画像对话会共用这份配置。'
+}
+
+async function testApiSettings() {
+  saveApiSettings()
+  if (!apiConfig.value.api_key.trim()) {
+    apiError.value = true
+    apiMessage.value = '请先填写 API Key'
+    return
+  }
+  apiTesting.value = true
+  try {
+    const result = await testSiliconFlow(apiConfig.value)
+    apiError.value = false
+    apiMessage.value = `${result.model}：${result.message}`
+  } catch (err) {
+    apiError.value = true
+    apiMessage.value = err instanceof Error ? err.message : '连接测试失败'
+  } finally {
+    apiTesting.value = false
+  }
+}
+
 async function loadPortrait(course = selectedCourse.value) {
   profileLoading.value = true
   profileError.value = ''
@@ -135,7 +179,6 @@ async function loadProfileOverview() {
 }
 
 onMounted(loadProfileOverview)
-
 </script>
 
 <template>
@@ -156,13 +199,13 @@ onMounted(loadProfileOverview)
             <h2>个人资料</h2>
           </div>
         </div>
-        
+
         <div class="profile-avatar-section">
           <div class="profile-avatar-large">
             <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
             <span v-else>{{ initials }}</span>
           </div>
-          <button class="btn-secondary" @click="chooseAvatar">更换头像</button>
+          <button class="btn-secondary" type="button" @click="chooseAvatar">更换头像</button>
           <input ref="fileInput" type="file" accept="image/*" hidden @change="handleAvatar" />
           <small>支持 JPG、PNG、WebP，文件不超过 2 MB</small>
         </div>
@@ -172,28 +215,28 @@ onMounted(loadProfileOverview)
             <label>显示名称</label>
             <input v-model="userProfile.name" maxlength="30" placeholder="请输入显示名称" />
           </div>
-          
+
           <div class="form-group">
             <label>用户 ID</label>
             <input :value="userProfile.userId" disabled />
             <small>用户 ID 是当前账号的唯一标识，当前不可修改。</small>
           </div>
-          
+
           <div class="form-group">
             <label>手机号码</label>
             <input v-model="userProfile.phone" placeholder="请输入手机号码" />
           </div>
-          
+
           <div class="form-group">
             <label>邮箱地址</label>
             <input v-model="userProfile.email" type="email" placeholder="请输入邮箱地址" />
           </div>
-          
+
           <div class="form-group">
             <label>所在院校</label>
             <input v-model="userProfile.school" placeholder="请输入院校名称" />
           </div>
-          
+
           <div class="form-group">
             <label>专业班级</label>
             <input v-model="userProfile.major" placeholder="请输入专业班级" />
@@ -201,9 +244,9 @@ onMounted(loadProfileOverview)
         </div>
 
         <div class="profile-actions">
-          <button class="btn-secondary" @click="reset">恢复默认</button>
-          <button class="btn-primary" @click="saveProfile">保存资料</button>
-          <button class="logout-button" @click="emit('logout')">退出当前账号</button>
+          <button class="btn-secondary" type="button" @click="reset">恢复默认</button>
+          <button class="btn-primary" type="button" @click="saveProfile">保存资料</button>
+          <button class="logout-button" type="button" @click="emit('logout')">退出当前账号</button>
         </div>
 
         <div v-if="userSuccess" class="message success">{{ userSuccess }}</div>
@@ -289,6 +332,43 @@ onMounted(loadProfileOverview)
       </section>
     </div>
 
+    <section class="api-settings-card">
+      <header>
+        <div>
+          <span>API SETTINGS</span>
+          <h2>API 设置</h2>
+        </div>
+        <b>{{ apiConfig.model }}</b>
+      </header>
+      <p class="api-note">
+        当前项目使用硅基流动兼容 OpenAI 的接口。这里保存的是当前浏览器配置，会被首页对话、个性化资源生成、课程练习和画像对话共用。
+      </p>
+      <div class="api-form">
+        <label>
+          <span>API Key</span>
+          <div class="secret-input">
+            <input v-model="apiConfig.api_key" :type="apiShowKey ? 'text' : 'password'" placeholder="sk-..." />
+            <button type="button" @click="apiShowKey = !apiShowKey">{{ apiShowKey ? '隐藏' : '显示' }}</button>
+          </div>
+        </label>
+        <label>
+          <span>Base URL</span>
+          <input v-model="apiConfig.base_url" type="url" placeholder="https://api.siliconflow.cn/v1" />
+        </label>
+        <label class="api-model-field">
+          <span>模型</span>
+          <input v-model="apiConfig.model" placeholder="deepseek-ai/DeepSeek-V4-Pro" />
+        </label>
+      </div>
+      <div class="api-actions">
+        <button class="btn-secondary" type="button" @click="saveApiSettings">保存 API 设置</button>
+        <button class="btn-primary" type="button" :disabled="apiTesting" @click="testApiSettings">
+          {{ apiTesting ? '正在测试...' : '测试连接' }}
+        </button>
+      </div>
+      <p v-if="apiMessage" :class="['message', apiError ? 'error' : 'success']">{{ apiMessage }}</p>
+    </section>
+
     <section class="account-dashboard-section">
       <div class="section-title">
         <span>OVERVIEW</span>
@@ -325,6 +405,7 @@ onMounted(loadProfileOverview)
 .profile-hero span,
 .profile-header span,
 .portrait-card header span,
+.api-settings-card header span,
 .section-title span {
   color: #8b75d7;
   font-size: 10px;
@@ -345,21 +426,6 @@ onMounted(loadProfileOverview)
   font-size: 14px;
 }
 
-.profile-hero button,
-.profile-actions .btn-primary {
-  border: 0;
-  color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #9d6cff);
-  box-shadow: 0 12px 24px rgba(109, 93, 242, .22);
-}
-
-.profile-hero button {
-  flex: 0 0 auto;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-weight: 760;
-}
-
 .account-dashboard-section {
   width: 100%;
 }
@@ -371,19 +437,17 @@ onMounted(loadProfileOverview)
   align-items: start;
 }
 
+.profile-card,
+.portrait-card,
+.api-settings-card {
+  border: 1px solid #eee9ff;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
+}
+
 .profile-card {
-  background: #fff !important;
-  border: 1px solid #eee9ff !important;
-  border-radius: 22px !important;
-  box-shadow: 0 14px 38px rgba(93, 73, 170, .08) !important;
-  overflow: hidden !important;
-  display: block !important;
-  width: auto !important;
-  align-items: flex-start !important;
-  gap: 0 !important;
-  padding: 0 !important;
-  margin-bottom: 0 !important;
-  text-align: left !important;
+  overflow: hidden;
 }
 
 .profile-header {
@@ -393,7 +457,10 @@ onMounted(loadProfileOverview)
   padding: 22px 24px 10px;
 }
 
-.profile-header h2 {
+.profile-header h2,
+.portrait-card h2,
+.api-settings-card h2,
+.section-title h2 {
   margin: 5px 0 0;
   color: #25144f;
   font-size: 22px;
@@ -408,23 +475,29 @@ onMounted(loadProfileOverview)
 }
 
 .profile-avatar-large {
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #6d5df2, #a855f7);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40px;
-  color: white;
+  width: 108px;
+  height: 108px;
   margin-bottom: 16px;
   overflow: hidden;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5df2, #a855f7);
+  font-size: 40px;
 }
 
 .profile-avatar-large img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.profile-avatar-section small {
+  margin-top: 9px;
+  color: #756a84;
+  font-size: 12px;
 }
 
 .profile-form {
@@ -434,34 +507,34 @@ onMounted(loadProfileOverview)
   padding: 0 24px 22px;
 }
 
-.form-group {
-  margin-bottom: 0;
-}
-
 .form-group:nth-child(1),
 .form-group:nth-child(2) {
   grid-column: 1 / -1;
 }
 
-.form-group label {
+.form-group label,
+.api-form label {
   display: block;
-  font-size: 14px;
-  font-weight: 500;
-  color: #5f526f;
   margin-bottom: 8px;
+  color: #5f526f;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.form-group input {
+.form-group input,
+.api-form input {
   width: 100%;
+  box-sizing: border-box;
   padding: 12px 14px;
   border: 1px solid #e7ddff;
   border-radius: 12px;
   color: #241d35;
+  background: #fff;
   font-size: 14px;
-  box-sizing: border-box;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.api-form input:focus {
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
@@ -474,22 +547,47 @@ onMounted(loadProfileOverview)
 
 .form-group small {
   display: block;
+  margin-top: 6px;
   color: #9ca3af;
   font-size: 12px;
-  margin-top: 6px;
 }
 
-.profile-actions {
+.profile-actions,
+.api-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.profile-actions {
   padding: 0 24px 24px;
 }
 
-.profile-actions button {
+.profile-actions button,
+.api-actions button,
+.profile-avatar-section button {
   padding: 10px 13px;
   border-radius: 11px;
   font-weight: 720;
+}
+
+.btn-primary {
+  border: 0;
+  color: #fff;
+  background: linear-gradient(135deg, #6d5df2, #9d6cff);
+  box-shadow: 0 12px 24px rgba(109, 93, 242, .22);
+}
+
+.btn-secondary {
+  border: 0;
+  color: #5b35c8;
+  background: #f0ebff;
+}
+
+.logout-button {
+  border: 1px solid #f5c2c7;
+  color: #c82828;
+  background: #fff;
 }
 
 .message {
@@ -509,16 +607,13 @@ onMounted(loadProfileOverview)
   color: #dc2626;
 }
 
-.portrait-card {
-  min-height: 100%;
+.portrait-card,
+.api-settings-card {
   padding: 24px;
-  border: 1px solid #eee9ff;
-  border-radius: 22px;
-  background: #fff;
-  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
 }
 
 .portrait-card header,
+.api-settings-card header,
 .section-title {
   display: flex;
   align-items: center;
@@ -526,19 +621,17 @@ onMounted(loadProfileOverview)
   gap: 14px;
 }
 
-.portrait-card h2,
-.section-title h2 {
-  margin: 5px 0 0;
-  color: #25144f;
-  font-size: 22px;
-}
-
-.portrait-card header b {
+.portrait-card header b,
+.api-settings-card header b {
+  max-width: min(420px, 52vw);
   padding: 8px 11px;
+  overflow: hidden;
   border-radius: 999px;
   color: #5b35c8;
   background: #f0ebff;
   font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subject-switcher {
@@ -665,6 +758,52 @@ onMounted(loadProfileOverview)
   background: linear-gradient(90deg, #6d5df2, #a855f7);
 }
 
+.api-note {
+  margin: 14px 0 18px;
+  color: #80758f;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.api-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.api-model-field {
+  grid-column: 1 / -1;
+}
+
+.secret-input {
+  display: flex;
+  gap: 8px;
+}
+
+.secret-input input {
+  min-width: 0;
+}
+
+.secret-input button {
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 11px;
+  color: #5b35c8;
+  background: #f0ebff;
+  font-weight: 750;
+}
+
+.api-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.api-actions .message,
+.api-settings-card .message {
+  margin: 14px 0 0;
+}
+
 .section-title {
   margin: 4px 0 14px;
 }
@@ -675,11 +814,13 @@ onMounted(loadProfileOverview)
   }
 
   .profile-hero,
-  .user-center-grid {
+  .user-center-grid,
+  .api-form {
     grid-template-columns: 1fr;
   }
 
-  .profile-hero {
+  .profile-hero,
+  .api-settings-card header {
     align-items: flex-start;
     flex-direction: column;
   }
