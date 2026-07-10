@@ -5,7 +5,7 @@ import {
   getConversationHistoryItem,
   saveConversationHistoryItem,
 } from '../api/conversationHistory'
-import { listResources } from '../api/client'
+import { listResources, addMistake } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
@@ -233,10 +233,35 @@ function updateExerciseAnswer(questionId: string, event: Event) {
   setExerciseAnswer(questionId, (event.target as HTMLInputElement | HTMLTextAreaElement).value)
 }
 
-function submitExercise(item: CollaborativeExerciseItem) {
+async function submitExercise(item: CollaborativeExerciseItem) {
   const answer = exerciseAnswers.value[item.id]?.trim()
   if (!answer) return
   exerciseSubmitted.value = { ...exerciseSubmitted.value, [item.id]: true }
+
+  if (!isExerciseCorrect(item)) {
+    await saveMistakeToServer(item, answer)
+  }
+}
+
+async function saveMistakeToServer(item: CollaborativeExerciseItem, studentAnswer: string) {
+  try {
+    await addMistake({
+      user_id: userProfile.value.userId,
+      course: currentQuestion.value || '自定义学习',
+      question_id: String(item.id),
+      question: item.question,
+      type: item.type,
+      chapter: '综合',
+      level: item.level || '',
+      options: item.options || null,
+      answer: studentAnswer,
+      correct_answer: String(item.answer),
+      analysis: item.explanation || '',
+      topic: item.level || '综合',
+    })
+  } catch (e) {
+    console.error('保存错题失败:', e)
+  }
 }
 
 function retryExercise(questionId: string) {

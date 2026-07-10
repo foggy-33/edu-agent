@@ -11,6 +11,7 @@ from uuid import uuid4
 from pypdf import PdfReader
 
 from app.core.config import get_settings
+from app.rag.vector_store import get_vector_store
 
 
 MAX_PDF_BYTES = 100 * 1024 * 1024
@@ -68,6 +69,15 @@ class ResourceService:
                 json.dumps(metadata, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+
+            # 向量化存储到向量库
+            try:
+                vector_store = get_vector_store()
+                vector_store.add_user_pdf(file_id, filename, text)
+            except Exception:
+                # 向量存储失败不影响主流程
+                pass
+
             return metadata
         except Exception:
             shutil.rmtree(resource_dir, ignore_errors=True)
@@ -99,26 +109,60 @@ class ResourceService:
         with self._lock:
             shutil.rmtree(self._resource_dir(file_id))
 
+        # 从向量库中移除
+        try:
+            vector_store = get_vector_store()
+            vector_store.remove_user_pdf(file_id)
+        except Exception:
+            pass
+
     def build_context(self, user_id: str, file_ids: list[str], max_chars: int = 24000) -> tuple[str, list[dict[str, Any]]]:
+        return self.build_context_with_rag(user_id, file_ids)
+
+    def build_context_with_rag(
+        self,
+        user_id: str,
+        file_ids: list[str],
+        query: str = "",
+        max_chars: int = 2000,
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """使用 RAG 检索构建上下文，只返回最相关的片段"""
         blocks: list[str] = []
         sources: list[dict[str, Any]] = []
-        remaining = max_chars
-        for file_id in dict.fromkeys(file_ids):
-            metadata = self.get_metadata(user_id, file_id)
-            text = (self._resource_dir(file_id) / "content.txt").read_text(encoding="utf-8")
-            excerpt = text[:remaining]
-            if not excerpt:
-                continue
-            blocks.append(f"【文件：{metadata['name']}】\n{excerpt}")
-            sources.append({
-                "id": metadata["id"],
-                "name": metadata["name"],
-                "page_count": metadata["page_count"],
-                "course_folder": metadata["course_folder"],
-            })
-            remaining -= len(excerpt)
-            if remaining <= 0:
-                break
+
+        if query:
+            # 使用 RAG 检索相关片段
+            vector_store = get_vector_store()
+            results = vector_store.similarity_search(query, top_k=5)
+            
+            for result in results:
+                source_name = result.get("source", "")
+                blocks.append(f"【文件：{source_name}】\n{result['content']}")
+                sources.append({
+                    "id": result.get("metadata", {}).get("file_id", ""),
+                    "name": source_name,
+                    "title": result.get("title", ""),
+                })
+        else:
+            # 回退到传统方式（获取前几个文件的部分内容）
+            remaining = max_chars
+            for file_id in dict.fromkeys(file_ids):
+                metadata = self.get_metadata(user_id, file_id)
+                text = (self._resource_dir(file_id) / "content.txt").read_text(encoding="utf-8")
+                excerpt = text[:remaining]
+                if not excerpt:
+                    continue
+                blocks.append(f"【文件：{metadata['name']}】\n{excerpt}")
+                sources.append({
+                    "id": metadata["id"],
+                    "name": metadata["name"],
+                    "page_count": metadata["page_count"],
+                    "course_folder": metadata["course_folder"],
+                })
+                remaining -= len(excerpt)
+                if remaining <= 0:
+                    break
+
         return "\n\n".join(blocks), sources
 
     @staticmethod

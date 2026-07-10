@@ -176,3 +176,69 @@ export async function getPracticeRecords(userId: string, course?: string): Promi
   const params = course ? `?course=${encodeURIComponent(course)}` : ''
   return httpRequest<{ records: PracticeRecord[] }>(`${API_BASE}/practice/records/${encodeURIComponent(userId)}${params}`)
 }
+
+export interface MistakeRecord {
+  question_id: string
+  question: string
+  type: string
+  chapter: string
+  level: string
+  options: { label: string; text: string }[] | null
+  student_answer: string
+  correct_answer: string
+  analysis: string
+  topic: string
+  mistake_count: number
+  review_count: number
+  mastered: boolean
+  last_mistake_at: string
+}
+
+export async function addMistake(payload: {
+  user_id: string
+  course: string
+  question_id: string
+  question: string
+  type: string
+  chapter: string
+  level: string
+  options: { label: string; text: string }[] | null
+  answer: string
+  correct_answer: string
+  analysis: string
+  topic: string
+}): Promise<{ status: string }> {
+  return httpRequest<{ status: string }>(`${API_BASE}/mistakes/add`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function listMistakes(userId: string, course: string): Promise<{ mistakes: MistakeRecord[] }> {
+  return httpRequest<{ mistakes: MistakeRecord[] }>(`${API_BASE}/mistakes/list?user_id=${encodeURIComponent(userId)}&course=${encodeURIComponent(course)}`)
+}
+
+export async function listAllMistakes(userId: string, mastered: boolean = false): Promise<{ mistakes: MistakeRecord[] }> {
+  return httpRequest<{ mistakes: MistakeRecord[] }>(`${API_BASE}/mistakes/all?user_id=${encodeURIComponent(userId)}&mastered=${mastered}`)
+}
+
+export async function markMistakeMastered(userId: string, course: string, questionId: string): Promise<{ status: string }> {
+  const body = new FormData()
+  body.append('user_id', userId)
+  body.append('course', course)
+  body.append('question_id', questionId)
+  return httpRequest<{ status: string }>(`${API_BASE}/mistakes/master`, {
+    method: 'POST',
+    body
+  })
+}
+
+export async function markMistakeMasteredAny(userId: string, questionId: string): Promise<{ status: string }> {
+  return httpRequest<{ status: string }>(`${API_BASE}/mistakes/master-any?user_id=${encodeURIComponent(userId)}&question_id=${encodeURIComponent(questionId)}`, {
+    method: 'POST'
+  })
+}
+
+export async function getWeakTopics(userId: string, course: string): Promise<{ topics: string[] }> {
+  return httpRequest<{ topics: string[] }>(`${API_BASE}/mistakes/weak-topics?user_id=${encodeURIComponent(userId)}&course=${encodeURIComponent(course)}`)
+}

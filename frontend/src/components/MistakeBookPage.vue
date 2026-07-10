@@ -1,213 +1,148 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { generateLearningResources, listResources, addMistake, getWeakTopics } from '../api/client'
-import { loadSiliconFlowConfig } from '../api/settings'
+import { ref, computed, onMounted } from 'vue'
 import { loadUserProfile } from '../api/userProfile'
-import type { CollaborativeExerciseItem, Course, Question, UploadedResource } from '../types'
+import { listAllMistakes, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
+import type { Question } from '../types'
 
 const props = defineProps<{
-  course: Course
+  course: { id: string | number; name: string }
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: 'courses' | 'detail']
+  navigate: [page: 'courses' | 'detail' | 'exercise']
 }>()
 
+const mistakes = ref<Question[]>([])
 const loading = ref(false)
-const generationError = ref('')
-const currentQuestionIndex = ref(0)
-const questions = ref<Question[]>([])
+const currentIndex = ref(0)
 const selectedAnswers = ref<Record<string, string>>({})
 const showResult = ref(false)
-const answeredCount = ref(0)
-const correctCount = ref(0)
-const resources = ref<UploadedResource[]>([])
+const masteredCount = ref(0)
+const currentTab = ref<'unmastered' | 'mastered'>('unmastered')
+const unmasteredCount = ref(0)
+const masteredTotalCount = ref(0)
 
-const currentQuestion = computed(() => questions.value[currentQuestionIndex.value])
-const currentQuestionId = computed(() => String(currentQuestion.value?.id || ''))
+const currentQuestion = computed(() => mistakes.value[currentIndex.value])
 
-const accuracy = computed(() => {
-  return answeredCount.value > 0
-    ? Math.round((correctCount.value / answeredCount.value) * 100)
-    : 0
+const progressText = computed(() => {
+  return `${currentIndex.value + 1} / ${mistakes.value.length}`
 })
 
-const currentAnswer = computed(() => selectedAnswers.value[currentQuestionId.value] || '')
+async function loadMistakes() {
+  loading.value = true
+  try {
+    const userProfile = loadUserProfile()
+    const isMastered = currentTab.value === 'mastered'
+    // 如果是全部错题入口，获取所有课程的错题
+    if (props.course.name === '全部错题') {
+      const response = await listAllMistakes(userProfile.userId, isMastered)
+      mistakes.value = response.mistakes || []
+    } else {
+      // 否则获取当前课程的错题
+      const response = await listMistakes(userProfile.userId, props.course.name)
+      mistakes.value = (response.mistakes || []).filter(m => (m as any).mastered === isMastered)
+    }
+    currentIndex.value = 0
+    showResult.value = false
+  } catch {
+    mistakes.value = []
+  } finally {
+    loading.value = false
+  }
+}
 
-function currentChapterNames() {
-  const active = props.course.chapters?.filter(chapter => chapter.status === 'current')
-  const source = active?.length ? active : props.course.chapters
-  return source?.map(chapter => chapter.name).join('、') || props.course.name
+function switchTab(tab: 'unmastered' | 'mastered') {
+  currentTab.value = tab
+  loadMistakes()
+}
+
+function selectAnswer(answer: string) {
+  if (!currentQuestion.value || showResult.value) return
+  const q = currentQuestion.value as any
+  const qid = q.question_id !== undefined ? String(q.question_id) : String(q.id)
+  if (currentQuestion.value.type === 'multiple') {
+    const current = selectedAnswers.value[qid]?.split('').filter(Boolean) || []
+    const next = current.includes(answer)
+      ? current.filter(item => item !== answer)
+      : [...current, answer].sort()
+    selectedAnswers.value = { ...selectedAnswers.value, [qid]: next.join('') }
+  } else {
+    selectedAnswers.value = { ...selectedAnswers.value, [qid]: answer }
+  }
 }
 
 function normalizeAnswer(value: unknown) {
   return String(value ?? '').trim().replace(/\s+/g, '').toLowerCase()
 }
 
-function toQuestion(item: CollaborativeExerciseItem, index: number): Question {
-  return {
-    id: item.id || `ai-${index}`,
-    type: item.type,
-    chapter: item.level || currentChapterNames(),
-    question: item.question,
-    options: item.options || [],
-    answer: item.answer,
-    analysis: item.explanation,
-    level: item.level,
-  }
-}
-
-function fallbackQuestions() {
-  return props.course.questions.length ? props.course.questions : [
-    {
-      id: `${props.course.id}-fallback`,
-      type: 'short',
-      chapter: props.course.name,
-      question: `请概括《${props.course.name}》当前阶段最重要的三个知识点，并说明它们之间的关系。`,
-      options: [],
-      answer: '围绕核心概念、适用条件和典型应用进行说明。',
-      analysis: '开放题重点检查是否覆盖核心概念、适用条件、典型应用，以及知识点之间的联系。',
-    },
-  ]
-}
-
-async function loadResources() {
-  try {
-    const userProfile = loadUserProfile()
-    const result = await listResources(userProfile.userId)
-    resources.value = result.resources || []
-  } catch (err) {
-    console.error('加载资源失败', err)
-    resources.value = []
-  }
-}
-
-async function generateAiQuestions() {
-  loading.value = true
-  generationError.value = ''
-  questions.value = []
-  try {
-    const config = loadSiliconFlowConfig()
-    const userProfile = loadUserProfile()
-
-    await loadResources()
-
-    const courseResources = resources.value.filter(
-      r => r.course_folder === props.course.name || r.course_folder.includes(props.course.name)
-    )
-    const fileIds = courseResources.map(r => r.id)
-
-    let weakness = props.course.suggestions?.join('；') || props.course.description || props.course.name
-    try {
-      const weakResponse = await getWeakTopics(userProfile.userId, props.course.name)
-      if (weakResponse.topics?.length) {
-        weakness = weakResponse.topics.join('；')
-      }
-    } catch (err) {
-      console.log('获取薄弱点失败，使用默认值', err)
-    }
-
-    const result = await generateLearningResources({
-      user_id: userProfile.userId,
-      major: userProfile.major || '计算机类',
-      course: props.course.name,
-      chapter: currentChapterNames(),
-      weakness: weakness,
-      goal: `针对《${props.course.name}》生成可直接作答的分层练习题，重点围绕薄弱点：${weakness}`,
-      resourceTypes: ['exercise'],
-      fileIds: fileIds,
-      ...config,
-    })
-    questions.value = result.exerciseItems?.length
-      ? result.exerciseItems.map(toQuestion)
-      : fallbackQuestions()
-  } catch (reason) {
-    generationError.value = reason instanceof Error ? reason.message : 'AI 生成练习题失败，已使用课程基础题'
-    questions.value = fallbackQuestions()
-  } finally {
-    loading.value = false
-  }
-}
-
-function selectAnswer(answer: string) {
-  if (showResult.value || !currentQuestion.value) return
-  if (currentQuestion.value.type === 'multiple') {
-    const current = selectedAnswers.value[currentQuestionId.value]?.split('').filter(Boolean) || []
-    const next = current.includes(answer)
-      ? current.filter(item => item !== answer)
-      : [...current, answer].sort()
-    selectedAnswers.value = { ...selectedAnswers.value, [currentQuestionId.value]: next.join('') }
-    return
-  }
-  selectedAnswers.value = { ...selectedAnswers.value, [currentQuestionId.value]: answer }
-}
-
-function updateTextAnswer(event: Event) {
-  const target = event.target as HTMLInputElement | HTMLTextAreaElement
-  selectedAnswers.value = { ...selectedAnswers.value, [currentQuestionId.value]: target.value }
-}
-
 function checkAnswer(): boolean {
   if (!currentQuestion.value) return false
-  const selected = selectedAnswers.value[currentQuestionId.value]
-  const answer = currentQuestion.value.answer
-
-  if (typeof answer === 'boolean') {
-    return normalizeAnswer(selected) === normalizeAnswer(answer ? '正确' : '错误')
-      || normalizeAnswer(selected) === normalizeAnswer(String(answer))
+  const q = currentQuestion.value as any
+  const qid = q.question_id !== undefined ? String(q.question_id) : String(q.id)
+  const selected = selectedAnswers.value[qid] || ''
+  // 优先使用 correct_answer（正确答案），而不是 answer（用户之前的错误答案）
+  const correctAnswer = q.correct_answer !== undefined && q.correct_answer !== '' 
+    ? q.correct_answer 
+    : q.answer
+  
+  if (typeof correctAnswer === 'boolean') {
+    return normalizeAnswer(selected) === normalizeAnswer(correctAnswer ? '正确' : '错误')
+      || normalizeAnswer(selected) === normalizeAnswer(String(correctAnswer))
   }
-  if (Array.isArray(answer)) {
-    return normalizeAnswer(selected) === normalizeAnswer(answer.join(''))
+  if (Array.isArray(correctAnswer)) {
+    return normalizeAnswer(selected) === normalizeAnswer(correctAnswer.join(''))
   }
-  return normalizeAnswer(selected) === normalizeAnswer(answer)
+  return normalizeAnswer(selected) === normalizeAnswer(correctAnswer)
 }
 
-function submitAnswer() {
-  if (!currentQuestion.value || showResult.value || !currentAnswer.value.trim()) return
+async function submitAnswer() {
+  if (!currentQuestion.value || showResult.value) return
   showResult.value = true
-  answeredCount.value += 1
 
-  const isCorrect = checkAnswer()
-  if (isCorrect) {
-    correctCount.value += 1
-  } else {
-    saveMistake()
-  }
-}
-
-async function saveMistake() {
-  if (!currentQuestion.value) return
-  try {
+  if (checkAnswer()) {
+    masteredCount.value++
     const userProfile = loadUserProfile()
-    await addMistake({
-      user_id: userProfile.userId,
-      course: props.course.name,
-      question_id: String(currentQuestion.value.id),
-      question: currentQuestion.value.question,
-      type: currentQuestion.value.type,
-      chapter: currentQuestion.value.chapter,
-      level: currentQuestion.value.level || '',
-      options: currentQuestion.value.options || null,
-      answer: currentAnswer.value,
-      correct_answer: String(currentQuestion.value.answer),
-      analysis: currentQuestion.value.analysis,
-      topic: currentQuestion.value.chapter,
-    })
-  } catch (e) {
-    console.error('保存错题失败:', e)
+    const q = currentQuestion.value as any
+    // 使用 question_id 字段（后端保存的字段），而不是 id 字段
+    const questionId = q.question_id !== undefined ? String(q.question_id) : String(q.id)
+    // 如果是全部错题入口，使用跨课程标记掌握
+    if (props.course.name === '全部错题') {
+      await markMistakeMasteredAny(userProfile.userId, questionId)
+    } else {
+      await markMistakeMastered(userProfile.userId, props.course.name, questionId)
+    }
+    // 标记当前题已掌握，点击下一题时移除
+    (currentQuestion.value as any).justMastered = true
   }
 }
 
 function nextQuestion() {
-  if (currentQuestionIndex.value < questions.value.length - 1) {
-    currentQuestionIndex.value += 1
+  // 如果当前题刚答对，先移除它，索引不变（因为列表变短了，当前位置就是下一题）
+  if ((currentQuestion.value as any)?.justMastered) {
+    mistakes.value.splice(currentIndex.value, 1)
+    // 如果移除后列表为空，切换到已掌握
+    if (mistakes.value.length === 0) {
+      switchTab('mastered')
+      return
+    }
+    // 如果当前索引超出范围，回退到最后一题
+    if (currentIndex.value >= mistakes.value.length) {
+      currentIndex.value = mistakes.value.length - 1
+    }
     showResult.value = false
+  } else if (currentIndex.value < mistakes.value.length - 1) {
+    // 答错了，正常切换到下一题
+    currentIndex.value++
+    showResult.value = false
+  } else {
+    // 最后一题且答错，刷新列表
+    loadMistakes()
   }
 }
 
 function prevQuestion() {
-  if (currentQuestionIndex.value > 0) {
-    currentQuestionIndex.value -= 1
+  if (currentIndex.value > 0) {
+    currentIndex.value--
     showResult.value = false
   }
 }
@@ -234,64 +169,92 @@ function optionsFor(question: Question) {
 
 function getOptionClass(optionLabel: string) {
   if (!currentQuestion.value) return ''
-  const selectedValue = selectedAnswers.value[currentQuestionId.value] || ''
+  const q = currentQuestion.value as any
+  const qid = q.question_id !== undefined ? String(q.question_id) : String(q.id)
+  const selectedValue = selectedAnswers.value[qid] || ''
   const selected = currentQuestion.value.type === 'multiple'
     ? selectedValue.includes(optionLabel)
     : selectedValue === optionLabel
   if (!showResult.value) return selected ? 'option-selected' : ''
 
-  const correct = Array.isArray(currentQuestion.value.answer)
-    ? currentQuestion.value.answer.map(String).includes(optionLabel)
-    : normalizeAnswer(optionLabel) === normalizeAnswer(currentQuestion.value.answer)
+  // 优先使用 correct_answer（正确答案）
+  const correctAnswer = q.correct_answer !== undefined && q.correct_answer !== '' 
+    ? q.correct_answer 
+    : q.answer
+  const correct = Array.isArray(correctAnswer)
+    ? correctAnswer.map(String).includes(optionLabel)
+    : normalizeAnswer(optionLabel) === normalizeAnswer(correctAnswer)
   if (correct) return 'option-correct'
   if (selected && !correct) return 'option-wrong'
   return 'option-muted'
 }
 
-onMounted(generateAiQuestions)
+onMounted(loadMistakes)
 </script>
 
 <template>
-  <div class="quiz-page">
+  <div class="mistake-book-page">
     <section class="quiz-shell">
       <header class="quiz-header">
         <div>
-          <h1>{{ course.name }}测试题</h1>
-          <p>答对 {{ correctCount }} 题 · 已答 {{ answeredCount }} 题 · 正确率 {{ accuracy }}%</p>
+          <h1>{{ course.name }} - 错题本</h1>
+          <p>{{ currentTab === 'unmastered' ? '待复习' : '已掌握' }}：{{ mistakes.length }} 题</p>
         </div>
         <div class="quiz-header-actions">
           <button type="button" title="返回详情" @click="emit('navigate', 'detail')">↩</button>
-          <button type="button" title="退出练习" @click="emit('navigate', 'courses')">×</button>
+          <button type="button" title="退出" @click="emit('navigate', 'courses')">×</button>
         </div>
       </header>
+
+      <div class="mistake-tabs">
+        <button
+          type="button"
+          :class="['tab-button', currentTab === 'unmastered' ? 'tab-active unmastered' : '']"
+          @click="switchTab('unmastered')"
+        >
+          未掌握
+        </button>
+        <button
+          type="button"
+          :class="['tab-button', currentTab === 'mastered' ? 'tab-active mastered' : '']"
+          @click="switchTab('mastered')"
+        >
+          已掌握
+        </button>
+      </div>
 
       <div class="quiz-progress">
         <div class="progress-segments">
           <span
-            v-for="(_, index) in questions"
+            v-for="(_, index) in mistakes"
             :key="index"
-            :class="{ active: index <= currentQuestionIndex, answered: index < currentQuestionIndex || (index === currentQuestionIndex && showResult) }"
+            :class="{ active: index <= currentIndex, answered: index < currentIndex || (index === currentIndex && showResult) }"
           ></span>
         </div>
-        <b>{{ questions.length ? currentQuestionIndex + 1 : 0 }} / {{ questions.length || 1 }}</b>
+        <b>{{ progressText }}</b>
       </div>
 
       <div v-if="loading" class="quiz-loading">
         <div></div>
-        <strong>AI 正在生成《{{ course.name }}》练习题</strong>
-        <p>会根据课程章节、学习建议和当前模型配置生成分层题目。</p>
+        <strong>加载错题中...</strong>
+      </div>
+
+      <div v-else-if="mistakes.length === 0" class="empty-state">
+        <div>🎉</div>
+        <h2>太棒了！没有错题</h2>
+        <p>继续保持，定期练习巩固知识</p>
+        <button class="primary-button" @click="emit('navigate', 'exercise')">去练习</button>
       </div>
 
       <article v-else-if="currentQuestion" class="quiz-card">
-        <div v-if="generationError" class="quiz-warning">{{ generationError }}</div>
-
         <div class="question-meta">
           <span>{{ currentQuestion.chapter }}</span>
           <span>{{ getQuestionTypeLabel(currentQuestion.type) }}</span>
+          <span class="mistake-count">错 {{ (currentQuestion as any).mistake_count || 1 }} 次</span>
         </div>
 
         <div class="question-stack">
-          <h2>第 {{ currentQuestionIndex + 1 }} 题</h2>
+          <h2>第 {{ currentIndex + 1 }} 题</h2>
           <p>{{ currentQuestion.question }}</p>
 
           <div v-if="currentQuestion.type === 'single' || currentQuestion.type === 'multiple' || currentQuestion.type === 'judge'" class="stacked-options">
@@ -310,50 +273,45 @@ onMounted(generateAiQuestions)
 
           <textarea
             v-else-if="currentQuestion.type === 'short'"
-            :value="currentAnswer"
+            :value="selectedAnswers[(currentQuestion as any).question_id !== undefined ? String((currentQuestion as any).question_id) : String(currentQuestion.id)]"
             :disabled="showResult"
             rows="5"
             class="answer-input"
             placeholder="请输入你的答案"
-            @input="updateTextAnswer"
+            @input="(e) => selectAnswer((e.target as HTMLTextAreaElement).value)"
           ></textarea>
 
           <input
             v-else
-            :value="currentAnswer"
+            :value="selectedAnswers[(currentQuestion as any).question_id !== undefined ? String((currentQuestion as any).question_id) : String(currentQuestion.id)]"
             :disabled="showResult"
             class="answer-input"
             placeholder="请输入答案"
-            @input="updateTextAnswer"
+            @input="(e) => selectAnswer((e.target as HTMLInputElement).value)"
           />
-
-          <details class="question-hint">
-            <summary>提示</summary>
-            <p>先判断题目考查的概念，再排除明显不符合定义的选项。</p>
-          </details>
         </div>
 
         <div v-if="showResult" :class="['result-panel', checkAnswer() ? 'result-correct' : 'result-wrong']">
-          <strong>{{ checkAnswer() ? '回答正确' : '回答错误' }}</strong>
-          <p>参考答案：{{ currentQuestion.answer }}</p>
+          <strong>{{ checkAnswer() ? '回答正确！已标记为掌握' : '回答错误' }}</strong>
+          <p>参考答案：{{ (currentQuestion as any).correct_answer !== undefined && (currentQuestion as any).correct_answer !== '' ? (currentQuestion as any).correct_answer : currentQuestion.answer }}</p>
           <p>{{ currentQuestion.analysis }}</p>
         </div>
 
         <footer class="quiz-footer">
-          <button type="button" class="ghost-button" :disabled="currentQuestionIndex === 0" @click="prevQuestion">
+          <button type="button" class="ghost-button" :disabled="currentIndex === 0" @click="prevQuestion">
             上一个
           </button>
           <button
             v-if="!showResult"
             type="button"
             class="primary-button"
-            :disabled="!currentAnswer.trim()"
+            :disabled="!((currentQuestion as any).question_id !== undefined ? selectedAnswers[String((currentQuestion as any).question_id)] : selectedAnswers[String(currentQuestion.id)])?.trim()"
             @click="submitAnswer"
           >
             提交
           </button>
           <button
-            v-else-if="currentQuestionIndex < questions.length - 1"
+            v-else-if="currentIndex < mistakes.length - 1"
             type="button"
             class="primary-button"
             @click="nextQuestion"
@@ -370,7 +328,7 @@ onMounted(generateAiQuestions)
 </template>
 
 <style scoped>
-.quiz-page {
+.mistake-book-page {
   min-height: calc(100vh - 72px);
   padding: 10px;
   background: #fff;
@@ -483,8 +441,26 @@ onMounted(generateAiQuestions)
   color: #111827;
 }
 
-.quiz-loading p {
-  margin: 0;
+.empty-state {
+  align-self: center;
+  justify-self: center;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-state div {
+  font-size: 80px;
+  margin-bottom: 20px;
+}
+
+.empty-state h2 {
+  margin: 0 0 10px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.empty-state p {
+  margin: 0 0 24px;
   color: #8b8f98;
 }
 
@@ -494,15 +470,6 @@ onMounted(generateAiQuestions)
   display: grid;
   align-content: start;
   gap: 22px;
-}
-
-.quiz-warning {
-  padding: 12px 14px;
-  border: 1px solid #f6d58a;
-  border-radius: 14px;
-  color: #8a5a00;
-  background: #fff8e7;
-  font-size: 13px;
 }
 
 .question-meta {
@@ -518,6 +485,54 @@ onMounted(generateAiQuestions)
   background: #f3f4f6;
   font-size: 12px;
   font-weight: 650;
+}
+
+.question-meta .mistake-count {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.question-meta .course-tag {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.mistake-tabs {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  padding: 8px;
+  background: #f9fafb;
+  border-radius: 12px;
+}
+
+.tab-button {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-button:not(.tab-active) {
+  background: #fff;
+  color: #6b7280;
+}
+
+.tab-button:not(.tab-active):hover {
+  background: #f3f4f6;
+}
+
+.tab-button.tab-active.unmastered {
+  background: #ef4444;
+  color: #fff;
+}
+
+.tab-button.tab-active.mastered {
+  background: #10b981;
+  color: #fff;
 }
 
 .question-stack {
@@ -611,24 +626,6 @@ onMounted(generateAiQuestions)
   border-color: #111827;
 }
 
-.question-hint {
-  width: fit-content;
-  color: #4b5563;
-  font-size: 14px;
-}
-
-.question-hint summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.question-hint p {
-  max-width: 560px;
-  margin: 10px 0 0;
-  color: #6b7280;
-  line-height: 1.65;
-}
-
 .result-panel {
   display: grid;
   gap: 8px;
@@ -693,7 +690,7 @@ button {
 }
 
 @media (max-width: 760px) {
-  .quiz-page { padding: 0; }
+  .mistake-book-page { padding: 0; }
   .quiz-shell { min-height: calc(100vh - 64px); padding: 22px 16px; border-radius: 0; border-left: 0; border-right: 0; }
   .quiz-header, .quiz-footer { align-items: flex-start; }
   .quiz-card { width: 100%; }

@@ -163,6 +163,20 @@ function chapterStatusLabel(chapter: CourseChapter) {
         </section>
 
         <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+          <h2 class="text-xl font-bold text-gray-900 mb-4">错题本</h2>
+          <div class="bg-red-50 rounded-xl p-5">
+            <div class="font-bold text-lg text-gray-900">复习错题，巩固薄弱</div>
+            <p class="text-sm text-gray-500 mt-2">查看做错的题目，重做并标记掌握，系统会根据薄弱点生成针对性练习。</p>
+            <button
+              @click="emit('navigate', 'mistakes')"
+              class="w-full mt-5 py-3 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 transition-all"
+            >
+              进入错题本
+            </button>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 class="text-xl font-bold text-gray-900 mb-4">学习建议</h2>
           <ul class="space-y-3">
             <li v-for="item in suggestions" :key="item" class="flex gap-2 text-sm text-gray-600">

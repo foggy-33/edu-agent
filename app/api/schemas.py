@@ -83,7 +83,15 @@ class QuizAnswerRequest(BaseModel):
     user_id: str
     course: str = "数据库系统"
     question_id: str
+    question: str = ""
     answer: str | list[str]
+    type: str = ""
+    chapter: str = ""
+    level: str = ""
+    options: list[dict] | None = None
+    correct_answer: str | None = None
+    analysis: str = ""
+    topic: str = ""
 
 
 class StudentProfile(BaseModel):

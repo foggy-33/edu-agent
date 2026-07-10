@@ -61,6 +61,11 @@ class ChromaVectorStore:
             name=self.collection_name,
             embedding_function=None,
         )
+        # 用户上传的 PDF 文档集合
+        self.user_collection = self.client.get_or_create_collection(
+            name="user_uploads",
+            embedding_function=None,
+        )
 
     def ensure_indexed(self, directory: str | Path | None = None) -> int:
         settings = get_settings()
@@ -120,12 +125,25 @@ class ChromaVectorStore:
         return self.collection.count()
 
     def similarity_search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        if not query.strip() or self.collection.count() == 0:
+        if not query.strip():
             return []
 
-        result = self.collection.query(
+        results = []
+        # 从课程知识库检索
+        if self.collection.count() > 0:
+            results.extend(self._query_collection(self.collection, query, top_k))
+        # 从用户上传文档检索
+        if self.user_collection.count() > 0:
+            results.extend(self._query_collection(self.user_collection, query, top_k))
+
+        # 按相似度排序，取前 top_k
+        results.sort(key=lambda x: x["score"], reverse=True)
+        return results[:top_k]
+
+    def _query_collection(self, collection, query: str, top_k: int) -> list[dict[str, Any]]:
+        result = collection.query(
             query_embeddings=[self.embeddings.embed(query)],
-            n_results=min(top_k, self.collection.count()),
+            n_results=min(top_k, collection.count()),
             include=["documents", "metadatas", "distances"],
         )
         documents = result.get("documents", [[]])[0]
@@ -155,6 +173,58 @@ class ChromaVectorStore:
             name=self.collection_name,
             embedding_function=None,
         )
+        self.client.delete_collection("user_uploads")
+        self.user_collection = self.client.get_or_create_collection(
+            name="user_uploads",
+            embedding_function=None,
+        )
+
+    def add_user_pdf(
+        self,
+        file_id: str,
+        filename: str,
+        text: str,
+        *, chunk_size: int = 700,
+        chunk_overlap: int = 100,
+    ) -> int:
+        """向量化并存储用户上传的 PDF 文档"""
+        chunks = self._split_text(text, chunk_size, chunk_overlap)
+        if not chunks:
+            return 0
+
+        batch_size = 128
+        for start in range(0, len(chunks), batch_size):
+            batch = chunks[start : start + batch_size]
+            ids = [
+                hashlib.sha256(f"{file_id}:{index}:{content}".encode("utf-8")).hexdigest()
+                for index, content in enumerate(batch)
+            ]
+            documents = [content for content in batch]
+            metadatas = [
+                {"source": filename, "file_id": file_id, "title": filename}
+                for _ in batch
+            ]
+            embeddings = [self.embeddings.embed(content) for content in batch]
+            self.user_collection.upsert(
+                ids=ids,
+                documents=documents,
+                metadatas=metadatas,
+                embeddings=embeddings,
+            )
+        return len(chunks)
+
+    def remove_user_pdf(self, file_id: str) -> None:
+        """移除用户上传的 PDF 文档的向量索引"""
+        if self.user_collection.count() == 0:
+            return
+        # 查询该文件的所有向量
+        result = self.user_collection.get(
+            where={"file_id": file_id},
+            include=["ids"]
+        )
+        ids = result.get("ids", [])
+        if ids:
+            self.user_collection.delete(ids=ids)
 
     @staticmethod
     def _directory_fingerprint(directory: Path) -> str:

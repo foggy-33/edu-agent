@@ -54,7 +54,14 @@ def bearer_token(authorization: str | None) -> str:
 
 def _collaborative_payload(request: CollaborativeLearningRequest) -> dict[str, Any]:
     payload = request.model_dump()
-    source_context, sources = resource_service.build_context(request.user_id, request.fileIds)
+    # 使用 RAG 检索构建上下文
+    query = f"{request.course} {request.chapter} {request.weakness} {request.goal}"
+    source_context, sources = resource_service.build_context_with_rag(
+        request.user_id, 
+        request.fileIds, 
+        query=query,
+        max_chars=2000,
+    )
     payload["source_context"] = source_context
     payload["sources"] = sources
     return payload
@@ -997,3 +1004,59 @@ def test_siliconflow(request: SiliconFlowConfig) -> dict:
         return profile_service.test_connection(**request.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ========== 错题本 API ==========
+
+from app.mistakes.store import MistakeStore
+
+mistake_store = MistakeStore()
+
+
+@router.post("/mistakes/add")
+def add_mistake(request: QuizAnswerRequest) -> dict:
+    mistake_store.add_mistake(
+        user_id=request.user_id,
+        course=request.course,
+        record={
+            "question_id": request.question_id,
+            "question": request.question,
+            "type": request.type,
+            "chapter": request.chapter,
+            "level": request.level,
+            "options": request.options,
+            "student_answer": request.answer,
+            "correct_answer": request.correct_answer,
+            "analysis": request.analysis,
+            "topic": request.topic,
+        }
+    )
+    return {"status": "ok"}
+
+
+@router.get("/mistakes/list")
+def list_mistakes(user_id: str, course: str) -> dict:
+    mistakes = mistake_store.list_mistakes(user_id, course)
+    return {"mistakes": mistakes}
+
+
+@router.post("/mistakes/master")
+def mark_mistake_mastered(user_id: str = Form(...), course: str = Form(...), question_id: str = Form(...)) -> dict:
+    mistake_store.mark_mastered(user_id, course, question_id)
+    return {"status": "ok"}
+
+
+@router.get("/mistakes/weak-topics")
+def get_weak_topics(user_id: str, course: str) -> dict:
+    topics = mistake_store.get_weak_topics(user_id, course)
+    return {"topics": topics}
+
+@router.get("/mistakes/all")
+def list_all_mistakes(user_id: str, mastered: bool = False) -> dict:
+    mistakes = mistake_store.list_all_mistakes(user_id, mastered)
+    return {"mistakes": mistakes}
+
+@router.post("/mistakes/master-any")
+def mark_mastered_any_course(user_id: str, question_id: str) -> dict:
+    mistake_store.mark_mastered_any_course(user_id, question_id)
+    return {"status": "ok"}

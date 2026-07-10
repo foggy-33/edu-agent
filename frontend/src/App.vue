@@ -5,6 +5,7 @@ import EvaluatePage from './components/EvaluatePage.vue'
 import CoursePage from './components/CoursePage.vue'
 import CourseDetailPage from './components/CourseDetailPage.vue'
 import CourseExercisePage from './components/CourseExercisePage.vue'
+import MistakeBookPage from './components/MistakeBookPage.vue'
 import ResourceLibrary from './components/ResourceLibrary.vue'
 
 import SettingsPage from './components/SettingsPage.vue'
@@ -18,7 +19,7 @@ import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/user
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'resources' | 'settings' | 'account' | 'portrait'
+type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -55,6 +56,7 @@ const navItems: NavItem[] = [
   { key: 'home', label: '新聊天', icon: 'newChat' },
   { key: 'resources', label: '资料库', icon: 'files' },
   { key: 'courses', label: '课程', icon: 'project' },
+  { key: 'mistakes', label: '错题本', icon: 'evaluate' },
   { key: 'evaluate', label: '学习评估', icon: 'evaluate' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
 ]
@@ -62,6 +64,8 @@ const navItems: NavItem[] = [
 function navigate(page: Page, course?: Course) {
   if (course) {
     selectedCourse.value = course
+  } else if (page === 'mistakes') {
+    selectedCourse.value = { id: 'all', name: '全部错题' } as Course
   }
   if (page !== 'home') {
     selectedHistoryId.value = null
@@ -237,6 +241,11 @@ onUnmounted(() => {
         />
         <CourseExercisePage
           v-else-if="currentPage === 'exercise' && selectedCourse"
+          :course="selectedCourse"
+          @navigate="navigate"
+        />
+        <MistakeBookPage
+          v-else-if="currentPage === 'mistakes' && selectedCourse"
           :course="selectedCourse"
           @navigate="navigate"
         />
