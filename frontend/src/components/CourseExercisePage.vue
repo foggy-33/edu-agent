@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { generateLearningResources, listResources, addMistake, getWeakTopics } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
@@ -22,6 +22,25 @@ const showResult = ref(false)
 const answeredCount = ref(0)
 const correctCount = ref(0)
 const resources = ref<UploadedResource[]>([])
+const showCompletion = ref(false)
+const selectedChapterIds = ref<string[]>([])
+const questionTypes = ref<string[]>([])
+const quizStarted = ref(false)
+
+const allQuestionTypes = [
+  { value: 'single', label: '单选题' },
+  { value: 'multiple', label: '多选题' },
+  { value: 'judge', label: '判断题' },
+  { value: 'fill', label: '填空题' },
+  { value: 'short', label: '简答题' },
+]
+
+interface AnswerRecord {
+  question: Question
+  userAnswer: string
+  isCorrect: boolean
+}
+const answerRecords = ref<AnswerRecord[]>([])
 
 const currentQuestion = computed(() => questions.value[currentQuestionIndex.value])
 const currentQuestionId = computed(() => String(currentQuestion.value?.id || ''))
@@ -35,6 +54,12 @@ const accuracy = computed(() => {
 const currentAnswer = computed(() => selectedAnswers.value[currentQuestionId.value] || '')
 
 function currentChapterNames() {
+  if (selectedChapterIds.value.length > 0) {
+    const selectedChapters = props.course.chapters?.filter(chapter => 
+      selectedChapterIds.value.includes(String(chapter.id))
+    )
+    return selectedChapters?.map(chapter => chapter.name).join('、') || props.course.name
+  }
   const active = props.course.chapters?.filter(chapter => chapter.status === 'current')
   const source = active?.length ? active : props.course.chapters
   return source?.map(chapter => chapter.name).join('、') || props.course.name
@@ -57,11 +82,14 @@ function toQuestion(item: CollaborativeExerciseItem, index: number): Question {
   }
 }
 
-function fallbackQuestions() {
-  return props.course.questions.length ? props.course.questions : [
+function fallbackQuestions(): Question[] {
+  if (props.course.questions.length) {
+    return props.course.questions
+  }
+  return [
     {
       id: `${props.course.id}-fallback`,
-      type: 'short',
+      type: 'short' as const,
       chapter: props.course.name,
       question: `请概括《${props.course.name}》当前阶段最重要的三个知识点，并说明它们之间的关系。`,
       options: [],
@@ -86,6 +114,7 @@ async function generateAiQuestions() {
   loading.value = true
   generationError.value = ''
   questions.value = []
+  quizStarted.value = false
   try {
     const config = loadSiliconFlowConfig()
     const userProfile = loadUserProfile()
@@ -107,13 +136,17 @@ async function generateAiQuestions() {
       console.log('获取薄弱点失败，使用默认值', err)
     }
 
+    const typeLabels = questionTypes.value.length 
+      ? questionTypes.value.map(t => allQuestionTypes.find(qt => qt.value === t)?.label || t).join('、')
+      : '各种题型'
+    
     const result = await generateLearningResources({
       user_id: userProfile.userId,
       major: userProfile.major || '计算机类',
       course: props.course.name,
       chapter: currentChapterNames(),
       weakness: weakness,
-      goal: `针对《${props.course.name}》生成可直接作答的分层练习题，重点围绕薄弱点：${weakness}`,
+      goal: `针对《${props.course.name}》生成可直接作答的分层练习题，题型为：${typeLabels}，重点围绕薄弱点：${weakness}`,
       resourceTypes: ['exercise'],
       fileIds: fileIds,
       ...config,
@@ -121,9 +154,12 @@ async function generateAiQuestions() {
     questions.value = result.exerciseItems?.length
       ? result.exerciseItems.map(toQuestion)
       : fallbackQuestions()
+    
+    quizStarted.value = true
   } catch (reason) {
     generationError.value = reason instanceof Error ? reason.message : 'AI 生成练习题失败，已使用课程基础题'
     questions.value = fallbackQuestions()
+    quizStarted.value = true
   } finally {
     loading.value = false
   }
@@ -173,6 +209,12 @@ function submitAnswer() {
   } else {
     saveMistake()
   }
+  
+  answerRecords.value[currentQuestionIndex.value] = {
+    question: currentQuestion.value,
+    userAnswer: currentAnswer.value,
+    isCorrect
+  }
 }
 
 async function saveMistake() {
@@ -202,13 +244,44 @@ function nextQuestion() {
   if (currentQuestionIndex.value < questions.value.length - 1) {
     currentQuestionIndex.value += 1
     showResult.value = false
+  } else {
+    showCompletion.value = true
   }
+}
+
+function resetAndSelect() {
+  quizStarted.value = false
+  showCompletion.value = false
+  currentQuestionIndex.value = 0
+  answeredCount.value = 0
+  correctCount.value = 0
+  selectedAnswers.value = {}
+  answerRecords.value = []
+  questions.value = []
 }
 
 function prevQuestion() {
   if (currentQuestionIndex.value > 0) {
     currentQuestionIndex.value -= 1
     showResult.value = false
+  }
+}
+
+function toggleChapter(chapterId: string) {
+  const index = selectedChapterIds.value.indexOf(chapterId)
+  if (index === -1) {
+    selectedChapterIds.value.push(chapterId)
+  } else {
+    selectedChapterIds.value.splice(index, 1)
+  }
+}
+
+function toggleQuestionType(type: string) {
+  const index = questionTypes.value.indexOf(type)
+  if (index === -1) {
+    questionTypes.value.push(type)
+  } else {
+    questionTypes.value.splice(index, 1)
   }
 }
 
@@ -248,18 +321,95 @@ function getOptionClass(optionLabel: string) {
   return 'option-muted'
 }
 
-onMounted(generateAiQuestions)
+
+
 </script>
 
 <template>
   <div class="quiz-page">
-    <section class="quiz-shell">
+    <section v-if="!quizStarted" class="quiz-shell">
+      <header class="quiz-header">
+        <div>
+          <h1>{{ course.name }} - 生成练习题</h1>
+          <p>选择章节和题型，生成个性化练习题</p>
+        </div>
+        <div class="quiz-header-actions">
+          <button type="button" title="返回详情" @click="emit('navigate', 'detail')">↩</button>
+          <button type="button" title="退出练习" @click="emit('navigate', 'courses')">×</button>
+        </div>
+      </header>
+
+      <div v-if="loading" class="quiz-loading">
+        <div></div>
+        <strong>AI 正在生成《{{ course.name }}》练习题</strong>
+        <p>会根据您选择的章节和题型生成分层题目。</p>
+      </div>
+
+      <div v-else-if="course.chapters?.length" class="chapter-selector">
+        <div class="selector-row">
+          <div class="selector-group">
+            <h3>选择章节（可多选）</h3>
+            <div class="chapter-tags">
+              <button
+                class="chapter-tag"
+                :class="{ active: selectedChapterIds.length === 0 }"
+                @click="selectedChapterIds = []"
+              >
+                全部章节
+              </button>
+              <button
+                v-for="chapter in course.chapters"
+                :key="chapter.id"
+                class="chapter-tag"
+                :class="{ active: selectedChapterIds.includes(String(chapter.id)) }"
+                @click="toggleChapter(String(chapter.id))"
+              >
+                {{ chapter.name }}
+              </button>
+            </div>
+          </div>
+          
+          <div class="selector-group">
+            <h3>选择题型（可多选）</h3>
+            <div class="chapter-tags">
+              <button
+                class="chapter-tag"
+                :class="{ active: questionTypes.length === 0 }"
+                @click="questionTypes = []"
+              >
+                全部题型
+              </button>
+              <button
+                v-for="type in allQuestionTypes"
+                :key="type.value"
+                class="chapter-tag"
+                :class="{ active: questionTypes.includes(type.value) }"
+                @click="toggleQuestionType(type.value)"
+              >
+                {{ type.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="selection-summary">
+          <span>已选择：{{ selectedChapterIds.length === 0 ? '全部章节' : ` ${selectedChapterIds.length} 个章节` }} · {{ questionTypes.length === 0 ? '全部题型' : questionTypes.map(t => allQuestionTypes.find(qt => qt.value === t)?.label || t).join('、') }}</span>
+        </div>
+        
+        <button class="regenerate-btn" :disabled="loading" @click="generateAiQuestions">
+          生成练习题
+        </button>
+      </div>
+    </section>
+
+    <section v-else class="quiz-shell">
       <header class="quiz-header">
         <div>
           <h1>{{ course.name }}测试题</h1>
           <p>答对 {{ correctCount }} 题 · 已答 {{ answeredCount }} 题 · 正确率 {{ accuracy }}%</p>
         </div>
         <div class="quiz-header-actions">
+          <button type="button" title="重新选择" @click="resetAndSelect">↺</button>
           <button type="button" title="返回详情" @click="emit('navigate', 'detail')">↩</button>
           <button type="button" title="退出练习" @click="emit('navigate', 'courses')">×</button>
         </div>
@@ -276,10 +426,69 @@ onMounted(generateAiQuestions)
         <b>{{ questions.length ? currentQuestionIndex + 1 : 0 }} / {{ questions.length || 1 }}</b>
       </div>
 
-      <div v-if="loading" class="quiz-loading">
-        <div></div>
-        <strong>AI 正在生成《{{ course.name }}》练习题</strong>
-        <p>会根据课程章节、学习建议和当前模型配置生成分层题目。</p>
+      <div v-if="showCompletion" class="completion-state">
+        <h2>练习完成！</h2>
+        <div class="completion-score">
+          <div class="score-circle">
+            <span class="score-value">{{ accuracy }}</span>
+            <span class="score-unit">分</span>
+          </div>
+          <div class="score-details">
+            <p>答对 {{ correctCount }} 题</p>
+            <p>答错 {{ answeredCount - correctCount }} 题</p>
+            <p>共 {{ answeredCount }} 题</p>
+          </div>
+        </div>
+        <p class="completion-feedback">
+          {{ correctCount === answeredCount 
+            ? '太棒了！全部答对，继续保持！' 
+            : (correctCount >= answeredCount * 0.8 
+              ? '表现优秀！再接再厉！' 
+              : (correctCount >= answeredCount * 0.6 
+                ? '表现不错，继续加油！' 
+                : '还需要多加练习，建议回顾相关知识点。')) }}
+        </p>
+        
+        <div class="answer-details">
+          <h3>答题详情</h3>
+          <div class="answer-list">
+            <div 
+              v-for="(record, index) in answerRecords" 
+              :key="index"
+              class="answer-item"
+              :class="{ correct: record.isCorrect, wrong: !record.isCorrect }"
+            >
+              <div class="answer-item-header">
+                <span class="answer-number">第 {{ index + 1 }} 题</span>
+                <span :class="['answer-status', record.isCorrect ? 'correct' : 'wrong']">
+                  {{ record.isCorrect ? '✓ 正确' : '✗ 错误' }}
+                </span>
+              </div>
+              <div class="answer-item-content">
+                <p class="question-text">{{ record.question.question }}</p>
+                <div class="answer-compare">
+                  <div class="answer-row">
+                    <span class="label">你的答案：</span>
+                    <span class="value">{{ record.userAnswer || '未作答' }}</span>
+                  </div>
+                  <div class="answer-row">
+                    <span class="label">正确答案：</span>
+                    <span class="value correct">{{ record.question.answer }}</span>
+                  </div>
+                </div>
+                <div v-if="record.question.analysis && !record.isCorrect" class="answer-analysis">
+                  <span class="label">解析：</span>
+                  <span class="value">{{ record.question.analysis }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="completion-actions">
+          <button class="primary-button" @click="resetAndSelect">重新选择</button>
+          <button class="ghost-button" @click="emit('navigate', 'detail')">返回详情</button>
+        </div>
       </div>
 
       <article v-else-if="currentQuestion" class="quiz-card">
@@ -360,7 +569,7 @@ onMounted(generateAiQuestions)
           >
             下一个
           </button>
-          <button v-else type="button" class="primary-button" @click="emit('navigate', 'detail')">
+          <button v-else type="button" class="primary-button" @click="showCompletion = true">
             完成
           </button>
         </footer>
@@ -688,8 +897,275 @@ button {
   cursor: pointer;
 }
 
+.completion-state {
+  align-self: center;
+  justify-self: center;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.completion-state > div:first-child {
+  font-size: 80px;
+  margin-bottom: 20px;
+}
+
+.completion-state h2 {
+  margin: 0 0 24px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.completion-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-bottom: 20px;
+}
+
+.score-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3746b3, #5c6bc0);
+  color: #fff;
+}
+
+.score-value {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.score-unit {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.score-details {
+  text-align: left;
+}
+
+.score-details p {
+  margin: 8px 0;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.completion-feedback {
+  max-width: 400px;
+  margin: 0 auto 24px;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.chapter-selector {
+  width: min(960px, 100%);
+  justify-self: center;
+  background: #fff;
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.05);
+  border: 1px solid #f0f0f0;
+}
+
+.selector-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+.selector-group h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.chapter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chapter-tag {
+  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+
+.chapter-tag:hover {
+  border-color: #3746b3;
+  color: #3746b3;
+}
+
+.chapter-tag.active {
+  background: #3746b3;
+  border-color: #3746b3;
+  color: #fff;
+}
+
+.selection-summary {
+  padding: 12px 16px;
+  margin-top: 8px;
+  border-radius: 10px;
+  background: #f9fafb;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.regenerate-btn {
+  width: 100%;
+  padding: 12px;
+  margin-top: 16px;
+  background: #3746b3;
+  color: #fff;
+  border: 0;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+
+.regenerate-btn:hover:not(:disabled) {
+  background: #2d3a99;
+}
+
+.regenerate-btn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.answer-details {
+  width: min(760px, 100%);
+  margin: 20px auto 0;
+  text-align: left;
+}
+
+.answer-details h3 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.answer-item {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.answer-item.correct {
+  border-left: 4px solid #10b981;
+}
+
+.answer-item.wrong {
+  border-left: 4px solid #ef4444;
+}
+
+.answer-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.answer-number {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.answer-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.answer-status.correct {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.answer-status.wrong {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.question-text {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.answer-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.answer-row {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.answer-row .label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.answer-row .value {
+  color: #374151;
+}
+
+.answer-row .value.correct {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.answer-analysis {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.answer-analysis .label {
+  font-weight: 500;
 }
 
 @media (max-width: 760px) {
@@ -699,5 +1175,6 @@ button {
   .quiz-card { width: 100%; }
   .question-stack > p { font-size: 16px; }
   .exercise-option { min-height: 58px; padding: 15px 16px; font-size: 15px; }
+  .chapter-selector { padding: 20px; }
 }
 </style>

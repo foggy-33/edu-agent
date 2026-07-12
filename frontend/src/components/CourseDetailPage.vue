@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: 'courses' | 'exercise' | 'analyze']
+  navigate: [page: 'courses' | 'exercise' | 'analyze' | 'mistakes']
 }>()
 
 const chapters = computed(() => props.course.chapters || [])

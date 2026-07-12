@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { deleteResource, listResources, resourceDownloadUrl, uploadResource } from '../api/client'
+import { deleteResource, listResources, resourceDownloadUrl, resourcePreviewUrl, uploadResource } from '../api/client'
 import { loadUserProfile } from '../api/userProfile'
 import type { UploadedResource } from '../types'
 
@@ -22,6 +22,8 @@ const creatingFolder = ref(false)
 const loading = ref(false)
 const uploading = ref(false)
 const error = ref('')
+const previewResource = ref<UploadedResource | null>(null)
+const pdfLoading = ref(false)
 
 const folders = computed(() => {
   const names = new Set<string>()
@@ -138,6 +140,8 @@ function choosePdf() {
   fileInput.value?.click()
 }
 
+const MAX_FILE_SIZE = 500 * 1024 * 1024
+
 async function handleUpload(event: Event) {
   const input = event.target as HTMLInputElement
   const files = Array.from(input.files || [])
@@ -151,6 +155,12 @@ async function handleUpload(event: Event) {
   const invalid = files.find(file => file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf'))
   if (invalid) {
     error.value = `只能上传 PDF 文件：${invalid.name}`
+    return
+  }
+
+  const oversized = files.find(file => file.size > MAX_FILE_SIZE)
+  if (oversized) {
+    error.value = `文件大小不能超过 500 MB：${oversized.name} (${formatSize(oversized.size)})`
     return
   }
 
@@ -179,6 +189,18 @@ async function removeResource(item: UploadedResource) {
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '删除失败'
   }
+}
+
+function openPreview(item: UploadedResource) {
+  previewResource.value = item
+  pdfLoading.value = true
+  setTimeout(() => {
+    pdfLoading.value = false
+  }, 500)
+}
+
+function closePreview() {
+  previewResource.value = null
 }
 
 onMounted(() => {
@@ -267,7 +289,8 @@ onMounted(() => {
               <small>{{ formatDate(resource.created_at) }}</small>
             </div>
             <div class="resource-actions">
-              <a :href="resourceDownloadUrl(userProfile.userId, resource.id)" target="_blank" title="查看或下载">↗</a>
+              <button title="预览" @click="openPreview(resource)">👁</button>
+              <a :href="resourceDownloadUrl(userProfile.userId, resource.id)" target="_blank" title="下载">↗</a>
               <button title="删除" @click="removeResource(resource)">×</button>
             </div>
           </article>
@@ -282,6 +305,27 @@ onMounted(() => {
         </div>
       </section>
     </div>
+
+    <Teleport to="body">
+      <div v-if="previewResource" class="preview-modal" @click.self="closePreview">
+        <div class="preview-content">
+          <header class="preview-header">
+            <div>
+              <h3>{{ previewResource.name }}</h3>
+              <p>{{ previewResource.page_count }} 页 · {{ formatSize(previewResource.size) }}</p>
+            </div>
+            <button class="preview-close" @click="closePreview">×</button>
+          </header>
+          <div class="preview-body">
+            <div v-if="pdfLoading" class="preview-loading">
+              <div class="loading-spinner"></div>
+              <p>正在加载PDF...</p>
+            </div>
+            <embed v-else :src="resourcePreviewUrl(userProfile.userId, previewResource.id)" type="application/pdf" class="preview-embed" title="PDF预览" />
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -437,5 +481,93 @@ button:disabled { cursor: default; opacity: .55; }
   .library-shell { grid-template-columns: 1fr; }
   .toolbar-actions { flex-direction: column; align-items: stretch; }
   .search-bar { width: auto; }
+}
+
+.preview-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .5);
+  padding: 20px;
+}
+
+.preview-content {
+  width: min(100%, 1200px);
+  height: min(90vh, 800px);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .15);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e7e9ef;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #202938;
+}
+
+.preview-header p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #7c8494;
+}
+
+.preview-close {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #f1f2f5;
+  color: #5f6878;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.preview-body {
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-loading {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e7e9ef;
+  border-top-color: #202938;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.preview-embed {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 </style>

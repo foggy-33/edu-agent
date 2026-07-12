@@ -3,13 +3,14 @@ import { ref, computed, onMounted } from 'vue'
 import { loadUserProfile } from '../api/userProfile'
 import { listAllMistakes, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
 import type { Question } from '../types'
+import type { MistakeRecord } from '../api/client'
 
 const props = defineProps<{
   course: { id: string | number; name: string }
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: 'courses' | 'detail' | 'exercise']
+  navigate: [page: 'courses' | 'detail' | 'exercise' | 'mistakes']
 }>()
 
 const mistakes = ref<Question[]>([])
@@ -18,9 +19,32 @@ const currentIndex = ref(0)
 const selectedAnswers = ref<Record<string, string>>({})
 const showResult = ref(false)
 const masteredCount = ref(0)
+const showCompletion = ref(false)
+const totalAnswered = ref(0)
+const correctAnswered = ref(0)
+const showCourseList = ref(true)
+const allMistakes = ref<MistakeRecord[]>([])
 const currentTab = ref<'unmastered' | 'mastered'>('unmastered')
-const unmasteredCount = ref(0)
-const masteredTotalCount = ref(0)
+const selectedCourseName = ref('')
+
+const filterCourse = ref<string>('')
+const filterMastered = ref<string>('all')
+const filterMinCount = ref<number>(0)
+
+type PracticeMode = 'sequential' | 'random'
+type PracticeScope = 'unmastered' | 'mixed'
+
+const practiceMode = ref<PracticeMode>('sequential')
+const practiceScope = ref<PracticeScope>('unmastered')
+const showPracticeSettings = ref(false)
+
+interface AnswerRecord {
+  question: Question
+  userAnswer: string
+  isCorrect: boolean
+}
+
+const answerRecords = ref<AnswerRecord[]>([])
 
 const currentQuestion = computed(() => mistakes.value[currentIndex.value])
 
@@ -28,19 +52,71 @@ const progressText = computed(() => {
   return `${currentIndex.value + 1} / ${mistakes.value.length}`
 })
 
+function mistakeToQuestion(mistake: MistakeRecord & { course_name?: string }): Question {
+  return {
+    id: mistake.question_id,
+    type: (mistake.type as Question['type']) || 'short',
+    chapter: mistake.chapter,
+    question: mistake.question,
+    options: mistake.options || undefined,
+    answer: mistake.correct_answer,
+    analysis: mistake.analysis,
+    level: mistake.level,
+  }
+}
+
+const filteredMistakes = computed(() => {
+  return allMistakes.value.filter(m => {
+    if (filterCourse.value && m.course_name !== filterCourse.value) {
+      return false
+    }
+    if (filterMastered.value === 'unmastered' && m.mastered) {
+      return false
+    }
+    if (filterMastered.value === 'mastered' && !m.mastered) {
+      return false
+    }
+    if (filterMinCount.value > 0 && (m.mistake_count || 1) < filterMinCount.value) {
+      return false
+    }
+    return true
+  })
+})
+
+const courses = computed(() => {
+  const set = new Set<string>()
+  allMistakes.value.forEach(m => {
+    set.add(m.course_name || '')
+  })
+  return Array.from(set).filter(Boolean)
+})
+
+async function loadMistakesList() {
+  loading.value = true
+  try {
+    const userProfile = loadUserProfile()
+    const response = await listAllMistakes(userProfile.userId, false)
+    allMistakes.value = response.mistakes || []
+  } catch {
+    allMistakes.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
 async function loadMistakes() {
   loading.value = true
   try {
     const userProfile = loadUserProfile()
     const isMastered = currentTab.value === 'mastered'
-    // 如果是全部错题入口，获取所有课程的错题
-    if (props.course.name === '全部错题') {
+    const courseName = selectedCourseName.value || props.course.name
+    
+    if (courseName === '全部错题') {
       const response = await listAllMistakes(userProfile.userId, isMastered)
-      mistakes.value = response.mistakes || []
+      mistakes.value = (response.mistakes || []).map(mistakeToQuestion)
     } else {
-      // 否则获取当前课程的错题
-      const response = await listMistakes(userProfile.userId, props.course.name)
-      mistakes.value = (response.mistakes || []).filter(m => (m as any).mastered === isMastered)
+      const response = await listMistakes(userProfile.userId, courseName)
+      mistakes.value = (response.mistakes || []).filter(m => m.mastered === isMastered).map(mistakeToQuestion)
     }
     currentIndex.value = 0
     showResult.value = false
@@ -51,9 +127,57 @@ async function loadMistakes() {
   }
 }
 
-function switchTab(tab: 'unmastered' | 'mastered') {
-  currentTab.value = tab
-  loadMistakes()
+function startAllPractice() {
+  showPracticeSettings.value = true
+}
+
+function confirmPractice() {
+  let practiceMistakes = [...filteredMistakes.value]
+  
+  if (practiceScope.value === 'unmastered') {
+    practiceMistakes = practiceMistakes.filter(m => !m.mastered)
+  }
+  
+  if (practiceMode.value === 'random') {
+    practiceMistakes = shuffleArray(practiceMistakes)
+  }
+  
+  if (practiceMistakes.length === 0) {
+    alert('没有符合条件的错题可练习')
+    return
+  }
+  
+  showPracticeSettings.value = false
+  showCourseList.value = false
+  showCompletion.value = false
+  totalAnswered.value = 0
+  correctAnswered.value = 0
+  masteredCount.value = 0
+  answerRecords.value = []
+  selectedAnswers.value = {}
+  mistakes.value = practiceMistakes.map(mistakeToQuestion)
+  currentIndex.value = 0
+  showResult.value = false
+}
+
+function cancelPractice() {
+  showPracticeSettings.value = false
+}
+
+function shuffleArray<T>(array: T[]): T[] {
+  const result = [...array]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
+function backToCourseList() {
+  showCourseList.value = true
+  selectedCourseName.value = ''
+  mistakes.value = []
+  loadMistakesList()
 }
 
 function selectAnswer(answer: string) {
@@ -98,45 +222,49 @@ function checkAnswer(): boolean {
 async function submitAnswer() {
   if (!currentQuestion.value || showResult.value) return
   showResult.value = true
+  totalAnswered.value++
 
-  if (checkAnswer()) {
+  const q = currentQuestion.value as any
+  const qid = q.question_id !== undefined ? String(q.question_id) : String(q.id)
+  const userAnswer = selectedAnswers.value[qid] || ''
+  const isCorrect = checkAnswer()
+
+  answerRecords.value.push({
+    question: currentQuestion.value,
+    userAnswer: userAnswer,
+    isCorrect: isCorrect
+  })
+
+  if (isCorrect) {
+    correctAnswered.value++
     masteredCount.value++
     const userProfile = loadUserProfile()
-    const q = currentQuestion.value as any
-    // 使用 question_id 字段（后端保存的字段），而不是 id 字段
     const questionId = q.question_id !== undefined ? String(q.question_id) : String(q.id)
-    // 如果是全部错题入口，使用跨课程标记掌握
     if (props.course.name === '全部错题') {
       await markMistakeMasteredAny(userProfile.userId, questionId)
     } else {
       await markMistakeMastered(userProfile.userId, props.course.name, questionId)
     }
-    // 标记当前题已掌握，点击下一题时移除
     (currentQuestion.value as any).justMastered = true
   }
 }
 
 function nextQuestion() {
-  // 如果当前题刚答对，先移除它，索引不变（因为列表变短了，当前位置就是下一题）
   if ((currentQuestion.value as any)?.justMastered) {
     mistakes.value.splice(currentIndex.value, 1)
-    // 如果移除后列表为空，切换到已掌握
     if (mistakes.value.length === 0) {
-      switchTab('mastered')
+      showCompletion.value = true
       return
     }
-    // 如果当前索引超出范围，回退到最后一题
     if (currentIndex.value >= mistakes.value.length) {
       currentIndex.value = mistakes.value.length - 1
     }
     showResult.value = false
   } else if (currentIndex.value < mistakes.value.length - 1) {
-    // 答错了，正常切换到下一题
     currentIndex.value++
     showResult.value = false
   } else {
-    // 最后一题且答错，刷新列表
-    loadMistakes()
+    showCompletion.value = true
   }
 }
 
@@ -147,15 +275,29 @@ function prevQuestion() {
   }
 }
 
-function getQuestionTypeLabel(type: string) {
-  switch (type) {
-    case 'single': return '单选题'
-    case 'multiple': return '多选题'
-    case 'judge': return '判断题'
-    case 'fill': return '填空题'
-    case 'short': return '简答题'
-    default: return type
+function resetAndContinue() {
+  showCompletion.value = false
+  totalAnswered.value = 0
+  correctAnswered.value = 0
+  masteredCount.value = 0
+  answerRecords.value = []
+  selectedAnswers.value = {}
+  mistakes.value = []
+  showCourseList.value = true
+  loadMistakesList()
+}
+
+function getQuestionTypeLabel(type: string | undefined): string {
+  const types: Record<string, string> = {
+    'choice': '选择题',
+    'single': '单选题',
+    'multiple': '多选题',
+    'judge': '判断题',
+    'fill': '填空题',
+    'short': '简答题',
+    'essay': '论述题'
   }
+  return types[type || ''] || (type || '其他')
 }
 
 function judgeOptions(question: Question) {
@@ -189,7 +331,13 @@ function getOptionClass(optionLabel: string) {
   return 'option-muted'
 }
 
-onMounted(loadMistakes)
+onMounted(() => {
+  if (props.course.name === '全部错题') {
+    loadMistakesList()
+  } else {
+    loadMistakes()
+  }
+})
 </script>
 
 <template>
@@ -197,46 +345,168 @@ onMounted(loadMistakes)
     <section class="quiz-shell">
       <header class="quiz-header">
         <div>
-          <h1>{{ course.name }} - 错题本</h1>
-          <p>{{ currentTab === 'unmastered' ? '待复习' : '已掌握' }}：{{ mistakes.length }} 题</p>
+          <h1>{{ showCourseList ? '错题本' : (selectedCourseName || course.name) + ' - 错题练习' }}</h1>
+          <p>{{ showCourseList ? '选择课程开始错题练习' : (currentTab === 'unmastered' ? '待复习' : '已掌握') + '：' + mistakes.length + ' 题' }}</p>
         </div>
         <div class="quiz-header-actions">
-          <button type="button" title="返回详情" @click="emit('navigate', 'detail')">↩</button>
+          <button v-if="!showCourseList" type="button" title="返回课程列表" @click="backToCourseList">↺</button>
+          <button type="button" title="返回" @click="showCourseList || course.name === '全部错题' ? emit('navigate', 'courses') : emit('navigate', 'detail')">↩</button>
           <button type="button" title="退出" @click="emit('navigate', 'courses')">×</button>
         </div>
       </header>
 
-      <div class="mistake-tabs">
-        <button
-          type="button"
-          :class="['tab-button', currentTab === 'unmastered' ? 'tab-active unmastered' : '']"
-          @click="switchTab('unmastered')"
-        >
-          未掌握
-        </button>
-        <button
-          type="button"
-          :class="['tab-button', currentTab === 'mastered' ? 'tab-active mastered' : '']"
-          @click="switchTab('mastered')"
-        >
-          已掌握
-        </button>
-      </div>
-
-      <div class="quiz-progress">
-        <div class="progress-segments">
-          <span
-            v-for="(_, index) in mistakes"
-            :key="index"
-            :class="{ active: index <= currentIndex, answered: index < currentIndex || (index === currentIndex && showResult) }"
-          ></span>
+      <template v-if="showCourseList">
+        <div v-if="loading" class="quiz-loading">
+          <div></div>
+          <strong>加载错题列表中...</strong>
         </div>
-        <b>{{ progressText }}</b>
-      </div>
 
-      <div v-if="loading" class="quiz-loading">
-        <div></div>
-        <strong>加载错题中...</strong>
+        <div v-else-if="allMistakes.length === 0" class="empty-state">
+          <div>🎉</div>
+          <h2>太棒了！没有错题</h2>
+          <p>继续保持，定期练习巩固知识</p>
+          <button class="primary-button" @click="emit('navigate', 'courses')">去学习</button>
+        </div>
+
+        <div v-else>
+          <div class="mistake-filters">
+            <div class="filter-group">
+              <label>课程：</label>
+              <select v-model="filterCourse" class="filter-select">
+                <option value="">全部课程</option>
+                <option v-for="course in courses" :key="course" :value="course">{{ course }}</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>掌握情况：</label>
+              <select v-model="filterMastered" class="filter-select">
+                <option value="all">全部</option>
+                <option value="unmastered">待复习</option>
+                <option value="mastered">已掌握</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label>错误次数 ≥：</label>
+              <select v-model="filterMinCount" class="filter-select">
+                <option :value="0">不限</option>
+                <option :value="2">2次</option>
+                <option :value="3">3次</option>
+                <option :value="5">5次</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mistake-list-header">
+            <span>共 {{ filteredMistakes.length }} 道错题</span>
+            <button class="primary-button" @click="startAllPractice">开始错题练习</button>
+          </div>
+
+          <div class="mistake-list">
+            <div 
+              v-for="(mistake, index) in filteredMistakes" 
+              :key="index"
+              class="mistake-list-item"
+            >
+              <div class="mistake-item-index">{{ index + 1 }}</div>
+              <div class="mistake-item-content">
+                <div class="mistake-item-header">
+                  <span class="mistake-item-course">{{ mistake.course_name }}</span>
+                  <span class="mistake-item-type">{{ getQuestionTypeLabel(mistake.type) }}</span>
+                  <span class="mistake-item-count">错{{ mistake.mistake_count || 1 }}次</span>
+                </div>
+                <p class="mistake-item-question">{{ mistake.question }}</p>
+                <div class="mistake-item-footer">
+                  <span class="mistake-item-chapter">{{ mistake.chapter || '综合' }}</span>
+                  <span :class="['mistake-item-status', mistake.mastered ? 'mastered' : 'unmastered']">
+                    {{ mistake.mastered ? '已掌握' : '待复习' }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="quiz-progress">
+          <div class="progress-segments">
+            <span
+              v-for="(_, index) in mistakes"
+              :key="index"
+              :class="{ active: index <= currentIndex, answered: index < currentIndex || (index === currentIndex && showResult) }"
+            ></span>
+          </div>
+          <b>{{ progressText }}</b>
+        </div>
+
+        <div v-if="loading" class="quiz-loading">
+          <div></div>
+          <strong>加载错题中...</strong>
+        </div>
+
+      <div v-else-if="showCompletion" class="completion-state">
+        <h2>练习完成！</h2>
+        <div class="completion-score">
+          <div class="score-circle">
+            <span class="score-value">{{ totalAnswered > 0 ? Math.round((correctAnswered / totalAnswered) * 100) : 0 }}</span>
+            <span class="score-unit">分</span>
+          </div>
+          <div class="score-details">
+            <p>答对 {{ correctAnswered }} 题</p>
+            <p>答错 {{ totalAnswered - correctAnswered }} 题</p>
+            <p>掌握 {{ masteredCount }} 题</p>
+          </div>
+        </div>
+        <p class="completion-feedback">
+          {{ correctAnswered === totalAnswered 
+            ? '太棒了！所有错题都已掌握，继续保持！' 
+            : (correctAnswered >= totalAnswered * 0.8 
+              ? '表现优秀！大部分错题已经掌握，再接再厉！' 
+              : (correctAnswered >= totalAnswered * 0.6 
+                ? '表现不错，还有一些错题需要复习。' 
+                : '还需要多加练习，建议回顾相关知识点。')) }}
+        </p>
+        
+        <div class="answer-details">
+          <h3>答题详情</h3>
+          <div class="answer-list">
+            <div 
+              v-for="(record, index) in answerRecords" 
+              :key="index"
+              class="answer-item"
+              :class="{ correct: record.isCorrect, wrong: !record.isCorrect }"
+            >
+              <div class="answer-item-header">
+                <span class="answer-number">第 {{ index + 1 }} 题</span>
+                <span :class="['answer-status', record.isCorrect ? 'correct' : 'wrong']">
+                  {{ record.isCorrect ? '✓ 正确' : '✗ 错误' }}
+                </span>
+              </div>
+              <div class="answer-item-content">
+                <p class="question-text">{{ record.question.question }}</p>
+                <div class="answer-compare">
+                  <div class="answer-row">
+                    <span class="label">你的答案：</span>
+                    <span class="value">{{ record.userAnswer || '未作答' }}</span>
+                  </div>
+                  <div class="answer-row">
+                    <span class="label">正确答案：</span>
+                    <span class="value correct">{{ (record.question as any).correct_answer !== undefined && (record.question as any).correct_answer !== '' ? (record.question as any).correct_answer : record.question.answer }}</span>
+                  </div>
+                </div>
+                <div v-if="record.question.analysis && !record.isCorrect" class="answer-analysis">
+                  <span class="label">解析：</span>
+                  <span class="value">{{ record.question.analysis }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="completion-actions">
+          <button class="primary-button" @click="resetAndContinue">继续练习</button>
+          <button class="ghost-button" @click="course.name === '全部错题' ? emit('navigate', 'courses') : emit('navigate', 'detail')">返回详情</button>
+        </div>
       </div>
 
       <div v-else-if="mistakes.length === 0" class="empty-state">
@@ -318,11 +588,61 @@ onMounted(loadMistakes)
           >
             下一个
           </button>
-          <button v-else type="button" class="primary-button" @click="emit('navigate', 'detail')">
+          <button v-else type="button" class="primary-button" @click="showCompletion = true">
             完成
           </button>
         </footer>
       </article>
+      </template>
+
+      <Teleport to="body">
+        <div v-if="showPracticeSettings" class="practice-settings-modal-overlay" @click="cancelPractice">
+          <div class="practice-settings-modal" @click.stop>
+            <h3>练习设置</h3>
+            
+            <div class="practice-setting-group">
+              <label>练习模式：</label>
+              <div class="practice-options">
+                <button 
+                  type="button" 
+                  :class="['practice-option', practiceMode === 'sequential' ? 'active' : '']"
+                  @click="practiceMode = 'sequential'"
+                >顺序练习</button>
+                <button 
+                  type="button" 
+                  :class="['practice-option', practiceMode === 'random' ? 'active' : '']"
+                  @click="practiceMode = 'random'"
+                >随机练习</button>
+              </div>
+            </div>
+            
+            <div class="practice-setting-group">
+              <label>练习范围：</label>
+              <div class="practice-options">
+                <button 
+                  type="button" 
+                  :class="['practice-option', practiceScope === 'unmastered' ? 'active' : '']"
+                  @click="practiceScope = 'unmastered'"
+                >仅未掌握</button>
+                <button 
+                  type="button" 
+                  :class="['practice-option', practiceScope === 'mixed' ? 'active' : '']"
+                  @click="practiceScope = 'mixed'"
+                >混合练习</button>
+              </div>
+            </div>
+            
+            <div class="practice-setting-summary">
+              <span>共 {{ filteredMistakes.length }} 道错题</span>
+            </div>
+            
+            <div class="practice-settings-actions">
+              <button class="ghost-button" @click="cancelPractice">取消</button>
+              <button class="primary-button" @click="confirmPractice">确认开始</button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </section>
   </div>
 </template>
@@ -560,6 +880,277 @@ onMounted(loadMistakes)
   gap: 10px;
 }
 
+.mistake-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  border: 1px solid #f3f4f6;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-group label {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.filter-select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+  min-width: 120px;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: #3746b3;
+  box-shadow: 0 0 0 2px rgba(55, 70, 179, 0.1);
+}
+
+.practice-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.practice-setting-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.practice-setting-group label {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.practice-options {
+  display: flex;
+  gap: 8px;
+}
+
+.practice-option {
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #6b7280;
+  background: #fff;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+
+.practice-option:hover {
+  border-color: #3746b3;
+  color: #3746b3;
+}
+
+.practice-option.active {
+  background: #3746b3;
+  color: #fff;
+  border-color: #3746b3;
+}
+
+.practice-settings-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.practice-settings-modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+}
+
+.practice-settings-modal h3 {
+  margin: 0 0 24px;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+  text-align: center;
+}
+
+.practice-setting-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.practice-setting-group label {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.practice-setting-summary {
+  text-align: center;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.practice-setting-summary span {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.practice-settings-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.mistake-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding: 0 4px;
+}
+
+.mistake-list-header span {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.mistake-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mistake-list-item {
+  display: flex;
+  gap: 16px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+  border: 1px solid #f3f4f6;
+}
+
+.mistake-item-index {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3746b3;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mistake-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.mistake-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mistake-item-course {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3746b3;
+  background: #eef2ff;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.mistake-item-type {
+  font-size: 12px;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.mistake-item-count {
+  font-size: 12px;
+  color: #ef4444;
+  background: #fef2f2;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.mistake-item-question {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mistake-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mistake-item-chapter {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.mistake-item-status {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.mistake-item-status.mastered {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.mistake-item-status.unmastered {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .exercise-option {
   width: 100%;
   min-height: 64px;
@@ -683,6 +1274,190 @@ onMounted(loadMistakes)
 
 button {
   cursor: pointer;
+}
+
+.completion-state {
+  align-self: center;
+  justify-self: center;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.completion-state > div:first-child {
+  font-size: 80px;
+  margin-bottom: 20px;
+}
+
+.completion-state h2 {
+  margin: 0 0 24px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.completion-score {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-bottom: 20px;
+}
+
+.score-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3746b3, #5c6bc0);
+  color: #fff;
+}
+
+.score-value {
+  font-size: 40px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.score-unit {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.score-details {
+  text-align: left;
+}
+
+.score-details p {
+  margin: 8px 0;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+.completion-feedback {
+  max-width: 400px;
+  margin: 0 auto 24px;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.answer-details {
+  width: 100%;
+  max-width: 760px;
+  margin-top: 24px;
+}
+
+.answer-details h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.answer-item {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+
+.answer-item.correct {
+  border-left: 4px solid #10b981;
+}
+
+.answer-item.wrong {
+  border-left: 4px solid #ef4444;
+}
+
+.answer-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.answer-number {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.answer-status {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.answer-status.correct {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.answer-status.wrong {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.question-text {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.answer-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.answer-row {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.answer-row .label {
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.answer-row .value {
+  color: #374151;
+}
+
+.answer-row .value.correct {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.answer-analysis {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.answer-analysis .label {
+  font-weight: 500;
 }
 
 @keyframes spin {

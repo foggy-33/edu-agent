@@ -96,67 +96,58 @@ onMounted(() => {
 
 <template>
   <div class="space-y-6">
-    <div class="bg-white rounded-2xl shadow-lg p-6">
-      <div class="flex items-center justify-between mb-4">
+    <section class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div class="flex items-center justify-between mb-6">
         <div>
-          <h2 class="text-lg font-bold text-gray-800">🔍 学习分析</h2>
-          <div class="text-sm text-gray-500 mt-1">当前课程：{{ course?.name || '未知课程' }}</div>
+          <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">LEARNING ANALYSIS</div>
+          <h1 class="text-2xl font-bold text-gray-900">学习分析报告</h1>
+          <p class="text-gray-500 mt-2">当前课程：{{ course?.name || '未知课程' }}</p>
         </div>
         <button
           @click="emit('navigate', 'detail')"
-          class="px-4 py-2 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all flex items-center gap-2"
+          class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium transition-all"
         >
-          ← 返回课程详情
+          返回课程详情
         </button>
       </div>
 
       <div v-if="loading" class="flex flex-col items-center justify-center py-12">
-        <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <span class="text-gray-600">正在分析学习数据...</span>
+        <div class="w-12 h-12 border-4 border-gray-200 border-t-gray-900 rounded-full animate-spin mb-4"></div>
+        <span class="text-gray-500">正在分析学习数据...</span>
       </div>
 
-      <div v-if="error" class="p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
-        ❌ {{ error }}
+      <div v-if="error" class="p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
+        {{ error }}
       </div>
-    </div>
+    </section>
 
     <div v-if="analysis && !loading" class="space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
-          <div class="text-white/80 text-sm">总学习时长</div>
-          <div class="text-3xl font-bold mt-2">{{ analysis.statistics.totalStudyTime }}</div>
-          <div class="flex items-center gap-1 mt-2 text-white/80 text-sm">
-            <span>📈</span>
-            <span>较上周 +12%</span>
+      <section class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-gray-50 rounded-xl p-5">
+            <div class="text-sm text-gray-500 mb-2">总学习时长</div>
+            <div class="text-2xl font-bold text-gray-900">{{ analysis.statistics.totalStudyTime }}</div>
+            <div class="text-xs text-green-600 mt-2">较上周 +12%</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-5">
+            <div class="text-sm text-gray-500 mb-2">平均得分</div>
+            <div class="text-2xl font-bold text-gray-900">{{ analysis.statistics.averageScore }}分</div>
+            <div class="text-xs text-gray-500 mt-2">班级排名前20%</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-5">
+            <div class="text-sm text-gray-500 mb-2">已完成课程</div>
+            <div class="text-2xl font-bold text-gray-900">{{ analysis.statistics.completedCourses }}门</div>
+            <div class="text-xs text-gray-500 mt-2">进度75%</div>
+          </div>
+          <div class="bg-gray-50 rounded-xl p-5">
+            <div class="text-sm text-gray-500 mb-2">连续学习</div>
+            <div class="text-2xl font-bold text-gray-900">{{ analysis.statistics.studyDays }}天</div>
+            <div class="text-xs text-gray-500 mt-2">保持良好习惯</div>
           </div>
         </div>
-        <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg">
-          <div class="text-white/80 text-sm">平均得分</div>
-          <div class="text-3xl font-bold mt-2">{{ analysis.statistics.averageScore }}分</div>
-          <div class="flex items-center gap-1 mt-2 text-white/80 text-sm">
-            <span>🎯</span>
-            <span>班级排名前20%</span>
-          </div>
-        </div>
-        <div class="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl p-6 text-white shadow-lg">
-          <div class="text-white/80 text-sm">已完成课程</div>
-          <div class="text-3xl font-bold mt-2">{{ analysis.statistics.completedCourses }}门</div>
-          <div class="flex items-center gap-1 mt-2 text-white/80 text-sm">
-            <span>✅</span>
-            <span>进度75%</span>
-          </div>
-        </div>
-        <div class="bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl p-6 text-white shadow-lg">
-          <div class="text-white/80 text-sm">连续学习</div>
-          <div class="text-3xl font-bold mt-2">{{ analysis.statistics.studyDays }}天</div>
-          <div class="flex items-center gap-1 mt-2 text-white/80 text-sm">
-            <span>🔥</span>
-            <span>保持良好习惯</span>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+      <section class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div class="grid grid-cols-3 bg-gray-50">
           <button
             v-for="tab in analysisTabs"
@@ -164,7 +155,7 @@ onMounted(() => {
             @click="activeTab = tab.key"
             :class="[
               'py-4 font-medium transition-colors flex items-center justify-center gap-2',
-              activeTab === tab.key ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white' : 'text-gray-600 hover:text-gray-800'
+              activeTab === tab.key ? 'text-gray-900 border-b-2 border-gray-900 bg-white' : 'text-gray-500 hover:text-gray-700'
             ]"
           >
             <span>{{ tab.icon }}</span>
@@ -176,37 +167,39 @@ onMounted(() => {
           <div v-if="activeTab === 'overview'">
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div class="bg-gray-50 rounded-xl p-6">
-                <h3 class="font-medium text-gray-800 mb-4">📊 学习档案</h3>
+                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">PROFILE</div>
+                <h3 class="text-lg font-bold text-gray-900 mb-4">学习档案</h3>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
                     <div class="text-sm text-gray-500">专业</div>
-                    <div class="font-medium">{{ analysis.major }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.major }}</div>
                   </div>
                   <div>
                     <div class="text-sm text-gray-500">课程</div>
-                    <div class="font-medium">{{ analysis.course }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.course }}</div>
                   </div>
                   <div>
                     <div class="text-sm text-gray-500">年级</div>
-                    <div class="font-medium">{{ analysis.grade_level }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.grade_level }}</div>
                   </div>
                   <div>
                     <div class="text-sm text-gray-500">学习目标</div>
-                    <div class="font-medium">{{ analysis.learning_goal }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.learning_goal }}</div>
                   </div>
                   <div>
                     <div class="text-sm text-gray-500">知识水平</div>
-                    <div class="font-medium">{{ analysis.knowledge_level }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.knowledge_level }}</div>
                   </div>
                   <div>
                     <div class="text-sm text-gray-500">学习风格</div>
-                    <div class="font-medium">{{ analysis.learning_style }}</div>
+                    <div class="font-medium text-gray-900">{{ analysis.learning_style }}</div>
                   </div>
                 </div>
               </div>
 
               <div class="bg-gray-50 rounded-xl p-6">
-                <h3 class="font-medium text-gray-800 mb-4">📅 本周学习时长</h3>
+                <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">LEARNING TREND</div>
+                <h3 class="text-lg font-bold text-gray-900 mb-4">本周学习时长</h3>
                 <div class="flex items-end justify-between h-40 gap-2">
                   <div
                     v-for="(hours, index) in analysis.weeklyData"
@@ -214,10 +207,10 @@ onMounted(() => {
                     class="flex-1 flex flex-col items-center gap-2"
                   >
                     <div 
-                      class="w-full bg-gradient-to-t from-indigo-500 to-purple-500 rounded-t-lg transition-all duration-500"
+                      class="w-full bg-gray-800 rounded-t-lg transition-all duration-500"
                       :style="{ height: (hours / maxWeeklyHours * 120) + 'px' }"
                     ></div>
-                    <span class="text-xs text-gray-500">{{ ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][index] }}</span>
+                    <span class="text-xs text-gray-500">{{ ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][index].slice(1) }}</span>
                     <span class="text-xs font-medium text-gray-700">{{ hours }}h</span>
                   </div>
                 </div>
@@ -226,22 +219,24 @@ onMounted(() => {
           </div>
 
           <div v-if="activeTab === 'weakPoints'">
+            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">WEAK POINTS</div>
+            <h3 class="text-lg font-bold text-gray-900 mb-4">薄弱环节分析</h3>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div
                 v-for="(point, index) in analysis.weakPoints"
                 :key="index"
-                class="bg-orange-50 border border-orange-200 rounded-xl p-6"
+                class="bg-gray-50 border border-gray-200 rounded-xl p-5"
               >
                 <div class="flex items-center gap-3 mb-3">
-                  <div class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center text-xl">
+                  <div class="w-10 h-10 bg-gray-200 rounded-xl flex items-center justify-center text-xl">
                     💡
                   </div>
                   <div>
-                    <div class="font-medium text-gray-800">薄弱环节 {{ index + 1 }}</div>
+                    <div class="font-medium text-gray-900">薄弱环节 {{ index + 1 }}</div>
                     <div class="text-sm text-gray-500">需要重点关注</div>
                   </div>
                 </div>
-                <div class="text-lg font-bold text-orange-600">{{ point }}</div>
+                <div class="text-lg font-bold text-gray-900">{{ point }}</div>
                 <div class="mt-3 text-sm text-gray-600">
                   建议：加强练习，观看相关教学视频
                 </div>
@@ -250,27 +245,29 @@ onMounted(() => {
           </div>
 
           <div v-if="activeTab === 'suggestions'">
+            <div class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">SUGGESTIONS</div>
+            <h3 class="text-lg font-bold text-gray-900 mb-4">学习建议</h3>
             <div class="space-y-4">
               <div
                 v-for="(suggestion, index) in analysis.suggestions"
                 :key="index"
-                class="flex items-start gap-4 p-4 bg-green-50 rounded-xl"
+                class="flex items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200"
               >
-                <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center text-green-600 font-bold">
+                <div class="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center text-white font-bold">
                   {{ Number(index) + 1 }}
                 </div>
                 <div>
-                  <div class="font-medium text-gray-800">{{ suggestion }}</div>
+                  <div class="font-medium text-gray-900">{{ suggestion }}</div>
                   <div class="text-sm text-gray-500 mt-1">预计提升效果：中等</div>
                 </div>
-                <button class="ml-auto px-4 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition-colors">
+                <button class="ml-auto px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white text-sm rounded-lg transition-colors">
                   标记已完成
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 </template>
