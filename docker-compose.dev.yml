@@ -35,7 +35,7 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload"]
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--reload", "--limit-max-request-size", "500"]
 
   frontend:
     image: node:22-alpine

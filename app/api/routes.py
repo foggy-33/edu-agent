@@ -1,4 +1,4 @@
-﻿import json
+﻿﻿import json
 import re
 from collections import Counter
 from typing import Any, Iterator
@@ -552,6 +552,17 @@ def download_resource(file_id: str, user_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@router.get("/resources/{file_id}/preview")
+def preview_resource(file_id: str, user_id: str) -> FileResponse:
+    try:
+        return FileResponse(
+            resource_service.get_pdf_path(user_id, file_id),
+            media_type="application/pdf",
+        )
+    except ResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.delete("/resources/{file_id}", status_code=204)
 def delete_resource(file_id: str, user_id: str) -> None:
     try:
@@ -1055,6 +1066,11 @@ def get_weak_topics(user_id: str, course: str) -> dict:
 def list_all_mistakes(user_id: str, mastered: bool = False) -> dict:
     mistakes = mistake_store.list_all_mistakes(user_id, mastered)
     return {"mistakes": mistakes}
+
+@router.get("/mistakes/stats")
+def get_mistake_stats(user_id: str) -> dict:
+    stats = mistake_store.get_mistake_stats(user_id)
+    return {"stats": stats}
 
 @router.post("/mistakes/master-any")
 def mark_mastered_any_course(user_id: str, question_id: str) -> dict:

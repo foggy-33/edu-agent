@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   LearningRequest,
   EvaluateRequest,
   GenerateResponse,
@@ -109,6 +109,10 @@ export function resourceDownloadUrl(userId: string, fileId: string): string {
   return `${API_BASE}/resources/${encodeURIComponent(fileId)}/download?user_id=${encodeURIComponent(userId)}`
 }
 
+export function resourcePreviewUrl(userId: string, fileId: string): string {
+  return `${API_BASE}/resources/${encodeURIComponent(fileId)}/preview?user_id=${encodeURIComponent(userId)}`
+}
+
 export async function listDynamicProfiles(userId: string): Promise<{ profiles: SubjectProfileSummary[] }> {
   return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}/subjects`)
 }
@@ -188,6 +192,7 @@ export interface MistakeRecord {
   correct_answer: string
   analysis: string
   topic: string
+  course_name?: string
   mistake_count: number
   review_count: number
   mastered: boolean
@@ -220,6 +225,10 @@ export async function listMistakes(userId: string, course: string): Promise<{ mi
 
 export async function listAllMistakes(userId: string, mastered: boolean = false): Promise<{ mistakes: MistakeRecord[] }> {
   return httpRequest<{ mistakes: MistakeRecord[] }>(`${API_BASE}/mistakes/all?user_id=${encodeURIComponent(userId)}&mastered=${mastered}`)
+}
+
+export async function getMistakeStats(userId: string): Promise<{ stats: { course_name: string; unmastered_count: number; mastered_count: number; total_count: number }[] }> {
+  return httpRequest<{ stats: { course_name: string; unmastered_count: number; mastered_count: number; total_count: number }[] }>(`${API_BASE}/mistakes/stats?user_id=${encodeURIComponent(userId)}`)
 }
 
 export async function markMistakeMastered(userId: string, course: string, questionId: string): Promise<{ status: string }> {

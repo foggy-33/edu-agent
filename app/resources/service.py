@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.rag.vector_store import get_vector_store
 
 
-MAX_PDF_BYTES = 100 * 1024 * 1024
+MAX_PDF_BYTES = 500 * 1024 * 1024
 LEGACY_RESOURCE_FOLDER = "历史资料"
 
 
@@ -44,7 +44,7 @@ class ResourceService:
                 while chunk := stream.read(1024 * 1024):
                     size += len(chunk)
                     if size > MAX_PDF_BYTES:
-                        raise ResourceError("PDF 文件不能超过 100 MB")
+                        raise ResourceError("PDF 文件不能超过 500 MB")
                     target.write(chunk)
 
             pages = self._extract_pages(pdf_path)

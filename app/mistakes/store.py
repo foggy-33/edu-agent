@@ -107,6 +107,28 @@ class MistakeStore:
                 continue
         return all_mistakes
 
+    def get_mistake_stats(self, user_id: str) -> list[dict]:
+        """获取按课程分类的错题统计"""
+        user_dir = self.base_dir / user_id.replace("/", "_").replace("\\", "_")
+        if not user_dir.exists():
+            return []
+        stats = []
+        for course_file in user_dir.glob("*.json"):
+            try:
+                mistakes = json.loads(course_file.read_text(encoding="utf-8"))
+                unmastered_count = sum(1 for m in mistakes if not m.get("mastered"))
+                mastered_count = sum(1 for m in mistakes if m.get("mastered"))
+                if unmastered_count > 0 or mastered_count > 0:
+                    stats.append({
+                        "course_name": course_file.stem,
+                        "unmastered_count": unmastered_count,
+                        "mastered_count": mastered_count,
+                        "total_count": len(mistakes)
+                    })
+            except:
+                continue
+        return sorted(stats, key=lambda x: -x["unmastered_count"])
+
     def _load(self, user_id: str, course: str) -> list[dict]:
         path = self._path(user_id, course)
         if path.exists():
