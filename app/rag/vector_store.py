@@ -124,27 +124,29 @@ class ChromaVectorStore:
             )
         return self.collection.count()
 
-    def similarity_search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+    def similarity_search(self, query: str, top_k: int = 5, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
         if not query.strip():
             return []
 
         results = []
-        # 从课程知识库检索
-        if self.collection.count() > 0:
+        # 从课程知识库检索（只有在没有指定文件时才检索课程知识库）
+        if not file_ids and self.collection.count() > 0:
             results.extend(self._query_collection(self.collection, query, top_k))
         # 从用户上传文档检索
         if self.user_collection.count() > 0:
-            results.extend(self._query_collection(self.user_collection, query, top_k))
+            results.extend(self._query_collection(self.user_collection, query, top_k, file_ids))
 
         # 按相似度排序，取前 top_k
         results.sort(key=lambda x: x["score"], reverse=True)
         return results[:top_k]
 
-    def _query_collection(self, collection, query: str, top_k: int) -> list[dict[str, Any]]:
+    def _query_collection(self, collection, query: str, top_k: int, file_ids: list[str] | None = None) -> list[dict[str, Any]]:
+        where = {"file_id": {"$in": file_ids}} if file_ids else None
         result = collection.query(
             query_embeddings=[self.embeddings.embed(query)],
             n_results=min(top_k, collection.count()),
             include=["documents", "metadatas", "distances"],
+            where=where,
         )
         documents = result.get("documents", [[]])[0]
         metadatas = result.get("metadatas", [[]])[0]

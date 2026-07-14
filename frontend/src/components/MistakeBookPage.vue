@@ -32,11 +32,22 @@ const filterMastered = ref<string>('all')
 const filterMinCount = ref<number>(0)
 
 type PracticeMode = 'sequential' | 'random'
-type PracticeScope = 'unmastered' | 'mixed'
+type PracticeScope = 'unmastered' | 'mixed' | 'by_course'
 
 const practiceMode = ref<PracticeMode>('sequential')
 const practiceScope = ref<PracticeScope>('unmastered')
 const showPracticeSettings = ref(false)
+const availableCourses = computed(() => {
+  const courses = new Set<string>()
+  filteredMistakes.value.forEach(m => {
+    if (m.course_name) {
+      courses.add(m.course_name)
+    }
+  })
+  return Array.from(courses)
+})
+
+const selectedCourses = ref<string[]>([])
 
 interface AnswerRecord {
   question: Question
@@ -131,11 +142,30 @@ function startAllPractice() {
   showPracticeSettings.value = true
 }
 
+function toggleCourse(course: string) {
+  const index = selectedCourses.value.indexOf(course)
+  if (index > -1) {
+    selectedCourses.value.splice(index, 1)
+  } else {
+    selectedCourses.value.push(course)
+  }
+}
+
 function confirmPractice() {
   let practiceMistakes = [...filteredMistakes.value]
   
   if (practiceScope.value === 'unmastered') {
     practiceMistakes = practiceMistakes.filter(m => !m.mastered)
+  }
+  
+  if (practiceScope.value === 'by_course') {
+    if (selectedCourses.value.length === 0) {
+      alert('请至少选择一门课程')
+      return
+    }
+    practiceMistakes = practiceMistakes.filter(m => 
+      selectedCourses.value.includes(m.course_name || '')
+    )
   }
   
   if (practiceMode.value === 'random') {
@@ -629,11 +659,32 @@ onMounted(() => {
                   :class="['practice-option', practiceScope === 'mixed' ? 'active' : '']"
                   @click="practiceScope = 'mixed'"
                 >混合练习</button>
+                <button 
+                  type="button" 
+                  :class="['practice-option', practiceScope === 'by_course' ? 'active' : '']"
+                  @click="practiceScope = 'by_course'"
+                >按课程选择</button>
+              </div>
+            </div>
+            
+            <div v-if="practiceScope === 'by_course'" class="course-selection">
+              <label>选择课程：</label>
+              <div class="course-options">
+                <button 
+                  v-for="course in availableCourses" 
+                  :key="course"
+                  type="button" 
+                  :class="['course-option', selectedCourses.includes(course) ? 'active' : '']"
+                  @click="toggleCourse(course)"
+                >{{ course }}</button>
               </div>
             </div>
             
             <div class="practice-setting-summary">
-              <span>共 {{ filteredMistakes.length }} 道错题</span>
+              <span>共 {{ practiceScope === 'by_course' && selectedCourses.length > 0 ? 
+                filteredMistakes.filter(m => selectedCourses.includes(m.course_name || '')).length : 
+                filteredMistakes.length 
+              }} 道错题</span>
             </div>
             
             <div class="practice-settings-actions">
@@ -964,6 +1015,35 @@ onMounted(() => {
 }
 
 .practice-option.active {
+  background: #3746b3;
+  color: #fff;
+  border-color: #3746b3;
+}
+
+.course-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.course-option {
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #6b7280;
+  background: #fff;
+  cursor: pointer;
+  transition: all .2s ease;
+}
+
+.course-option:hover {
+  border-color: #3746b3;
+  color: #3746b3;
+}
+
+.course-option.active {
   background: #3746b3;
   color: #fff;
   border-color: #3746b3;

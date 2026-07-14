@@ -133,7 +133,7 @@ class ResourceService:
         if query:
             # 使用 RAG 检索相关片段
             vector_store = get_vector_store()
-            results = vector_store.similarity_search(query, top_k=5)
+            results = vector_store.similarity_search(query, top_k=5, file_ids=file_ids)
             
             for result in results:
                 source_name = result.get("source", "")

@@ -187,21 +187,23 @@ def _generate_exercise_items(state: LearningState) -> list[dict[str, Any]]:
         f"{_context(state)}\n\n"
         "任务：生成可在线作答的分层练习题。只输出 JSON 数组，不要 Markdown，不要解释。\n"
         "数组每项字段：id、level、type、question、options、answer、explanation。\n"
-        "type 只能是 single、judge、fill、short。single 的 options 为 {label,text} 数组且 answer 为选项 label；"
+        "type 只能是 single、judge、fill、short。single 的 options 为 {label,text} 数组且 answer 为选项 label；\n"
         "judge 的 answer 为“正确”或“错误”；fill 和 short 的 options 为空数组。\n"
         "至少生成 4 题，覆盖基础、提高、挑战三层，并给出清晰解析。"
     )
-    raw = call_llm(
-        prompt,
-        api_key=state.get("api_key", ""),
-        base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
-        model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
-    )
-    if not raw:
-        return _fallback_exercise_items(state)
     try:
+        raw = call_llm(
+            prompt,
+            api_key=state.get("api_key", ""),
+            base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
+            model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+        )
+        if not raw:
+            return _fallback_exercise_items(state)
         return _normalize_exercise_items(_parse_json_array(raw), state)
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError, json.JSONDecodeError, Exception) as exc:
+        # 大模型调用失败或解析失败，使用备用题目
+        print(f"练习题生成失败，使用备用题目: {exc}")
         return _fallback_exercise_items(state)
 
 
