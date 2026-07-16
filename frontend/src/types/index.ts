@@ -126,7 +126,7 @@ export interface Course {
   questions: Question[]
 }
 
-export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading'
+export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'path'
 
 export interface CollaborativeLearningRequest {
   user_id: string
@@ -171,6 +171,8 @@ export interface CollaborativeLearningResponse {
   exercises: string
   exerciseItems: CollaborativeExerciseItem[]
   reading: string
+  codeCase: string
+  learningPath: string
   review: string
   sources: Pick<UploadedResource, 'id' | 'name' | 'page_count'>[]
   agentTrace: AgentTraceItem[]

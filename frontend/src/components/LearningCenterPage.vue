@@ -261,7 +261,6 @@ onMounted(loadProfileOverview)
   <div class="learning-center-container">
     <section class="learning-hero">
       <div>
-        <span>LEARNING CENTER</span>
         <h1>{{ userProfile.name }}的学习中心</h1>
         <p>查看学习进度、学科画像和学习时长统计</p>
       </div>
@@ -273,43 +272,28 @@ onMounted(loadProfileOverview)
 
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-icon">⏱</div>
-        <div class="stat-content">
-          <span class="stat-value">{{ learningStats.totalStudyHours }}</span>
-          <span class="stat-label">学习时长 (小时)</span>
-        </div>
+        <div class="stat-value">{{ learningStats.totalStudyHours }}</div>
+        <div class="stat-label">学习时长 (小时)</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">📚</div>
-        <div class="stat-content">
-          <span class="stat-value">{{ learningStats.completedCourses }}</span>
-          <span class="stat-label">已学课程</span>
-        </div>
+        <div class="stat-value">{{ learningStats.completedCourses }}</div>
+        <div class="stat-label">已学课程</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">✓</div>
-        <div class="stat-content">
-          <span class="stat-value">{{ learningStats.correctRate }}%</span>
-          <span class="stat-label">正确率</span>
-        </div>
+        <div class="stat-value">{{ learningStats.correctRate }}%</div>
+        <div class="stat-label">正确率</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">🔥</div>
-        <div class="stat-content">
-          <span class="stat-value">{{ learningStats.streakDays }}</span>
-          <span class="stat-label">连续学习天数</span>
-        </div>
+        <div class="stat-value">{{ learningStats.streakDays }}</div>
+        <div class="stat-label">连续学习天数</div>
       </div>
     </div>
 
     <div class="learning-grid">
       <section class="portrait-card">
         <header>
-          <div>
-            <span>LEARNING PORTRAIT</span>
-            <h2>学科画像雷达图</h2>
-          </div>
-          <b>{{ portrait?.completion || activeSubject?.completion || 0 }}%</b>
+          <h2>学科画像</h2>
+          <span class="completion-badge">完成度 {{ portrait?.completion || activeSubject?.completion || 0 }}%</span>
         </header>
 
         <div class="subject-switcher">
@@ -372,8 +356,10 @@ onMounted(loadProfileOverview)
 
         <div class="metric-list">
           <article v-for="[name, value] in radarMetrics" :key="name">
-            <span>{{ name }}</span>
-            <b>{{ value }}</b>
+            <div class="metric-head">
+              <span>{{ name }}</span>
+              <b>{{ value }}</b>
+            </div>
             <i><em :style="{ width: `${value}%` }"></em></i>
           </article>
         </div>
@@ -383,10 +369,7 @@ onMounted(loadProfileOverview)
 
       <section class="evaluate-card">
         <header>
-          <div>
-            <span>LEARNING EVALUATION</span>
-            <h2>学习评估</h2>
-          </div>
+          <h2>学习评估</h2>
         </header>
 
         <div class="evaluate-stats">
@@ -405,15 +388,13 @@ onMounted(loadProfileOverview)
         </div>
 
         <div class="evaluate-form">
-          <div class="form-row">
-            <div class="form-item">
-              <label>课程</label>
-              <select v-model="evalCourse">
-                <option value="数据库系统">数据库系统</option>
-                <option value="数据结构">数据结构</option>
-                <option value="算法设计">算法设计</option>
-              </select>
-            </div>
+          <div class="form-item">
+            <label>选择课程</label>
+            <select v-model="evalCourse">
+              <option value="数据库系统">数据库系统</option>
+              <option value="数据结构">数据结构</option>
+              <option value="算法设计">算法设计</option>
+            </select>
           </div>
 
           <div class="mode-select">
@@ -421,13 +402,13 @@ onMounted(loadProfileOverview)
               @click="evalMode = 'smart'"
               :class="['mode-btn', evalMode === 'smart' ? 'active' : '']"
             >
-              🤖 智能评估
+              智能评估
             </button>
             <button
               @click="evalMode = 'quiz'"
               :class="['mode-btn', evalMode === 'quiz' ? 'active' : '']"
             >
-              ✨ 智能小测
+              智能小测
             </button>
           </div>
 
@@ -437,7 +418,7 @@ onMounted(loadProfileOverview)
             :disabled="evalLoading"
             class="eval-start-btn"
           >
-            {{ evalLoading ? '分析中...' : '🚀 开始智能评估' }}
+            {{ evalLoading ? '分析中...' : '开始智能评估' }}
           </button>
           <button
             v-else-if="evalMode === 'quiz' && !evalQuizFinished && evalQuizQuestions.length === 0"
@@ -445,7 +426,7 @@ onMounted(loadProfileOverview)
             :disabled="evalLoading"
             class="eval-start-btn"
           >
-            {{ evalLoading ? '加载中...' : '🎯 开始智能小测' }}
+            {{ evalLoading ? '加载中...' : '开始智能小测' }}
           </button>
         </div>
 
@@ -493,7 +474,7 @@ onMounted(loadProfileOverview)
             :disabled="evalLoading || !evalQuizAnswers[evalQuizQuestions[evalQuizCurrentIndex]?.question_id]"
             class="eval-start-btn"
           >
-            {{ evalLoading ? '提交中...' : '➡️ 下一题' }}
+            {{ evalLoading ? '提交中...' : '下一题' }}
           </button>
         </div>
 
@@ -525,7 +506,7 @@ onMounted(loadProfileOverview)
               暂无数据，开始学习后会自动分析薄弱点
             </div>
             <div v-for="(topic, index) in courseStats?.weak_topics || []" :key="index" class="history-item">
-              <span class="history-course">📌 {{ topic }}</span>
+              <span class="history-course">{{ topic }}</span>
               <span class="history-score poor">待加强</span>
             </div>
           </div>
@@ -537,44 +518,35 @@ onMounted(loadProfileOverview)
 
 <style scoped>
 .learning-center-container {
-  display: grid;
-  gap: 22px;
-  max-width: 1220px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1200px;
   margin: 0 auto;
-  color: #241d35;
+  color: #1f2937;
 }
 
 .learning-hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 22px;
-  padding: 30px;
-  border: 1px solid #eee9ff;
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 92% 18%, rgba(139, 92, 246, .18), transparent 18rem),
-    #fff;
-  box-shadow: 0 18px 45px rgba(93, 73, 170, .08);
-}
-
-.learning-hero span {
-  color: #8b75d7;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .14em;
+  gap: 20px;
+  padding: 20px 24px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
 }
 
 .learning-hero h1 {
-  margin: 7px 0 8px;
-  color: #25144f;
-  font-size: clamp(26px, 4vw, 38px);
-  font-weight: 780;
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 600;
+  color: #111827;
 }
 
 .learning-hero p {
   margin: 0;
-  color: #80758f;
+  color: #6b7280;
   font-size: 14px;
 }
 
@@ -582,13 +554,15 @@ onMounted(loadProfileOverview)
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 108px;
-  height: 108px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #a855f7);
-  font-size: 40px;
+  background: #d1d5db;
+  font-size: 22px;
+  font-weight: 600;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .hero-avatar img {
@@ -600,313 +574,235 @@ onMounted(loadProfileOverview)
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  gap: 12px;
 }
 
 .stat-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border: 1px solid #eee9ff;
-  border-radius: 18px;
+  padding: 18px 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
   background: #fff;
-  box-shadow: 0 8px 24px rgba(93, 73, 170, .06);
-}
-
-.stat-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  background: #f0ebff;
-  font-size: 24px;
-}
-
-.stat-content {
-  display: flex;
-  flex-direction: column;
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 800;
-  color: #25144f;
+  font-size: 26px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 4px;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #80758f;
+  color: #6b7280;
 }
 
 .learning-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
-  gap: 22px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 18px;
   align-items: start;
 }
 
 .portrait-card,
-.info-card {
-  border: 1px solid #eee9ff;
-  border-radius: 22px;
+.evaluate-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
   background: #fff;
-  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
-  padding: 24px;
+  padding: 20px;
 }
 
 .portrait-card header,
-.info-card header {
+.evaluate-card header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-}
-
-.portrait-card header span,
-.info-card header span {
-  color: #8b75d7;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .14em;
+  margin-bottom: 16px;
 }
 
 .portrait-card h2,
-.info-card h2 {
-  margin: 5px 0 0;
-  color: #25144f;
-  font-size: 22px;
-  font-weight: 760;
+.evaluate-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
 }
 
-.portrait-card header b {
-  max-width: min(420px, 52vw);
-  padding: 8px 11px;
-  overflow: hidden;
-  border-radius: 999px;
-  color: #5b35c8;
-  background: #f0ebff;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.completion-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .subject-switcher {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin: 20px 0 12px;
+  gap: 6px;
+  margin-bottom: 14px;
 }
 
 .subject-switcher button {
-  padding: 7px 10px;
-  border: 1px solid #e7ddff;
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
   border-radius: 999px;
-  color: #6a5a7d;
+  color: #6b7280;
   background: #fff;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.subject-switcher button:hover {
+  border-color: #d1d5db;
+  color: #374151;
 }
 
 .subject-switcher button.active {
   color: #fff;
-  border-color: #7c5cff;
-  background: #7c5cff;
+  border-color: #111827;
+  background: #111827;
+}
+
+.subject-switcher button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .portrait-radar-wrap {
   display: grid;
   place-items: center;
-  min-height: 280px;
-  margin: 8px 0 14px;
-  border-radius: 20px;
-  background: linear-gradient(180deg, #fbfaff, #fff);
+  min-height: 260px;
+  margin: 8px 0 12px;
+  border-radius: 10px;
+  background: #f9fafb;
 }
 
 .portrait-radar {
-  width: min(360px, 100%);
+  width: min(340px, 100%);
   height: auto;
   overflow: visible;
 }
 
 .radar-ring {
   fill: none;
-  stroke: #e8defd;
+  stroke: #e5e7eb;
   stroke-width: 1;
 }
 
 .radar-axis {
-  stroke: #efe8ff;
+  stroke: #e5e7eb;
   stroke-width: 1;
 }
 
 .radar-area {
-  fill: rgba(124, 92, 255, .24);
+  fill: rgba(55, 65, 81, 0.15);
   stroke: none;
 }
 
 .radar-line {
   fill: none;
-  stroke: #7c5cff;
-  stroke-width: 3;
+  stroke: #374151;
+  stroke-width: 2.5;
   stroke-linejoin: round;
 }
 
 .radar-point {
   fill: #fff;
-  stroke: #7c5cff;
-  stroke-width: 2.4;
+  stroke: #374151;
+  stroke-width: 2;
 }
 
 .radar-label {
-  fill: #6d617e;
-  font-size: 9px;
-  font-weight: 700;
+  fill: #4b5563;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 .portrait-summary {
   margin: 0;
-  padding: 14px;
-  border-left: 3px solid #8b5cf6;
-  border-radius: 0 14px 14px 0;
-  color: #63566f;
-  background: #fbf9ff;
+  padding: 12px 14px;
+  border-left: 3px solid #d1d5db;
+  border-radius: 0 8px 8px 0;
+  color: #4b5563;
+  background: #f9fafb;
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.7;
 }
 
 .metric-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .metric-list article {
-  padding: 12px;
-  border: 1px solid #eee9ff;
-  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
   background: #fff;
 }
 
+.metric-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .metric-list span {
-  color: #6a5a7d;
+  color: #6b7280;
   font-size: 12px;
+  font-weight: 500;
 }
 
 .metric-list b {
-  float: right;
-  color: #6d5df2;
+  color: #1f2937;
   font-size: 13px;
+  font-weight: 600;
 }
 
 .metric-list i {
   display: block;
-  height: 5px;
-  margin-top: 10px;
+  height: 4px;
   overflow: hidden;
   border-radius: 99px;
-  background: #eee9ff;
+  background: #e5e7eb;
+  font-style: normal;
 }
 
 .metric-list em {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #6d5df2, #a855f7);
-}
-
-.profile-info {
-  display: grid;
-  gap: 14px;
-  margin-top: 20px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f9fafb;
-}
-
-.info-row label {
-  font-size: 13px;
-  color: #6b7280;
-  font-weight: 500;
-}
-
-.info-row span {
-  font-size: 14px;
-  color: #241d35;
-  font-weight: 500;
-}
-
-.info-card button {
-  width: 100%;
-  margin-top: 20px;
-  padding: 12px;
-  border-radius: 12px;
-  font-weight: 720;
-}
-
-.btn-secondary {
-  border: 0;
-  color: #5b35c8;
-  background: #f0ebff;
+  background: #374151;
+  font-style: normal;
 }
 
 .message {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-radius: 8px;
-  margin: 16px 0 0;
+  margin: 14px 0 0;
   font-size: 13px;
 }
 
 .message.error {
   background: #fef2f2;
   color: #dc2626;
-}
-
-.evaluate-card {
-  border: 1px solid #eee9ff;
-  border-radius: 22px;
-  background: #fff;
-  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
-  padding: 24px;
-}
-
-.evaluate-card header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.evaluate-card header span {
-  color: #8b75d7;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .14em;
-}
-
-.evaluate-card h2 {
-  margin: 5px 0 0;
-  color: #25144f;
-  font-size: 22px;
-  font-weight: 760;
+  border: 1px solid #fecaca;
 }
 
 .evaluate-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
-  padding: 16px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f0ebff, #fff);
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #f9fafb;
 }
 
 .evaluate-stat {
@@ -915,87 +811,107 @@ onMounted(loadProfileOverview)
 
 .evaluate-stat .stat-num {
   display: block;
-  font-size: 28px;
-  font-weight: 800;
-  color: #6d5df2;
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 2px;
 }
 
 .evaluate-stat .stat-text {
   font-size: 12px;
-  color: #80758f;
+  color: #6b7280;
 }
 
 .evaluate-form {
-  margin-top: 18px;
-}
-
-.form-row {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .form-item label {
-  display: block;
-  margin-bottom: 6px;
   font-size: 13px;
-  font-weight: 700;
-  color: #5f526f;
+  font-weight: 500;
+  color: #374151;
 }
 
 .form-item select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #e7ddff;
-  border-radius: 12px;
-  color: #241d35;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  color: #1f2937;
   background: #fff;
   font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-item select:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.1);
 }
 
 .mode-select {
   display: flex;
   gap: 8px;
-  margin-top: 14px;
 }
 
 .mode-btn {
   flex: 1;
-  padding: 10px;
-  border: 1px solid #e7ddff;
-  border-radius: 12px;
-  color: #6a5a7d;
+  padding: 9px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #6b7280;
   background: #fff;
   font-size: 13px;
-  font-weight: 600;
-  transition: all .2s;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-btn:hover {
+  border-color: #d1d5db;
+  color: #374151;
 }
 
 .mode-btn.active {
   color: #fff;
-  border-color: #7c5cff;
-  background: #7c5cff;
+  border-color: #111827;
+  background: #111827;
 }
 
 .eval-start-btn {
   width: 100%;
-  margin-top: 14px;
-  padding: 12px;
-  border: 0;
-  border-radius: 12px;
+  padding: 10px;
+  border: 1px solid #111827;
+  border-radius: 8px;
   color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #9d6cff);
-  font-weight: 720;
+  background: #111827;
+  font-weight: 500;
   font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.eval-start-btn:hover:not(:disabled) {
+  background: #1f2937;
+  border-color: #1f2937;
 }
 
 .eval-start-btn:disabled {
-  opacity: .6;
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .quiz-area {
-  margin-top: 18px;
-  padding: 16px;
-  border-radius: 16px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 10px;
   background: #f9fafb;
 }
 
@@ -1003,9 +919,10 @@ onMounted(loadProfileOverview)
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   font-size: 13px;
-  color: #6a5a7d;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 .progress-dots {
@@ -1017,34 +934,35 @@ onMounted(loadProfileOverview)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ddd;
+  background: #d1d5db;
 }
 
 .progress-dots .dot.active {
-  background: #7c5cff;
+  background: #111827;
 }
 
 .quiz-content {
   padding: 14px;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
 .quiz-topic {
   display: inline-block;
-  padding: 4px 10px;
+  padding: 3px 10px;
   margin-bottom: 10px;
-  border-radius: 999px;
-  color: #5b35c8;
-  background: #f0ebff;
+  border-radius: 6px;
+  color: #374151;
+  background: #f3f4f6;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .quiz-question {
   font-size: 15px;
   font-weight: 600;
-  color: #241d35;
+  color: #1f2937;
   line-height: 1.6;
 }
 
@@ -1059,55 +977,73 @@ onMounted(loadProfileOverview)
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border: 2px solid #e7ddff;
-  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
   cursor: pointer;
-  transition: all .2s;
+  transition: all 0.15s;
+}
+
+.option-item:hover {
+  border-color: #d1d5db;
 }
 
 .option-item.selected {
-  border-color: #7c5cff;
-  background: #f0ebff;
+  border-color: #111827;
+  background: #f9fafb;
 }
 
 .option-label {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: #6a5a7d;
-  background: #f0ebff;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: #6b7280;
+  background: #f3f4f6;
   font-size: 13px;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .option-item.selected .option-label {
   color: #fff;
-  background: #7c5cff;
+  background: #111827;
 }
 
 .option-text {
   flex: 1;
   font-size: 14px;
-  color: #241d35;
+  color: #1f2937;
+}
+
+.hidden {
+  display: none;
 }
 
 .quiz-input {
   width: 100%;
   margin-top: 14px;
-  padding: 10px 12px;
-  border: 1px solid #e7ddff;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
   font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.quiz-input:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.1);
 }
 
 .eval-result {
-  margin-top: 18px;
-  padding: 18px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f0ebff, #fff);
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
 }
 
 .result-score {
@@ -1117,65 +1053,68 @@ onMounted(loadProfileOverview)
 .result-score .score-label {
   display: block;
   font-size: 12px;
-  color: #80758f;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 .result-score .score-value {
   display: block;
-  font-size: 56px;
-  font-weight: 800;
-  color: #6d5df2;
-  margin: 8px 0;
+  font-size: 48px;
+  font-weight: 700;
+  color: #111827;
+  margin: 6px 0;
 }
 
 .result-score .score-detail {
   display: block;
   font-size: 13px;
-  color: #80758f;
+  color: #6b7280;
 }
 
 .result-bar {
-  height: 8px;
-  margin-top: 16px;
+  height: 6px;
+  margin-top: 14px;
   border-radius: 999px;
-  background: #ddd;
+  background: #e5e7eb;
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #6d5df2, #a855f7);
-  transition: width .5s;
+  background: #1f2937;
+  transition: width 0.5s;
 }
 
 .result-analysis {
-  margin-top: 16px;
+  margin-top: 14px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
 .result-analysis h4,
 .result-weak h4 {
   margin: 0 0 8px;
   font-size: 14px;
-  font-weight: 700;
-  color: #25144f;
+  font-weight: 600;
+  color: #111827;
 }
 
 .result-analysis p {
   margin: 0;
   font-size: 13px;
-  color: #6a5a7d;
+  color: #4b5563;
   line-height: 1.6;
 }
 
 .result-weak {
-  margin-top: 12px;
+  margin-top: 10px;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
 .weak-tags {
@@ -1186,21 +1125,24 @@ onMounted(loadProfileOverview)
 
 .weak-tag {
   padding: 4px 10px;
-  border-radius: 999px;
-  color: #ea580c;
-  background: #ffedd5;
+  border-radius: 6px;
+  color: #92400e;
+  background: #fef3c7;
   font-size: 12px;
+  font-weight: 500;
 }
 
 .eval-history {
-  margin-top: 18px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .eval-history h4 {
   margin: 0 0 12px;
   font-size: 14px;
-  font-weight: 700;
-  color: #25144f;
+  font-weight: 600;
+  color: #111827;
 }
 
 .history-list {
@@ -1208,45 +1150,50 @@ onMounted(loadProfileOverview)
   gap: 8px;
 }
 
+.history-empty {
+  padding: 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
 .history-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
   background: #f9fafb;
 }
 
 .history-course {
   font-size: 13px;
-  color: #241d35;
+  color: #1f2937;
+  font-weight: 500;
 }
 
 .history-score {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 500;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 6px;
 }
 
 .history-score.excellent {
-  color: #16a34a;
+  color: #166534;
   background: #dcfce7;
 }
 
 .history-score.good {
-  color: #2563eb;
+  color: #1e40af;
   background: #dbeafe;
 }
 
 .history-score.poor {
-  color: #dc2626;
+  color: #991b1b;
   background: #fee2e2;
-}
-
-.history-date {
-  font-size: 12px;
-  color: #80758f;
 }
 
 @media (max-width: 900px) {
@@ -1274,7 +1221,11 @@ onMounted(loadProfileOverview)
 
 @media (max-width: 600px) {
   .stats-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stat-value {
+    font-size: 22px;
   }
 }
 </style>

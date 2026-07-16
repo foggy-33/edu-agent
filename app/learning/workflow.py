@@ -3,11 +3,13 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from app.learning.agents import (
+    code_agent,
     direct_chat_agent,
     exercise_agent,
     integration_agent,
     lecture_agent,
     mindmap_agent,
+    path_agent,
     planner_agent,
     profile_agent,
     reading_agent,
@@ -22,6 +24,8 @@ NODES: list[tuple[str, Callable[[LearningState], dict[str, Any]]]] = [
     ("mindmap", mindmap_agent),
     ("exercise", exercise_agent),
     ("reading", reading_agent),
+    ("code", code_agent),
+    ("path", path_agent),
     ("review", review_agent),
     ("integration", integration_agent),
 ]
@@ -59,6 +63,8 @@ def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
             "exercises": "",
             "exerciseItems": [],
             "reading": "",
+            "codeCase": "",
+            "learningPath": "",
             "review": "",
             "sources": state.get("sources", []),
             "agentTrace": state.get("agentTrace", []),
@@ -71,6 +77,8 @@ def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
         "exercises": state.get("exercises", ""),
         "exerciseItems": state.get("exerciseItems", []),
         "reading": state.get("reading", ""),
+        "codeCase": state.get("codeCase", ""),
+        "learningPath": state.get("learningPath", ""),
         "review": state.get("review", ""),
         "sources": state.get("sources", []),
         "agentTrace": state.get("agentTrace", []),

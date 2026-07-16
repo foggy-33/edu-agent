@@ -23,5 +23,7 @@ class LearningState(TypedDict, total=False):
     exercises: str
     exerciseItems: list[dict[str, Any]]
     reading: str
+    codeCase: str
+    learningPath: str
     review: str
     agentTrace: list[dict[str, Any]]

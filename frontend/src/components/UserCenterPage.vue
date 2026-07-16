@@ -107,7 +107,7 @@ function saveApiSettings() {
   normalizeApiConfig()
   saveSiliconFlowConfig(apiConfig.value)
   apiError.value = false
-  apiMessage.value = 'API 设置已保存到当前浏览器'
+  apiMessage.value = '设置已保存'
 }
 
 async function testApiSettings() {
@@ -132,52 +132,56 @@ async function testApiSettings() {
 </script>
 
 <template>
-  <div class="settings-container">
-    <div class="settings-grid">
-      <section class="profile-section">
-        <header>
-          <span>ACCOUNT</span>
-          <h2>个人资料</h2>
-        </header>
+  <div class="page-container">
+    <div class="page-header">
+      <h1>个人中心</h1>
+      <p>管理你的个人信息和系统设置</p>
+    </div>
 
-        <div class="profile-preview">
-          <div class="preview-avatar">
-            <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
-            <span v-else>{{ initials }}</span>
-          </div>
-          <div class="preview-info">
-            <div class="preview-name">{{ userProfile.name }}</div>
-            <div class="preview-id">ID: {{ userProfile.userId }}</div>
-          </div>
-          <div class="preview-right">
-            <button class="btn-secondary" type="button" @click="chooseAvatar">更换头像</button>
+    <div class="content-grid">
+      <section class="panel">
+        <div class="panel-header">
+          <h2>个人资料</h2>
+        </div>
+
+        <div class="profile-basic">
+          <div class="avatar-wrap">
+            <div class="avatar">
+              <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
+              <span v-else>{{ initials }}</span>
+            </div>
+            <button class="avatar-btn" type="button" @click="chooseAvatar">更换头像</button>
             <input ref="fileInput" type="file" accept="image/*" hidden @change="handleAvatar" />
-            <small class="avatar-hint">支持 JPG、PNG、WebP，文件不超过 10 MB</small>
+            <div class="avatar-hint">支持 JPG、PNG、WebP，不超过 10 MB</div>
+          </div>
+          <div class="profile-info">
+            <div class="info-name">{{ userProfile.name }}</div>
+            <div class="info-id">账号：{{ userProfile.userId }}</div>
           </div>
         </div>
 
-        <div class="profile-form">
-          <div class="form-group">
+        <div class="form-grid">
+          <div class="form-item">
             <label>显示名称</label>
             <input v-model="userProfile.name" maxlength="30" placeholder="请输入显示名称" />
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>手机号码</label>
             <input v-model="userProfile.phone" placeholder="请输入手机号码" />
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>邮箱地址</label>
             <input v-model="userProfile.email" type="email" placeholder="请输入邮箱地址" />
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>所在院校</label>
             <input v-model="userProfile.school" placeholder="请输入院校名称" />
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>专业班级</label>
             <input v-model="userProfile.major" placeholder="请输入专业班级" />
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>学习阶段</label>
             <select v-model="userProfile.gradeLevel">
               <option value="">请选择</option>
@@ -191,7 +195,7 @@ async function testApiSettings() {
               <option value="其他">其他</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>学习目标</label>
             <select v-model="userProfile.learningGoal">
               <option value="">请选择</option>
@@ -205,277 +209,299 @@ async function testApiSettings() {
           </div>
         </div>
 
-        <div v-if="userProfile.learningStyle.length || userProfile.weakSubjects.length || userProfile.improvementAreas.length" class="profile-tags">
+        <div v-if="userProfile.learningStyle.length || userProfile.weakSubjects.length || userProfile.improvementAreas.length" class="tag-section">
           <div v-if="userProfile.learningStyle.length" class="tag-group">
-            <span class="tag-label">偏好的学习方式</span>
+            <div class="tag-label">偏好的学习方式</div>
             <div class="tag-list">
               <span v-for="style in userProfile.learningStyle" :key="style" class="tag">{{ style }}</span>
             </div>
           </div>
           <div v-if="userProfile.weakSubjects.length" class="tag-group">
-            <span class="tag-label">有困难的科目</span>
+            <div class="tag-label">有困难的科目</div>
             <div class="tag-list">
               <span v-for="subject in userProfile.weakSubjects" :key="subject" class="tag tag-warn">{{ subject }}</span>
             </div>
           </div>
           <div v-if="userProfile.improvementAreas.length" class="tag-group">
-            <span class="tag-label">希望提升的方面</span>
+            <div class="tag-label">希望提升的方面</div>
             <div class="tag-list">
               <span v-for="area in userProfile.improvementAreas" :key="area" class="tag tag-info">{{ area }}</span>
             </div>
           </div>
         </div>
 
-        <div class="profile-actions">
-          <button class="btn-secondary" type="button" @click="reset" :disabled="userSaving">恢复默认</button>
+        <div class="panel-actions">
+          <button class="btn-ghost" type="button" @click="reset" :disabled="userSaving">恢复默认</button>
           <button class="btn-primary" type="button" @click="saveProfile" :disabled="userSaving">
             <span v-if="userSaving">保存中...</span>
             <span v-else>保存资料</span>
           </button>
         </div>
 
-        <div v-if="userSuccess" class="message success">{{ userSuccess }}</div>
-        <div v-if="userError" class="message error">{{ userError }}</div>
+        <div v-if="userSuccess" class="tip tip-success">{{ userSuccess }}</div>
+        <div v-if="userError" class="tip tip-error">{{ userError }}</div>
       </section>
 
-      <section class="api-section">
-        <header>
-          <div>
-            <span>API SETTINGS</span>
-            <h2>API 设置</h2>
-          </div>
-          <span class="model-tag">{{ apiConfig.model }}</span>
-        </header>
+      <section class="panel">
+        <div class="panel-header">
+          <h2>模型设置</h2>
+          <span class="model-badge">{{ apiConfig.model }}</span>
+        </div>
 
-        <p class="api-note">
-          当前项目使用硅基流动兼容 OpenAI 的接口。这里保存的是当前浏览器配置，会被首页对话、个性化资源生成、课程练习和画像对话共用。
+        <p class="panel-desc">
+          配置大模型接口，用于对话、资源生成和学习分析。设置保存在当前浏览器中。
         </p>
 
-        <div class="api-form">
-          <div class="form-group">
+        <div class="form-stack">
+          <div class="form-item">
             <label>API Key</label>
-            <div class="secret-input">
+            <div class="input-with-btn">
               <input v-model="apiConfig.api_key" :type="apiShowKey ? 'text' : 'password'" placeholder="sk-..." />
               <button type="button" @click="apiShowKey = !apiShowKey">{{ apiShowKey ? '隐藏' : '显示' }}</button>
             </div>
           </div>
-          <div class="form-group">
+          <div class="form-item">
             <label>Base URL</label>
             <input v-model="apiConfig.base_url" type="url" placeholder="https://api.siliconflow.cn/v1" />
           </div>
-          <div class="form-group">
-            <label>模型</label>
+          <div class="form-item">
+            <label>模型名称</label>
             <input v-model="apiConfig.model" placeholder="deepseek-ai/DeepSeek-V4-Pro" />
           </div>
         </div>
 
-        <div class="api-actions">
-          <button class="btn-secondary" type="button" @click="saveApiSettings">保存设置</button>
+        <div class="panel-actions">
+          <button class="btn-ghost" type="button" @click="saveApiSettings">保存设置</button>
           <button class="btn-primary" type="button" :disabled="apiTesting" @click="testApiSettings">
-            {{ apiTesting ? '正在测试...' : '测试连接' }}
+            {{ apiTesting ? '测试中...' : '测试连接' }}
           </button>
         </div>
 
-        <p v-if="apiMessage" :class="['message', apiError ? 'error' : 'success']">{{ apiMessage }}</p>
+        <p v-if="apiMessage" :class="['tip', apiError ? 'tip-error' : 'tip-success']">{{ apiMessage }}</p>
       </section>
     </div>
 
-    <section class="security-section">
-      <header>
-        <span>SECURITY</span>
-        <h2>安全设置</h2>
-      </header>
-      <div class="security-actions">
-        <button class="logout-button" type="button" @click="emit('logout')">退出当前账号</button>
+    <section class="panel panel-security">
+      <div class="panel-header">
+        <h2>账号安全</h2>
+      </div>
+      <div class="security-content">
+        <p>退出当前登录的账号</p>
+        <button class="btn-danger" type="button" @click="emit('logout')">退出登录</button>
       </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.settings-container {
-  display: grid;
-  gap: 22px;
-  max-width: 1220px;
+.page-container {
+  max-width: 960px;
   margin: 0 auto;
-  color: #241d35;
-}
-
-.settings-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 22px;
-}
-
-.profile-section,
-.api-section,
-.security-section {
-  border: 1px solid #eee9ff;
-  border-radius: 22px;
-  background: #fff;
-  box-shadow: 0 14px 38px rgba(93, 73, 170, .08);
-  padding: 24px;
-}
-
-.profile-section header,
-.api-section header,
-.security-section header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  flex-direction: column;
+  gap: 20px;
+  color: #1f2937;
 }
 
-.profile-section header span,
-.api-section header span,
-.security-section header span {
-  color: #8b75d7;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .14em;
-}
-
-.profile-section h2,
-.api-section h2,
-.security-section h2 {
-  margin: 5px 0 0;
-  color: #25144f;
-  font-size: 22px;
-  font-weight: 760;
-}
-
-.model-tag {
-  padding: 6px 10px;
-  border-radius: 999px;
-  color: #5b35c8;
-  background: #f0ebff;
-  font-size: 12px;
+.page-header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
   font-weight: 600;
 }
 
-.profile-preview {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 20px;
-  padding: 20px;
-  margin-top: 20px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f0ebff, #fff);
+.page-header p {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
 }
 
-.preview-avatar {
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.model-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.panel-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+.profile-basic {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px;
+  margin-bottom: 20px;
+  background: #f9fafb;
+  border-radius: 10px;
+}
+
+.avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #d1d5db;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #a855f7);
-  font-size: 32px;
+  font-size: 24px;
+  font-weight: 600;
   overflow: hidden;
 }
 
-.preview-avatar img {
+.avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.preview-info {
-  min-width: 0;
-}
-
-.preview-name {
-  font-size: 18px;
-  font-weight: 760;
-  color: #25144f;
-}
-
-.preview-id {
-  font-size: 13px;
-  color: #80758f;
-  margin-top: 4px;
-}
-
-.preview-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-.profile-preview .btn-secondary {
-  padding: 8px 14px;
-  border-radius: 10px;
-  font-weight: 720;
-}
-
-.avatar-hint {
+.avatar-btn {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
   font-size: 12px;
-  color: #9ca3af;
-  text-align: right;
-}
-
-.profile-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 20px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.form-group label {
-  margin-bottom: 6px;
-  color: #5f526f;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.form-group input {
-  padding: 10px 12px;
-  border: 1px solid #e7ddff;
-  border-radius: 10px;
-  color: #241d35;
-  background: #fff;
-  font-size: 14px;
-}
-
-.form-group input:focus {
-  outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
-}
-
-.form-group select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px 14px;
-  border: 1px solid #e7ddff;
-  border-radius: 10px;
-  color: #241d35;
-  background: #fff;
-  font-size: 14px;
   cursor: pointer;
 }
 
-.form-group select:focus {
-  outline: none;
-  border-color: #8b5cf6;
-  box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
+.avatar-btn:hover {
+  background: #f9fafb;
 }
 
-.profile-tags {
+.avatar-hint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.profile-info {
+  min-width: 0;
+}
+
+.info-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.info-id {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-item label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-item input,
+.form-item select {
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1f2937;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.form-item input:focus,
+.form-item select:focus {
+  border-color: #6b7280;
+  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.1);
+}
+
+.input-with-btn {
+  display: flex;
+  gap: 8px;
+}
+
+.input-with-btn input {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-with-btn button {
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.input-with-btn button:hover {
+  background: #f3f4f6;
+}
+
+.tag-section {
   margin-top: 20px;
-  padding: 16px;
-  background: #faf8ff;
-  border-radius: 12px;
-  border: 1px solid #eee6ff;
+  padding: 14px;
+  background: #f9fafb;
+  border-radius: 8px;
 }
 
 .tag-group {
@@ -487,10 +513,9 @@ async function testApiSettings() {
 }
 
 .tag-label {
-  display: block;
   font-size: 12px;
-  font-weight: 700;
-  color: #7c6c9f;
+  font-weight: 500;
+  color: #6b7280;
   margin-bottom: 8px;
 }
 
@@ -501,12 +526,12 @@ async function testApiSettings() {
 }
 
 .tag {
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: #eef0ff;
-  color: #5b35c8;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #e5e7eb;
+  color: #374151;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .tag.tag-warn {
@@ -519,131 +544,105 @@ async function testApiSettings() {
   color: #1e40af;
 }
 
-.profile-actions,
-.api-actions,
-.security-actions {
+.panel-actions {
   display: flex;
-  flex-wrap: wrap;
   gap: 10px;
   margin-top: 20px;
 }
 
-.profile-actions button,
-.api-actions button {
-  padding: 10px 18px;
-  border-radius: 10px;
-  font-weight: 720;
+.btn-primary,
+.btn-ghost,
+.btn-danger {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid transparent;
 }
 
 .btn-primary {
-  border: 0;
+  background: #111827;
   color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #9d6cff);
-  box-shadow: 0 12px 24px rgba(109, 93, 242, .22);
+  border-color: #111827;
 }
 
-.btn-secondary {
-  border: 0;
-  color: #5b35c8;
-  background: #f0ebff;
+.btn-primary:hover:not(:disabled) {
+  background: #1f2937;
+  border-color: #1f2937;
 }
 
-.logout-button {
-  padding: 12px 24px;
-  border: 1px solid #f5c2c7;
-  border-radius: 10px;
-  color: #c82828;
+.btn-ghost {
   background: #fff;
-  font-weight: 720;
+  color: #374151;
+  border-color: #d1d5db;
 }
 
-.message {
-  padding: 12px 16px;
-  border-radius: 10px;
-  margin-top: 16px;
-  font-size: 13px;
+.btn-ghost:hover {
+  background: #f9fafb;
 }
 
-.message.success {
-  background: #f0ebff;
-  color: #5b35c8;
-}
-
-.message.error {
-  background: #fef2f2;
+.btn-danger {
+  background: #fff;
   color: #dc2626;
+  border-color: #fecaca;
 }
 
-.api-note {
-  margin: 14px 0 18px;
-  color: #80758f;
+.btn-danger:hover {
+  background: #fef2f2;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.tip {
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-top: 14px;
   font-size: 13px;
-  line-height: 1.7;
 }
 
-.api-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.tip-success {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
 }
 
-.secret-input {
-  display: flex;
-  gap: 8px;
+.tip-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
-.secret-input input {
-  flex: 1;
-  min-width: 0;
-}
-
-.secret-input button {
-  flex: 0 0 auto;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 10px;
-  color: #5b35c8;
-  background: #f0ebff;
-  font-weight: 750;
-}
-
-.security-section {
+.panel-security .security-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
 }
 
-.security-actions {
+.panel-security p {
   margin: 0;
+  font-size: 14px;
+  color: #6b7280;
 }
 
-@media (max-width: 700px) {
-  .settings-container {
-    max-width: none;
-  }
-
-  .profile-preview {
-    grid-template-columns: auto 1fr;
-  }
-
-  .preview-right {
-    grid-column: 1 / -1;
-    align-items: flex-start;
-  }
-
-  .avatar-hint {
-    text-align: left;
-  }
-
-  .profile-form {
+@media (max-width: 640px) {
+  .form-grid {
     grid-template-columns: 1fr;
   }
 
-  .security-section {
+  .profile-basic {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .panel-security .security-content {
     flex-direction: column;
     align-items: flex-start;
-    gap: 14px;
+    gap: 12px;
   }
 }
 </style>

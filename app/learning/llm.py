@@ -24,7 +24,7 @@ def call_llm(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.35,
-        "max_tokens": 3000,
+        "max_tokens": 8000,
     }
     url = f"{base_url.rstrip('/')}/chat/completions"
     try:
@@ -59,7 +59,7 @@ def stream_llm(
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.35,
-        "max_tokens": 3000,
+        "max_tokens": 8000,
         "stream": True,
     }
     url = f"{base_url.rstrip('/')}/chat/completions"

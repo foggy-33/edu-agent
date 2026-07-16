@@ -32,6 +32,7 @@ from app.learning.agents import (
     _source_note,
     _source_points,
     _trace,
+    code_agent,
     integration_agent,
     planner_agent,
     profile_agent,
@@ -258,6 +259,109 @@ def _reading_fallback(state: LearningState) -> str:
     )
 
 
+def _code_fallback(state: LearningState) -> str:
+    topic = state['chapter']
+    weakness = state['weakness']
+    goal = state['goal']
+    code = (
+        f"# {topic} 代码实操案例\n\n"
+        "## 一、案例背景\n"
+        f"本案例通过编程实践加深对\"{weakness}\"的理解，适用于\"{goal}\"场景。\n\n"
+        "## 二、完整代码\n"
+        "```python\n"
+        f"# 案例：{topic} 核心算法实现\n"
+        "# 本代码演示核心概念的实际应用\n"
+        "class AlgorithmDemo:\n"
+        "    def __init__(self, data):\n"
+        "        self.data = data\n"
+        "        self.result = []\n"
+        "\n"
+        "    def process(self):\n"
+        '        """核心处理逻辑：演示关键步骤"""\n'
+        "        for index, item in enumerate(self.data):\n"
+        "            # 步骤1：读取并验证输入\n"
+        "            if item is None:\n"
+        "                continue\n"
+        "            # 步骤2：执行核心操作\n"
+        "            processed = self._transform(item)\n"
+        "            # 步骤3：收集结果\n"
+        "            self.result.append(processed)\n"
+        "        return self.result\n"
+        "\n"
+        "    def _transform(self, item):\n"
+        '        """单步变换：此处替换为具体算法逻辑"""\n'
+        "        return item * 2  # 示例操作\n"
+        "\n"
+        "\n"
+        'if __name__ == "__main__":\n'
+        "    # 测试用例\n"
+        "    demo = AlgorithmDemo([1, 2, 3, 4, 5])\n"
+        "    output = demo.process()\n"
+        '    print("输入数据:", [1, 2, 3, 4, 5])\n'
+        '    print("处理结果:", output)\n'
+        "```\n\n"
+        "## 三、运行结果\n"
+        "```\n"
+        "输入数据: [1, 2, 3, 4, 5]\n"
+        "处理结果: [2, 4, 6, 8, 10]\n"
+        "```\n\n"
+        "## 四、关键技术点解析\n"
+        "- **封装思想**：将数据和操作封装在类中，提高代码可维护性\n"
+        "- **防御式编程**：对输入进行 None 检查，避免空指针异常\n"
+        "- **单一职责**：每个方法只做一件事，`process` 负责流程，`_transform` 负责具体变换\n\n"
+        "## 五、拓展思考\n"
+        "1. 如果输入数据量很大（百万级），当前实现会有什么性能问题？如何优化？\n"
+        "2. 如何修改代码以支持并行处理？\n"
+        "3. 如果需要处理异常情况（除了 None），应该如何设计错误处理机制？\n"
+        f"{_source_note(state)}"
+    )
+    return code
+
+
+def _path_fallback(state: LearningState) -> str:
+    return (
+        f"# {state['chapter']} 学习路径规划\n\n"
+        "## 一、学习总目标\n"
+        f"掌握\"{state['weakness']}\"相关核心知识，能够独立完成相关习题和实践，达成\"{state['goal']}\"。\n\n"
+        "## 二、阶段划分与学习计划\n\n"
+        "### 阶段一：基础入门\n"
+        "- **学习目标**：建立整体认知，掌握核心概念和基础原理\n"
+        "- **核心知识点**：基本概念、术语定义、发展历史、应用场景\n"
+        "- **推荐资源**：教材第1-3章、课程讲解视频、基础概念思维导图\n"
+        "- **预计时长**：3-5 天\n"
+        "- **依赖关系**：无前置依赖，为后续阶段的基础\n"
+        "- **检验标准**：能够复述核心概念，独立完成基础选择题\n\n"
+        "### 阶段二：深入理解\n"
+        "- **学习目标**：深入理解核心原理和内在机制\n"
+        "- **核心知识点**：工作原理、核心算法、关键技术、实现细节\n"
+        "- **推荐资源**：教材第4-6章、原理讲解、拓展阅读资料\n"
+        "- **预计时长**：5-7 天\n"
+        "- **依赖关系**：需要先完成阶段一的基础概念学习\n"
+        "- **检验标准**：能够解释工作原理，完成中等难度题目\n\n"
+        "### 阶段三：实践应用\n"
+        "- **学习目标**：通过练习和实践巩固知识，提升解题能力\n"
+        "- **核心知识点**：典型例题、解题方法、常见题型、易错点\n"
+        "- **推荐资源**：练习题集、代码实操案例、错题整理\n"
+        "- **预计时长**：5-7 天\n"
+        "- **依赖关系**：需要先完成阶段二的原理学习\n"
+        "- **检验标准**：能够独立完成综合应用题，正确率达到70%以上\n\n"
+        "### 阶段四：综合提升\n"
+        "- **学习目标**：综合运用知识解决复杂问题，形成知识体系\n"
+        "- **核心知识点**：综合应用、跨章节联系、扩展知识、前沿进展\n"
+        "- **推荐资源**：综合练习题、拓展阅读、模拟测试\n"
+        "- **预计时长**：3-5 天\n"
+        "- **依赖关系**：需要完成前三个阶段的学习\n"
+        "- **检验标准**：能够完成综合测试题，形成自己的知识框架\n\n"
+        "## 三、整体学习建议\n\n"
+        "1. **循序渐进**：按照阶段顺序学习，不要跳级，每个阶段扎实掌握后再进入下一阶段\n"
+        "2. **及时复习**：每阶段结束后进行回顾和总结，整理知识框架\n"
+        "3. **多做练习**：理论学习配合练习题，通过实践加深理解\n"
+        "4. **错题整理**：建立错题本，定期回顾薄弱知识点\n"
+        "5. **灵活调整**：根据自身情况调整学习节奏，困难章节多花时间\n"
+        f"{_source_note(state)}"
+    )
+
+
 def _direct_chat_fallback(state: LearningState) -> str:
     return (
         f"你问的是：{state['weakness']}\n\n"
@@ -274,6 +378,8 @@ def _learning_result(state: LearningState) -> dict[str, Any]:
         "exercises": state.get("exercises", ""),
         "exerciseItems": state.get("exerciseItems", []),
         "reading": state.get("reading", ""),
+        "codeCase": state.get("codeCase", ""),
+        "learningPath": state.get("learningPath", ""),
         "review": state.get("review", ""),
         "sources": state.get("sources", []),
         "agentTrace": state.get("agentTrace", []),
@@ -521,6 +627,48 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "message": "知识延伸与学习路径生成完成",
                     "agent": "拓展阅读 Agent",
                     "detail": "拓展阅读已写入 reading",
+                    "state": "done",
+                })
+
+            if "code" in request.resourceTypes:
+                yield _sse("status", {
+                    "message": "流式生成代码实操案例",
+                    "agent": "代码案例 Agent",
+                    "detail": "生成包含完整代码、运行结果和讲解的实操案例，并逐段输出",
+                    "state": "running",
+                })
+                state["codeCase"] = yield from _stream_generated_text(
+                    state,
+                    "codeCase",
+                    "生成 Markdown 格式的代码实操案例，必须包含：案例背景、完整可运行代码（使用合适的编程语言，带详细注释）、运行结果展示、关键技术点解析、拓展思考题五个部分。代码块使用三引号标注语言。",
+                    _code_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "代码案例 Agent", "代码实操案例生成完成")
+                yield _sse("status", {
+                    "message": "代码实操案例生成完成",
+                    "agent": "代码案例 Agent",
+                    "detail": "代码案例已写入 codeCase",
+                    "state": "done",
+                })
+
+            if "path" in request.resourceTypes:
+                yield _sse("status", {
+                    "message": "流式生成学习路径规划",
+                    "agent": "学习路径 Agent",
+                    "detail": "生成阶段划分、目标、资源、时长和依赖关系的学习路径，并逐段输出",
+                    "state": "running",
+                })
+                state["learningPath"] = yield from _stream_generated_text(
+                    state,
+                    "learningPath",
+                    "生成 Markdown 格式的个性化学习路径规划，必须包含：学习总目标、阶段划分（3-5个阶段，每阶段包含：阶段名称、学习目标、核心知识点、推荐学习资源、预计时长、先后依赖关系、检验标准）、整体学习建议。使用清晰的标题层级和列表结构。",
+                    _path_fallback(state),
+                )
+                state["agentTrace"] = _trace(state, "学习路径 Agent", "学习路径规划生成完成")
+                yield _sse("status", {
+                    "message": "学习路径规划生成完成",
+                    "agent": "学习路径 Agent",
+                    "detail": "学习路径已写入 learningPath",
                     "state": "done",
                 })
 

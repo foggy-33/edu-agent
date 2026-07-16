@@ -12,7 +12,7 @@ import type { CollaborativeExerciseItem, CollaborativeLearningRequest, Collabora
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 
-type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'review'
+type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'review'
 type ProcessState = 'running' | 'done'
 
 interface AgentProcessStep {
@@ -54,16 +54,19 @@ const emit = defineEmits<{
 }>()
 
 const resourceOptions: {
-  key: CollaborativeResourceType
-  resultKey: ResultKey
+  key: CollaborativeResourceType | 'chat'
+  resultKey: ResultKey | null
   label: string
   description: string
   icon: string
 }[] = [
+  { key: 'chat', resultKey: null, label: '普通对话', description: '普通问答对话', icon: '◯' },
   { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: '▣' },
   { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: '◇' },
   { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: '✓' },
   { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '○' },
+  { key: 'code', resultKey: 'codeCase', label: '代码实操', description: '生成可运行代码案例与讲解', icon: '⟨⟩' },
+  { key: 'path', resultKey: 'learningPath', label: '学习路线', description: '生成阶段划分和个性化学习路径', icon: '↗' },
 ]
 
 const modelModes: ComposerModeOption[] = [
@@ -91,6 +94,7 @@ const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
 const promptInput = ref<HTMLTextAreaElement | null>(null)
 const selectedTypes = ref<CollaborativeResourceType[]>([])
+const selectedType = ref<CollaborativeResourceType | 'chat'>('chat')
 const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
 const menuOpen = ref(false)
@@ -107,6 +111,8 @@ const streamContent = ref<Record<ResultKey, string>>({
   mindmap: '',
   exercises: '',
   reading: '',
+  codeCase: '',
+  learningPath: '',
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
@@ -122,6 +128,8 @@ const emptyStreamContent = (): Record<ResultKey, string> => ({
   mindmap: '',
   exercises: '',
   reading: '',
+  codeCase: '',
+  learningPath: '',
   review: '',
 })
 
@@ -129,14 +137,14 @@ const availableTabs = computed(() => [
 
   ...(!submittedTypes.value.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
   ...resourceOptions
-    .filter(item => submittedTypes.value.includes(item.key))
-    .map(item => ({ key: item.resultKey, label: item.label })),
+    .filter(item => item.key !== 'chat' && submittedTypes.value.includes(item.key as CollaborativeResourceType))
+    .map(item => ({ key: item.resultKey as ResultKey, label: item.label })),
   ...(submittedTypes.value.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
 ])
 
 void availableTabs.value
 
-const selectedOptions = computed(() => resourceOptions.filter(item => selectedTypes.value.includes(item.key)))
+const selectedOptions = computed(() => resourceOptions.filter(item => item.key !== 'chat' && selectedTypes.value.includes(item.key as CollaborativeResourceType)))
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
@@ -147,8 +155,8 @@ function tabsForTurn(turn: ConversationTurn) {
   return [
     ...(!turn.resourceTypes.length ? [{ key: 'lectureDoc' as ResultKey, label: '对话回答' }] : []),
     ...resourceOptions
-      .filter(item => turn.resourceTypes.includes(item.key))
-      .map(item => ({ key: item.resultKey, label: item.label })),
+      .filter(item => item.key !== 'chat' && turn.resourceTypes.includes(item.key as CollaborativeResourceType))
+      .map(item => ({ key: item.resultKey as ResultKey, label: item.label })),
     ...(turn.resourceTypes.length ? [{ key: 'review' as ResultKey, label: '审核结果' }] : []),
   ]
 }
@@ -190,6 +198,8 @@ const resultTypeLabelMap: Record<string, { label: string; type: string }> = {
   mindmap: { label: '思维导图', type: 'mindmap' },
   exercises: { label: '练习题', type: 'markdown' },
   reading: { label: '阅读材料', type: 'reading' },
+  codeCase: { label: '代码案例', type: 'markdown' },
+  learningPath: { label: '学习路径', type: 'markdown' },
   review: { label: '复习总结', type: 'markdown' },
 }
 
@@ -289,10 +299,9 @@ function setTurnCollapsed(turnId: string, collapsed: boolean) {
   if (turnId === activeTurnId.value) processCollapsed.value = collapsed
 }
 
-function toggleResource(key: CollaborativeResourceType) {
-  selectedTypes.value = selectedTypes.value.includes(key)
-    ? selectedTypes.value.filter(item => item !== key)
-    : [...selectedTypes.value, key]
+function toggleResource(key: CollaborativeResourceType | 'chat') {
+  selectedType.value = key
+  selectedTypes.value = key === 'chat' ? [] : [key]
 }
 
 function removeResource(key: CollaborativeResourceType) {
@@ -446,12 +455,13 @@ function hydrateFromHistory(id: string | null | undefined) {
   currentQuestion.value = lastTurn.question
   result.value = lastTurn.result
   submittedTypes.value = [...lastTurn.resourceTypes]
-  activeTab.value = resourceOptions.find(option => submittedTypes.value.includes(option.key))?.resultKey || 'lectureDoc'
+  activeTab.value = resourceOptions.find(option => option.key !== 'chat' && submittedTypes.value.includes(option.key as CollaborativeResourceType))?.resultKey as ResultKey || 'lectureDoc'
   streamContent.value = {
     lectureDoc: lastTurn.result.lectureDoc || '',
     mindmap: lastTurn.result.mindmap || '',
     exercises: lastTurn.result.exercises || '',
     reading: lastTurn.result.reading || '',
+    codeCase: lastTurn.result.codeCase || '',
     review: lastTurn.result.review || '',
   }
   thinkingSteps.value = [...lastTurn.thinkingSteps]
@@ -669,7 +679,7 @@ async function submit() {
   modelMenuOpen.value = false
   modelSubmenuOpen.value = false
   submittedTypes.value = [...selectedTypes.value]
-  activeTab.value = resourceOptions.find(item => submittedTypes.value.includes(item.key))?.resultKey || 'lectureDoc'
+  activeTab.value = resourceOptions.find(item => item.key !== 'chat' && submittedTypes.value.includes(item.key as CollaborativeResourceType))?.resultKey as ResultKey || 'lectureDoc'
 
   try {
     const response = await fetch('/api/learning/generate/stream', {
@@ -860,8 +870,22 @@ watch(prompt, resizePromptInput)
     <section class="composer-section">
       <div v-if="error" class="composer-error">{{ error }}</div>
 
+      <div class="resource-type-bar">
+        <button
+          v-for="item in resourceOptions"
+          :key="item.key"
+          type="button"
+          :class="{ active: selectedType === item.key }"
+          :disabled="loading"
+          @click="toggleResource(item.key)"
+        >
+          <span class="rt-icon">{{ item.icon }}</span>
+          <span class="rt-label">{{ item.label }}</span>
+        </button>
+      </div>
+
       <div class="composer">
-        <div v-if="selectedOptions.length || selectedFiles.length" class="selected-tools">
+        <div v-if="selectedFiles.length" class="selected-tools">
           <button
             v-for="file in selectedFiles"
             :key="file.id"
@@ -871,15 +895,6 @@ watch(prompt, resizePromptInput)
             @click="toggleFile(file.id)"
           >
             <span>PDF</span>{{ file.name }}<i>×</i>
-          </button>
-          <button
-            v-for="item in selectedOptions"
-            :key="item.key"
-            type="button"
-            :disabled="loading"
-            @click="removeResource(item.key)"
-          >
-            <span>{{ item.icon }}</span>{{ item.label }}<i>×</i>
           </button>
         </div>
 
@@ -913,19 +928,6 @@ watch(prompt, resizePromptInput)
                 </button>
               </div>
               <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
-              <div class="menu-divider"></div>
-              <div class="menu-title">选择生成内容</div>
-              <button
-                v-for="item in resourceOptions"
-                :key="item.key"
-                type="button"
-                :class="{ selected: selectedTypes.includes(item.key) }"
-                @click="toggleResource(item.key)"
-              >
-                <span class="tool-icon">{{ item.icon }}</span>
-                <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
-                <i>{{ selectedTypes.includes(item.key) ? '✓' : '' }}</i>
-              </button>
             </div>
           </div>
 
@@ -1138,7 +1140,7 @@ watch(prompt, resizePromptInput)
 .add-button { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; line-height: 1; }
 .add-button svg { width: 19px; height: 19px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .add-button:hover { background: #e6e6e6; }
-.tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); }
+.tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); z-index: 20; }
 .generate-page.idle .tool-menu { top: 46px; bottom: auto; }
 .menu-title { padding: 8px 10px 6px; color: #888; font-size: 11px; font-weight: 700; }
 .file-options { display: grid; max-height: 190px; overflow-y: auto; }
@@ -1168,6 +1170,45 @@ watch(prompt, resizePromptInput)
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 20px; line-height: 1; }
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-section:focus-within, .composer:focus, .composer textarea:focus, .add-button:focus, .model-button:focus, .model-menu-item:focus, .send-button:focus { outline: none; }
+
+.resource-type-bar {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.resource-type-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #555;
+  font-size: 13px;
+  transition: all 0.2s;
+  backdrop-filter: blur(8px);
+}
+.resource-type-bar button:hover:not(:disabled) {
+  border-color: #b8b8b8;
+  background: #fff;
+  color: #222;
+}
+.resource-type-bar button.active {
+  border-color: #202123;
+  background: #202123;
+  color: #fff;
+}
+.resource-type-bar .rt-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+.resource-type-bar .rt-label {
+  font-weight: 500;
+}
+
 .composer-hint { margin: 7px 0 0; color: rgba(80, 80, 80, .62); text-align: center; font-size: 10px; text-shadow: 0 1px 8px rgba(255, 255, 255, .9); }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }

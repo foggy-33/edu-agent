@@ -12,6 +12,7 @@ import UserCenterPage from './components/UserCenterPage.vue'
 import LearningCenterPage from './components/LearningCenterPage.vue'
 import AuthPage from './components/AuthPage.vue'
 import CollaborativeGeneratePage from './components/CollaborativeGeneratePage.vue'
+import LearningPathPage from './components/LearningPathPage.vue'
 import PortraitPage from './components/PortraitPage.vue'
 import ProfileOnboardingDialog from './components/ProfileOnboardingDialog.vue'
 import { getCurrentUser, logout, type AuthUser } from './api/auth'
@@ -20,7 +21,7 @@ import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/user
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait' | 'learning'
+type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait' | 'learning' | 'path'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -47,6 +48,7 @@ const navIcons = {
   apps: ['M4 4h6v6H4Z', 'M14 4h6v6h-6Z', 'M4 14h6v6H4Z', 'M14 14h6v6h-6Z'],
   more: ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'],
   learning: ['M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v10m-6 0a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2m0 0V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2z'],
+  roadmap: ['M3 4v6h6', 'M9 10V4H3', 'M15 14v6h6', 'M21 14v6h-6', 'M9 10a6 6 0 0 1 6 6', 'M3 10a12 12 0 0 1 12 12'],
 } as const
 
 interface NavItem {
@@ -61,6 +63,7 @@ const navItems: NavItem[] = [
   { key: 'courses', label: '课程', icon: 'project' },
   { key: 'mistakes', label: '错题本', icon: 'evaluate' },
   { key: 'learning', label: '学习中心', icon: 'learning' },
+  { key: 'path', label: '学习路线', icon: 'roadmap' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
 ]
 
@@ -283,6 +286,7 @@ onUnmounted(() => {
         />
         <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" />
         <LearningCenterPage v-else-if="currentPage === 'learning'" @navigate="navigate" />
+        <LearningPathPage v-else-if="currentPage === 'path'" @navigate="navigate" />
         <PortraitPage v-else-if="currentPage === 'portrait'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>

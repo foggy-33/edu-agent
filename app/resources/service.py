@@ -168,14 +168,6 @@ class ResourceService:
             encoding="utf-8",
         )
 
-        # 对于文本类资源，也加入向量库方便检索
-        try:
-            if content.strip() and resource_type in ("markdown", "lecture", "review", "reading"):
-                vector_store = get_vector_store()
-                vector_store.add_user_pdf(file_id, metadata["name"], content)
-        except Exception:
-            pass
-
         return self._normalize_metadata(metadata)
 
     def update_resource_folder(self, user_id: str, file_id: str, course_folder: str) -> dict[str, Any]:
@@ -209,15 +201,23 @@ class ResourceService:
         query: str = "",
         max_chars: int = 2000,
     ) -> tuple[str, list[dict[str, Any]]]:
-        """使用 RAG 检索构建上下文，只返回最相关的片段"""
+        """使用 RAG 检索构建上下文，只返回最相关的片段（仅引用用户上传的 PDF 文件）"""
         blocks: list[str] = []
         sources: list[dict[str, Any]] = []
         seen_file_ids: set[str] = set()
 
-        if query:
-            # 使用 RAG 检索相关片段
+        pdf_file_ids: list[str] = []
+        for fid in dict.fromkeys(file_ids):
+            try:
+                meta = self.get_metadata(user_id, fid)
+                if meta.get("type") == "pdf" and meta.get("source_type") == "uploaded":
+                    pdf_file_ids.append(fid)
+            except Exception:
+                pass
+
+        if query and pdf_file_ids:
             vector_store = get_vector_store()
-            results = vector_store.similarity_search(query, top_k=5, file_ids=file_ids)
+            results = vector_store.similarity_search(query, top_k=5, file_ids=pdf_file_ids)
             
             for result in results:
                 source_name = result.get("source", "")
@@ -230,10 +230,9 @@ class ResourceService:
                         "title": result.get("title", ""),
                     })
                     seen_file_ids.add(file_id)
-        else:
-            # 回退到传统方式（获取前几个文件的部分内容）
+        elif pdf_file_ids:
             remaining = max_chars
-            for file_id in dict.fromkeys(file_ids):
+            for file_id in pdf_file_ids:
                 metadata = self.get_metadata(user_id, file_id)
                 text = (self._resource_dir(file_id) / "content.txt").read_text(encoding="utf-8")
                 excerpt = text[:remaining]
