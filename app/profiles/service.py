@@ -132,6 +132,59 @@ class DynamicProfileService:
         )
         return {"status": "ok", "model": model, "message": content.strip()}
 
+    def initialize_from_onboarding(self, user_id: str, onboarding_data: dict[str, Any]) -> None:
+        grade_level = onboarding_data.get("grade_level", "")
+        major = onboarding_data.get("major", "")
+        weak_subjects = onboarding_data.get("weak_subjects", [])
+        improvement_areas = onboarding_data.get("improvement_areas", [])
+        learning_style = onboarding_data.get("learning_style", [])
+        learning_goal = onboarding_data.get("learning_goal", "")
+
+        base_dimensions: dict[str, Any] = {}
+        if grade_level or major:
+            base_dimensions["专业与年级"] = f"{major or '未明确'} / {grade_level or '未明确'}"
+        if learning_goal:
+            base_dimensions["学习目标"] = learning_goal
+        if learning_style:
+            base_dimensions["认知风格"] = "、".join(learning_style)
+        if improvement_areas:
+            base_dimensions["学习动机"] = "希望提升：" + "、".join(improvement_areas)
+        if weak_subjects:
+            base_dimensions["易错点"] = weak_subjects
+        if learning_style:
+            resource_map = {
+                "视频讲解": "教学视频",
+                "图文讲义": "讲解文档",
+                "思维导图": "思维导图",
+                "练习题": "练习题",
+                "案例实践": "案例实践",
+                "讨论交流": "讲解文档",
+                "自主阅读": "讲解文档",
+            }
+            preferences: list[str] = []
+            for style in learning_style:
+                pref = resource_map.get(style)
+                if pref and pref not in preferences:
+                    preferences.append(pref)
+            if preferences:
+                base_dimensions["资源偏好"] = preferences
+
+        if not base_dimensions:
+            return
+
+        evidence = "新用户初始画像问卷"
+        courses = weak_subjects if weak_subjects else ["未分类画像"]
+        for course in courses[:3]:
+            current = self.get_profile(user_id, course)
+            if current.get("version", 0) > 0:
+                continue
+            course_dimensions = dict(base_dimensions)
+            if weak_subjects and course in weak_subjects:
+                course_dimensions["易错点"] = [course]
+            with self._update_lock:
+                profile = self._merge(current, course_dimensions, evidence)
+                self.store.save(user_id, course, profile)
+
     def update_from_evaluation(self, *, user_id: str, course: str, result: dict[str, Any]) -> dict[str, Any]:
         accuracy = result.get("score_summary", {}).get("accuracy")
         if accuracy is not None and float(accuracy) <= 1:

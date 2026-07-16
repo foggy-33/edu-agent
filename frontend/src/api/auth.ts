@@ -2,6 +2,37 @@ export interface AuthUser {
   username: string
   display_name: string
   created_at: string
+  onboarding_completed: boolean
+  avatar: string
+  phone: string
+  email: string
+  school: string
+  major: string
+  grade_level: string
+  learning_goal?: string
+}
+
+export interface UserProfileUpdate {
+  display_name?: string
+  avatar?: string
+  phone?: string
+  email?: string
+  school?: string
+  major?: string
+  grade_level?: string
+  learning_goal?: string
+}
+
+export async function updateUserProfile(data: UserProfileUpdate): Promise<AuthUser> {
+  const result = await authRequest<{ user: AuthUser }>('profile', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+  return result.user
+}
+
+export async function getUserProfile(): Promise<AuthUser> {
+  return authRequest<AuthUser>('profile')
 }
 
 interface AuthResponse {
@@ -62,4 +93,30 @@ export async function logout(): Promise<void> {
   } finally {
     localStorage.removeItem(TOKEN_KEY)
   }
+}
+
+export interface OnboardingProfile {
+  grade_level: string
+  major: string
+  weak_subjects: string[]
+  improvement_areas: string[]
+  learning_style: string[]
+  learning_goal: string
+  school: string
+}
+
+export interface OnboardingStatus {
+  onboarding_completed: boolean
+  onboarding_profile: OnboardingProfile
+}
+
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  return authRequest<OnboardingStatus>('onboarding')
+}
+
+export async function saveOnboardingProfile(profile: OnboardingProfile): Promise<OnboardingStatus> {
+  return authRequest<OnboardingStatus>('onboarding', {
+    method: 'POST',
+    body: JSON.stringify(profile),
+  })
 }

@@ -13,6 +13,7 @@ import LearningCenterPage from './components/LearningCenterPage.vue'
 import AuthPage from './components/AuthPage.vue'
 import CollaborativeGeneratePage from './components/CollaborativeGeneratePage.vue'
 import PortraitPage from './components/PortraitPage.vue'
+import ProfileOnboardingDialog from './components/ProfileOnboardingDialog.vue'
 import { getCurrentUser, logout, type AuthUser } from './api/auth'
 import { CONVERSATION_HISTORY_EVENT, loadConversationHistory, type ConversationHistoryItem } from './api/conversationHistory'
 import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
@@ -27,6 +28,7 @@ const userProfile = ref(loadUserProfile())
 const authUser = ref<AuthUser | null>(null)
 const authChecking = ref(true)
 const loggingOut = ref(false)
+const showOnboarding = ref(false)
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const selectedCourse = ref<Course | null>(null)
 const initialConversationHistory = loadConversationHistory()
@@ -107,9 +109,27 @@ function handleAuthenticated(user: AuthUser) {
     ...loadUserProfile(),
     name: user.display_name,
     userId: user.username,
+    avatar: user.avatar,
+    onboardingCompleted: user.onboarding_completed,
   }
   saveUserProfile(profile)
   userProfile.value = profile
+  if (!user.onboarding_completed) {
+    setTimeout(() => {
+      showOnboarding.value = true
+    }, 500)
+  }
+}
+
+function handleOnboardingCompleted() {
+  showOnboarding.value = false
+  const profile = loadUserProfile()
+  profile.onboardingCompleted = true
+  userProfile.value = profile
+}
+
+function handleOnboardingSkipped() {
+  showOnboarding.value = false
 }
 
 async function handleLogout() {
@@ -128,7 +148,14 @@ onMounted(async () => {
   window.addEventListener(USER_PROFILE_EVENT, handleUserProfileUpdate)
   window.addEventListener(CONVERSATION_HISTORY_EVENT, handleConversationHistoryUpdate)
   const user = await getCurrentUser()
-  if (user) handleAuthenticated(user)
+  if (user) {
+    handleAuthenticated(user)
+    if (!user.onboarding_completed && !userProfile.value.onboardingCompleted) {
+      setTimeout(() => {
+        showOnboarding.value = true
+      }, 800)
+    }
+  }
   authChecking.value = false
 })
 onUnmounted(() => {
@@ -141,6 +168,11 @@ onUnmounted(() => {
   <div v-if="authChecking" class="auth-loading"><div class="brand-mark">AI</div><span>正在进入智学空间...</span></div>
   <AuthPage v-else-if="!authUser" @authenticated="handleAuthenticated" />
   <div v-else class="app-shell">
+    <ProfileOnboardingDialog
+      v-if="showOnboarding"
+      @completed="handleOnboardingCompleted"
+      @skipped="handleOnboardingSkipped"
+    />
     <aside 
       :class="[
         'app-sidebar',

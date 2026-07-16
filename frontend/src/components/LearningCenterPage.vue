@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz } from '../api/client'
+import { getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz, getLearningStats } from '../api/client'
 import { loadUserProfile } from '../api/userProfile'
 import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 
@@ -10,16 +10,19 @@ defineEmits<{
 
 const userProfile = ref(loadUserProfile())
 const profileLoading = ref(false)
+const statsLoading = ref(false)
 const profileError = ref('')
 const subjectProfiles = ref<SubjectProfileSummary[]>([])
 const selectedCourse = ref('数据库系统')
 const portrait = ref<DynamicProfile | null>(null)
+const overallStats = ref<any>(null)
+const courseStats = ref<any>(null)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const activeSubject = computed(() => subjectProfiles.value.find(item => item.course === selectedCourse.value))
 const radarMetrics = computed<[string, number][]>(() => {
-  const source = portrait.value?.radar_metrics || activeSubject.value?.radar_metrics || {}
-  const entries = Object.entries(source)
+  const source = portrait.value?.radar_metrics || activeSubject.value?.radar_metrics || courseStats.value?.radar_metrics || {}
+  const entries = Object.entries(source) as [string, number][]
   if (entries.length) return entries
   return [
     ['概念理解', 52],
@@ -57,10 +60,13 @@ const radarRings = computed(() => [20, 40, 60, 80].map(radius => {
 }))
 
 const learningStats = computed(() => ({
-  totalStudyHours: Math.floor(Math.random() * 50) + 20,
-  completedCourses: Math.floor(Math.random() * 5) + 2,
-  correctRate: Math.floor(Math.random() * 20) + 75,
-  streakDays: Math.floor(Math.random() * 14) + 1,
+  totalStudyHours: overallStats.value?.total_study_hours ?? 0,
+  completedCourses: overallStats.value?.completed_courses ?? 0,
+  correctRate: overallStats.value?.correct_rate ?? 0,
+  streakDays: overallStats.value?.streak_days ?? 0,
+  totalMistakes: overallStats.value?.total_mistakes ?? 0,
+  masteredMistakes: overallStats.value?.mastered_mistakes ?? 0,
+  totalResources: overallStats.value?.total_resources ?? 0,
 }))
 
 const evalCourse = ref('数据库系统')
@@ -73,20 +79,17 @@ const evalQuizCurrentIndex = ref(0)
 const evalQuizAnswers = ref<Record<string, string>>({})
 const evalQuizFinished = ref(false)
 
-const recentEvaluations = ref([
-  { date: '2024-01-15', course: '数据库系统', score: 85 },
-  { date: '2024-01-10', course: '数据结构', score: 78 },
-  { date: '2024-01-05', course: '算法设计', score: 92 },
-])
-
-const averageScore = computed(() => {
-  if (recentEvaluations.value.length === 0) return 0
-  return Math.round(recentEvaluations.value.reduce((sum, e) => sum + e.score, 0) / recentEvaluations.value.length)
-})
-
-const passRate = computed(() => {
-  const passed = recentEvaluations.value.filter(e => e.score >= 60).length
-  return Math.round((passed / recentEvaluations.value.length) * 100)
+const evaluationStats = computed(() => {
+  const totalMistakes = courseStats.value?.total_mistakes ?? 0
+  const mastered = courseStats.value?.mastered_mistakes ?? 0
+  const correctRate = courseStats.value?.correct_rate ?? 0
+  return {
+    totalCount: totalMistakes,
+    avgScore: correctRate,
+    passRate: correctRate,
+    mastered,
+    unmastered: courseStats.value?.unmastered_mistakes ?? 0,
+  }
 })
 
 const mockSmartResult = {
@@ -186,15 +189,8 @@ async function handleFinishQuiz() {
     })
     evalResult.value = response
 
-    const accuracy = Math.round(response.score_summary.accuracy)
-    recentEvaluations.value.unshift({
-      date: new Date().toISOString().split('T')[0],
-      course: evalCourse.value,
-      score: accuracy,
-    })
-    if (recentEvaluations.value.length > 10) {
-      recentEvaluations.value.pop()
-    }
+    await loadCourseStats(evalCourse.value)
+    await loadOverallStats()
   } catch {
   } finally {
     evalLoading.value = false
@@ -208,6 +204,7 @@ async function loadPortrait(course = selectedCourse.value) {
     selectedCourse.value = course
     const result = await getDynamicProfile(userProfile.value.userId, course)
     portrait.value = result.profile
+    await loadCourseStats(course)
   } catch (err) {
     portrait.value = null
     profileError.value = err instanceof Error ? err.message : '画像加载失败'
@@ -216,14 +213,36 @@ async function loadPortrait(course = selectedCourse.value) {
   }
 }
 
+async function loadOverallStats() {
+  try {
+    const result = await getLearningStats(userProfile.value.userId)
+    overallStats.value = result.stats
+  } catch (err) {
+    console.error('加载学习统计失败:', err)
+  }
+}
+
+async function loadCourseStats(course: string) {
+  try {
+    const result = await getLearningStats(userProfile.value.userId, course)
+    courseStats.value = result.stats
+  } catch (err) {
+    console.error('加载课程统计失败:', err)
+  }
+}
+
 async function loadProfileOverview() {
   profileLoading.value = true
+  statsLoading.value = true
   profileError.value = ''
   try {
-    const result = await listDynamicProfiles(userProfile.value.userId)
-    subjectProfiles.value = result.profiles
-    if (result.profiles[0]) {
-      await loadPortrait(result.profiles[0].course)
+    const [profileResult] = await Promise.all([
+      listDynamicProfiles(userProfile.value.userId),
+      loadOverallStats(),
+    ])
+    subjectProfiles.value = profileResult.profiles
+    if (profileResult.profiles[0]) {
+      await loadPortrait(profileResult.profiles[0].course)
     } else {
       await loadPortrait(selectedCourse.value)
     }
@@ -231,6 +250,7 @@ async function loadProfileOverview() {
     profileError.value = err instanceof Error ? err.message : '画像加载失败'
   } finally {
     profileLoading.value = false
+    statsLoading.value = false
   }
 }
 
@@ -371,16 +391,16 @@ onMounted(loadProfileOverview)
 
         <div class="evaluate-stats">
           <div class="evaluate-stat">
-            <span class="stat-num">{{ recentEvaluations.length }}</span>
-            <span class="stat-text">评估次数</span>
+            <span class="stat-num">{{ evaluationStats.totalCount }}</span>
+            <span class="stat-text">错题总数</span>
           </div>
           <div class="evaluate-stat">
-            <span class="stat-num">{{ averageScore }}</span>
-            <span class="stat-text">平均得分</span>
+            <span class="stat-num">{{ evaluationStats.mastered }}</span>
+            <span class="stat-text">已掌握</span>
           </div>
           <div class="evaluate-stat">
-            <span class="stat-num">{{ passRate }}%</span>
-            <span class="stat-text">通过率</span>
+            <span class="stat-num">{{ evaluationStats.passRate }}%</span>
+            <span class="stat-text">掌握率</span>
           </div>
         </div>
 
@@ -499,12 +519,14 @@ onMounted(loadProfileOverview)
         </div>
 
         <div class="eval-history">
-          <h4>历史评估记录</h4>
+          <h4>薄弱知识点</h4>
           <div class="history-list">
-            <div v-for="(record, index) in recentEvaluations" :key="index" class="history-item">
-              <span class="history-course">{{ record.course }}</span>
-              <span :class="['history-score', record.score >= 90 ? 'excellent' : record.score >= 70 ? 'good' : 'poor']">{{ record.score }}分</span>
-              <span class="history-date">{{ record.date }}</span>
+            <div v-if="!courseStats?.weak_topics?.length" class="history-empty">
+              暂无数据，开始学习后会自动分析薄弱点
+            </div>
+            <div v-for="(topic, index) in courseStats?.weak_topics || []" :key="index" class="history-item">
+              <span class="history-course">📌 {{ topic }}</span>
+              <span class="history-score poor">待加强</span>
             </div>
           </div>
         </div>

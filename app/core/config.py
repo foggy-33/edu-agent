@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     profile_data_dir: str = "./data/profiles"
     resource_data_dir: str = "./data/resources"
     user_data_file: str = "./data/auth/users.json"
+    avatar_dir: str = "./data/avatars"
 
 
 @lru_cache

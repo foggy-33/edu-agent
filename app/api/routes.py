@@ -11,13 +11,17 @@ from app.api.schemas import (
     EvaluateRequest,
     LearningRequest,
     LoginRequest,
+    OnboardingProfileRequest,
     ProfileChatRequest,
     ProfileInterviewRequest,
     QuizAnswerRequest,
     QuizQuestion,
     RegisterRequest,
+    SaveGeneratedResourceRequest,
     SiliconFlowConfig,
     SmartEvaluateRequest,
+    UpdateResourceFolderRequest,
+    UpdateUserProfileRequest,
 )
 from app.auth.service import AuthError, AuthService
 from app.learning.agents import (
@@ -305,6 +309,52 @@ def logout(authorization: str | None = Header(default=None)) -> None:
     auth_service.logout(bearer_token(authorization))
 
 
+@router.get("/auth/onboarding")
+def get_onboarding_status(authorization: str | None = Header(default=None)) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+        return auth_service.get_onboarding_status(user["username"])
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.post("/auth/onboarding")
+def save_onboarding_profile(
+    request: OnboardingProfileRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+        profile_data = request.model_dump()
+        result = auth_service.save_onboarding_profile(user["username"], profile_data)
+        profile_service.initialize_from_onboarding(user["username"], profile_data)
+        return result
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.get("/auth/profile")
+def get_user_profile(authorization: str | None = Header(default=None)) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+        return auth_service.get_profile(user["username"])
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.put("/auth/profile")
+def update_user_profile(
+    request: UpdateUserProfileRequest,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+        result = auth_service.update_profile(user["username"], request.model_dump())
+        return {"user": result, "message": "资料更新成功"}
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
 @router.post("/analyze")
 def analyze(request: LearningRequest) -> dict:
     return {"profile": _basic_profile(request.course, request.message)}
@@ -543,11 +593,27 @@ def list_resources(user_id: str) -> dict:
 def download_resource(file_id: str, user_id: str) -> FileResponse:
     try:
         metadata = resource_service.get_metadata(user_id, file_id)
-        return FileResponse(
-            resource_service.get_pdf_path(user_id, file_id),
-            media_type="application/pdf",
-            filename=metadata["name"],
-        )
+        resource_type = metadata.get("type", "pdf")
+        if resource_type == "pdf":
+            path = resource_service.get_pdf_path(user_id, file_id)
+            media_type = "application/pdf"
+            filename = metadata["name"]
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+        else:
+            path = resource_service.get_content_path(user_id, file_id)
+            media_type = "text/markdown; charset=utf-8"
+            ext_map = {
+                "markdown": ".md",
+                "mindmap": ".mmd",
+                "lecture": ".md",
+                "review": ".md",
+                "reading": ".md",
+                "exercises": ".md",
+            }
+            ext = ext_map.get(resource_type, ".txt")
+            filename = metadata["name"] + ext
+        return FileResponse(path, media_type=media_type, filename=filename)
     except ResourceError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -555,10 +621,43 @@ def download_resource(file_id: str, user_id: str) -> FileResponse:
 @router.get("/resources/{file_id}/preview")
 def preview_resource(file_id: str, user_id: str) -> FileResponse:
     try:
-        return FileResponse(
-            resource_service.get_pdf_path(user_id, file_id),
-            media_type="application/pdf",
-        )
+        metadata = resource_service.get_metadata(user_id, file_id)
+        resource_type = metadata.get("type", "pdf")
+        if resource_type == "pdf":
+            path = resource_service.get_pdf_path(user_id, file_id)
+            media_type = "application/pdf"
+        else:
+            path = resource_service.get_content_path(user_id, file_id)
+            media_type = "text/plain; charset=utf-8"
+        return FileResponse(path, media_type=media_type)
+    except ResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/avatars/{filename}")
+def get_avatar(filename: str) -> FileResponse:
+    from pathlib import Path
+    from app.core.config import get_settings
+    avatar_dir = Path(get_settings().avatar_dir)
+    filepath = avatar_dir / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="头像不存在")
+    ext = filepath.suffix.lower()
+    media_type = "image/png"
+    if ext in (".jpg", ".jpeg"):
+        media_type = "image/jpeg"
+    elif ext == ".webp":
+        media_type = "image/webp"
+    elif ext == ".gif":
+        media_type = "image/gif"
+    return FileResponse(filepath, media_type=media_type)
+
+
+@router.get("/resources/{file_id}/content")
+def get_resource_content(file_id: str, user_id: str) -> dict:
+    try:
+        content = resource_service.get_resource_content(user_id, file_id)
+        return {"content": content}
     except ResourceError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -569,6 +668,37 @@ def delete_resource(file_id: str, user_id: str) -> None:
         resource_service.delete(user_id, file_id)
     except ResourceError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/resources/generated", status_code=201)
+def save_generated_resource(request: SaveGeneratedResourceRequest) -> dict:
+    try:
+        resource = resource_service.save_generated_resource(
+            user_id=request.user_id,
+            name=request.name,
+            content=request.content,
+            resource_type=request.resource_type,
+            course_folder=request.course_folder,
+        )
+        return {"resource": resource}
+    except ResourceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.put("/resources/{file_id}/folder")
+def update_resource_folder(file_id: str, request: UpdateResourceFolderRequest) -> dict:
+    try:
+        resource = resource_service.update_resource_folder(
+            request.user_id, file_id, request.course_folder
+        )
+        return {"resource": resource}
+    except ResourceError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/resources/categories/list")
+def list_categories(user_id: str) -> dict:
+    return {"categories": resource_service.list_categories(user_id)}
 
 
 COURSE_CATALOG: list[dict[str, Any]] = [
@@ -765,6 +895,15 @@ def workflow() -> dict:
 @router.get("/profiles/{user_id}/subjects")
 def list_dynamic_profiles(user_id: str) -> dict:
     return {"profiles": profile_service.list_profiles(user_id)}
+
+
+@router.get("/learning/stats/{user_id}")
+def get_learning_stats(user_id: str, course: str | None = None) -> dict:
+    from app.learning.stats_service import LearningStatsService
+    stats_service = LearningStatsService()
+    if course:
+        return {"stats": stats_service.get_course_stats(user_id, course)}
+    return {"stats": stats_service.get_overall_stats(user_id)}
 
 
 @router.get("/profiles/{user_id}")

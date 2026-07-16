@@ -10,7 +10,13 @@ export const defaultUserProfile: UserProfile = {
   phone: '',
   email: '',
   school: '',
-  major: ''
+  major: '',
+  gradeLevel: '',
+  weakSubjects: [],
+  improvementAreas: [],
+  learningStyle: [],
+  learningGoal: '',
+  onboardingCompleted: false,
 }
 
 export function loadUserProfile(): UserProfile {

@@ -81,11 +81,11 @@ class MistakeStore:
                 continue
 
     def get_weak_topics(self, user_id: str, course: str, limit: int = 5) -> list[str]:
-        """获取薄弱知识点"""
+        """获取薄弱章节"""
         mistakes = self.list_mistakes(user_id, course)
         topic_counts = {}
         for m in mistakes:
-            topic = m.get("topic") or m.get("chapter") or "综合"
+            topic = m.get("chapter") or m.get("topic") or "综合"
             topic_counts[topic] = topic_counts.get(topic, 0) + m.get("mistake_count", 1)
         
         return [topic for topic, _ in sorted(topic_counts.items(), key=lambda x: -x[1])][:limit]

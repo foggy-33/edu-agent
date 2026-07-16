@@ -5,7 +5,7 @@ import {
   getConversationHistoryItem,
   saveConversationHistoryItem,
 } from '../api/conversationHistory'
-import { listResources, addMistake } from '../api/client'
+import { addMistake, listCategories, listResources, saveGeneratedResource } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
@@ -159,6 +159,97 @@ function contentForTurn(turn: ConversationTurn, key: ResultKey) {
 
 function exerciseItemsForTurn(turn: ConversationTurn) {
   return turn.result?.exerciseItems || []
+}
+
+function uniqueSources(sources: Array<{ id: string; name: string }> | undefined) {
+  if (!sources || !sources.length) return []
+  const seen = new Set<string>()
+  const result: Array<{ id: string; name: string }> = []
+  for (const s of sources) {
+    if (s.id && !seen.has(s.id)) {
+      seen.add(s.id)
+      result.push(s)
+    } else if (!s.id && !result.some(item => item.name === s.name)) {
+      result.push(s)
+    }
+  }
+  return result
+}
+
+const saveDialogVisible = ref(false)
+const saveTargetTurn = ref<ConversationTurn | null>(null)
+const saveResourceName = ref('')
+const saveCategory = ref('AI生成')
+const saveCategories = ref<Array<{ name: string; count: number }>>([])
+const savingResource = ref(false)
+const saveSuccess = ref(false)
+const saveError = ref('')
+
+const resultTypeLabelMap: Record<string, { label: string; type: string }> = {
+  lectureDoc: { label: '讲义', type: 'lecture' },
+  mindmap: { label: '思维导图', type: 'mindmap' },
+  exercises: { label: '练习题', type: 'markdown' },
+  reading: { label: '阅读材料', type: 'reading' },
+  review: { label: '复习总结', type: 'markdown' },
+}
+
+const activeTabLabel = computed(() => resultTypeLabelMap[activeTab.value]?.label || activeTab.value)
+const activeTabType = computed(() => resultTypeLabelMap[activeTab.value]?.type || 'markdown')
+
+async function openSaveDialog(turn: ConversationTurn) {
+  saveTargetTurn.value = turn
+  saveResourceName.value = `${currentQuestion.value || '学习资料'}-${activeTabLabel.value}`
+  saveError.value = ''
+  saveSuccess.value = false
+  savingResource.value = false
+  try {
+    const result = await listCategories(userProfile.value.userId)
+    saveCategories.value = result.categories || []
+    if (!saveCategories.value.some(c => c.name === 'AI生成')) {
+      saveCategory.value = saveCategories.value[0]?.name || 'AI生成'
+    } else {
+      saveCategory.value = 'AI生成'
+    }
+  } catch {
+    saveCategories.value = []
+  }
+  saveDialogVisible.value = true
+}
+
+function closeSaveDialog() {
+  saveDialogVisible.value = false
+  saveTargetTurn.value = null
+  saveResourceName.value = ''
+  saveError.value = ''
+  saveSuccess.value = false
+}
+
+async function confirmSave() {
+  if (!saveTargetTurn.value || !saveResourceName.value.trim()) return
+  const content = contentForTurn(saveTargetTurn.value, activeTab.value as ResultKey)
+  if (!content.trim()) {
+    saveError.value = '当前内容为空，无法保存'
+    return
+  }
+  savingResource.value = true
+  saveError.value = ''
+  try {
+    await saveGeneratedResource({
+      user_id: userProfile.value.userId,
+      name: saveResourceName.value.trim(),
+      content: content,
+      resource_type: activeTabType.value,
+      course_folder: saveCategory.value.trim() || 'AI生成',
+    })
+    saveSuccess.value = true
+    setTimeout(() => {
+      closeSaveDialog()
+    }, 1200)
+  } catch (reason) {
+    saveError.value = reason instanceof Error ? reason.message : '保存失败'
+  } finally {
+    savingResource.value = false
+  }
 }
 
 function isActiveTurn(turn: ConversationTurn) {
@@ -656,9 +747,9 @@ watch(prompt, resizePromptInput)
             </ol>
           </div>
 
-          <div v-if="turn.result?.sources.length" class="result-sources">
+          <div v-if="uniqueSources(turn.result?.sources).length" class="result-sources">
             <span>参考资料</span>
-            <b v-for="source in turn.result.sources" :key="source.id">{{ source.name }}</b>
+            <b v-for="source in uniqueSources(turn.result?.sources)" :key="source.id">{{ source.name }}</b>
           </div>
 
           <div v-if="tabsForTurn(turn).length > 1" class="result-tabs">
@@ -670,76 +761,96 @@ watch(prompt, resizePromptInput)
             >
               {{ tab.label }}
             </button>
+            <button
+              v-if="turn.result && isActiveTurn(turn)"
+              class="save-to-library-btn"
+              title="保存到资料库"
+              @click="openSaveDialog(turn)"
+            >
+              💾 保存到资料库
+            </button>
           </div>
 
           <div class="result-content">
-            <MermaidRenderer v-if="activeTab === 'mindmap' && isActiveTurn(turn)" :chart="contentForTurn(turn, 'mindmap')" />
-            <div v-else-if="activeTab === 'exercises' && isActiveTurn(turn) && exerciseItemsForTurn(turn).length" class="practice-list">
-              <article
-                v-for="(item, index) in exerciseItemsForTurn(turn)"
-                :key="item.id"
-                :class="[
-                  'practice-card',
-                  exerciseSubmitted[item.id] ? (isExerciseCorrect(item) ? 'practice-correct' : 'practice-wrong') : ''
-                ]"
-              >
-                <div class="practice-head">
-                  <span>{{ item.level }}</span>
-                  <b>{{ index + 1 }}</b>
-                </div>
-                <h3>{{ item.question }}</h3>
+            <template v-if="isActiveTurn(turn)">
+              <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="contentForTurn(turn, 'mindmap')" />
+              <div v-else-if="activeTab === 'exercises' && exerciseItemsForTurn(turn).length" class="practice-list">
+                <article
+                  v-for="(item, index) in exerciseItemsForTurn(turn)"
+                  :key="item.id"
+                  :class="[
+                    'practice-card',
+                    exerciseSubmitted[item.id] ? (isExerciseCorrect(item) ? 'practice-correct' : 'practice-wrong') : ''
+                  ]"
+                >
+                  <div class="practice-head">
+                    <span>{{ item.level }}</span>
+                    <b>{{ index + 1 }}</b>
+                  </div>
+                  <h3>{{ item.question }}</h3>
 
-                <div v-if="item.type === 'single' || item.type === 'judge'" class="practice-options">
-                  <button
-                    v-for="option in item.options"
-                    :key="option.label"
-                    type="button"
-                    :class="{ selected: exerciseAnswers[item.id] === option.label }"
+                  <div v-if="item.type === 'single' || item.type === 'judge'" class="practice-options">
+                    <button
+                      v-for="option in item.options"
+                      :key="option.label"
+                      type="button"
+                      :class="{ selected: exerciseAnswers[item.id] === option.label }"
+                      :disabled="exerciseSubmitted[item.id]"
+                      @click="setExerciseAnswer(item.id, option.label)"
+                    >
+                      <span>{{ option.label }}</span>
+                      {{ option.text }}
+                    </button>
+                  </div>
+
+                  <textarea
+                    v-else-if="item.type === 'short'"
+                    :value="exerciseAnswers[item.id] || ''"
                     :disabled="exerciseSubmitted[item.id]"
-                    @click="setExerciseAnswer(item.id, option.label)"
-                  >
-                    <span>{{ option.label }}</span>
-                    {{ option.text }}
-                  </button>
-                </div>
+                    rows="3"
+                    placeholder="请输入你的答案"
+                    @input="updateExerciseAnswer(item.id, $event)"
+                  ></textarea>
 
-                <textarea
-                  v-else-if="item.type === 'short'"
-                  :value="exerciseAnswers[item.id] || ''"
-                  :disabled="exerciseSubmitted[item.id]"
-                  rows="3"
-                  placeholder="请输入你的答案"
-                  @input="updateExerciseAnswer(item.id, $event)"
-                ></textarea>
+                  <input
+                    v-else
+                    :value="exerciseAnswers[item.id] || ''"
+                    :disabled="exerciseSubmitted[item.id]"
+                    placeholder="请输入答案"
+                    @input="updateExerciseAnswer(item.id, $event)"
+                  />
 
-                <input
-                  v-else
-                  :value="exerciseAnswers[item.id] || ''"
-                  :disabled="exerciseSubmitted[item.id]"
-                  placeholder="请输入答案"
-                  @input="updateExerciseAnswer(item.id, $event)"
-                />
+                  <div class="practice-actions">
+                    <button
+                      v-if="!exerciseSubmitted[item.id]"
+                      type="button"
+                      :disabled="!exerciseAnswers[item.id]?.trim()"
+                      @click="submitExercise(item)"
+                    >
+                      提交答案
+                    </button>
+                    <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
+                  </div>
 
-                <div class="practice-actions">
-                  <button
-                    v-if="!exerciseSubmitted[item.id]"
-                    type="button"
-                    :disabled="!exerciseAnswers[item.id]?.trim()"
-                    @click="submitExercise(item)"
-                  >
-                    提交答案
-                  </button>
-                  <button v-else type="button" @click="retryExercise(item.id)">重新作答</button>
-                </div>
-
-                <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
-                  <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
-                  <p>正确答案：{{ item.answer }}</p>
-                  <p>{{ item.explanation }}</p>
-                </div>
-              </article>
-            </div>
-            <MarkdownRenderer v-else :content="contentForTurn(turn, isActiveTurn(turn) ? activeTab : tabsForTurn(turn)[0]?.key || 'lectureDoc')" />
+                  <div v-if="exerciseSubmitted[item.id]" class="practice-feedback">
+                    <strong>{{ isExerciseCorrect(item) ? '回答正确' : '回答错误' }}</strong>
+                    <p>正确答案：{{ item.answer }}</p>
+                    <p>{{ item.explanation }}</p>
+                  </div>
+                </article>
+              </div>
+              <MarkdownRenderer v-else :content="contentForTurn(turn, activeTab)" />
+            </template>
+            <template v-else>
+              <MermaidRenderer
+                v-if="contentForTurn(turn, tabsForTurn(turn)[0]?.key || 'lectureDoc') && tabsForTurn(turn)[0]?.key === 'mindmap'"
+                :chart="contentForTurn(turn, 'mindmap')"
+              />
+              <MarkdownRenderer
+                v-else
+                :content="contentForTurn(turn, tabsForTurn(turn)[0]?.key || 'lectureDoc')"
+              />
+            </template>
           </div>
         </div>
       </article>
@@ -885,6 +996,66 @@ watch(prompt, resizePromptInput)
 
       <p class="composer-hint">Enter 发送 · Shift + Enter 换行</p>
     </section>
+
+    <Teleport to="body">
+      <div v-if="saveDialogVisible" class="save-modal-overlay" @click.self="closeSaveDialog">
+        <div class="save-modal">
+          <header class="save-modal-header">
+            <h3>保存到资料库</h3>
+            <button class="save-modal-close" @click="closeSaveDialog">×</button>
+          </header>
+          <div class="save-modal-body">
+            <div v-if="saveSuccess" class="save-success">
+              <div class="success-icon">✓</div>
+              <p>保存成功！</p>
+            </div>
+            <template v-else>
+              <div class="save-form-group">
+                <label>资料名称</label>
+                <input v-model.trim="saveResourceName" type="text" placeholder="输入资料名称" />
+              </div>
+              <div class="save-form-group">
+                <label>资料类型</label>
+                <div class="save-type-info">{{ activeTabLabel }}</div>
+              </div>
+              <div class="save-form-group">
+                <label>选择分类</label>
+                <div class="save-category-list">
+                  <button
+                    v-for="cat in saveCategories"
+                    :key="cat.name"
+                    type="button"
+                    :class="['save-category-btn', saveCategory === cat.name ? 'active' : '']"
+                    @click="saveCategory = cat.name"
+                  >
+                    {{ cat.name }}
+                    <small>{{ cat.count }} 个</small>
+                  </button>
+                </div>
+                <div class="save-new-category">
+                  <input
+                    v-model.trim="saveCategory"
+                    type="text"
+                    placeholder="或输入新分类名称..."
+                  />
+                </div>
+              </div>
+              <div v-if="saveError" class="save-error">{{ saveError }}</div>
+            </template>
+          </div>
+          <div v-if="!saveSuccess" class="save-modal-footer">
+            <button class="save-btn-cancel" @click="closeSaveDialog">取消</button>
+            <button
+              class="save-btn-confirm"
+              :disabled="savingResource || !saveResourceName.trim() || !saveCategory.trim()"
+              @click="confirmSave"
+            >
+              {{ savingResource ? '保存中...' : '确认保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -1020,5 +1191,279 @@ button:disabled { cursor: default; opacity: .65; }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
   .model-submenu { left: auto; right: 0; bottom: calc(100% + 6px); }
+}
+
+.save-to-library-btn {
+  margin-left: auto;
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-to-library-btn:hover {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.save-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  padding: 20px;
+}
+
+.save-modal {
+  width: min(480px, 90vw);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  animation: saveModalIn 0.25s ease;
+}
+
+@keyframes saveModalIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.save-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.save-modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.save-modal-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.save-modal-close:hover {
+  background: #e5e7eb;
+}
+
+.save-modal-body {
+  padding: 20px 22px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.save-form-group {
+  margin-bottom: 18px;
+}
+
+.save-form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.save-form-group input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #1f2937;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.save-form-group input[type="text"]:focus {
+  border-color: #8b5cf6;
+}
+
+.save-type-info {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #f5f3ff;
+  color: #7c3aed;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.save-category-list {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.save-category-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.save-category-btn:hover {
+  border-color: #c4b5fd;
+  background: #faf8ff;
+}
+
+.save-category-btn.active {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.save-category-btn small {
+  color: #9ca3af;
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.save-category-btn.active small {
+  color: #a78bfa;
+}
+
+.save-new-category input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #4b5563;
+  background: #fafafa;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.save-new-category input:focus {
+  border-color: #8b5cf6;
+  border-style: solid;
+  background: #fff;
+}
+
+.save-error {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+}
+
+.save-success {
+  display: grid;
+  justify-items: center;
+  padding: 20px 0;
+  text-align: center;
+}
+
+.success-icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  animation: successPop 0.4s ease;
+}
+
+@keyframes successPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.save-success p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #16a34a;
+}
+
+.save-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.save-btn-cancel {
+  padding: 10px 18px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #4b5563;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.save-btn-cancel:hover {
+  background: #f9fafb;
+}
+
+.save-btn-confirm {
+  padding: 10px 18px;
+  border: 0;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.25);
+  transition: all 0.2s;
+}
+
+.save-btn-confirm:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.3);
+}
+
+.save-btn-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 </style>

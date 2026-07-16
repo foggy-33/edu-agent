@@ -148,3 +148,42 @@ class EvaluateResponse(BaseModel):
     weak_points: list[str]
     analysis: str
     next_steps: list[str]
+
+
+class OnboardingProfileRequest(BaseModel):
+    grade_level: str = ""
+    major: str = ""
+    weak_subjects: list[str] = Field(default_factory=list)
+    improvement_areas: list[str] = Field(default_factory=list)
+    learning_style: list[str] = Field(default_factory=list)
+    learning_goal: str = ""
+    school: str = ""
+
+
+class OnboardingProfileResponse(BaseModel):
+    onboarding_completed: bool
+    onboarding_profile: dict[str, Any]
+
+
+class SaveGeneratedResourceRequest(BaseModel):
+    user_id: str
+    name: str
+    content: str
+    resource_type: str = "markdown"
+    course_folder: str = "AI生成"
+
+
+class UpdateResourceFolderRequest(BaseModel):
+    user_id: str
+    course_folder: str
+
+
+class UpdateUserProfileRequest(BaseModel):
+    display_name: str = ""
+    avatar: str = ""
+    phone: str = ""
+    email: str = ""
+    school: str = ""
+    major: str = ""
+    grade_level: str = ""
+    learning_goal: str = ""

@@ -16,6 +16,8 @@ from app.rag.vector_store import get_vector_store
 
 MAX_PDF_BYTES = 500 * 1024 * 1024
 LEGACY_RESOURCE_FOLDER = "历史资料"
+DEFAULT_CATEGORY = "未分类"
+GENERATED_CATEGORY = "AI生成"
 
 
 class ResourceError(ValueError):
@@ -104,6 +106,16 @@ class ResourceService:
         self.get_metadata(user_id, file_id)
         return self._resource_dir(file_id) / "source.pdf"
 
+    def get_content_path(self, user_id: str, file_id: str) -> Path:
+        self.get_metadata(user_id, file_id)
+        return self._resource_dir(file_id) / "content.txt"
+
+    def get_resource_content(self, user_id: str, file_id: str) -> str:
+        path = self.get_content_path(user_id, file_id)
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+        return ""
+
     def delete(self, user_id: str, file_id: str) -> None:
         self.get_metadata(user_id, file_id)
         with self._lock:
@@ -115,6 +127,77 @@ class ResourceService:
             vector_store.remove_user_pdf(file_id)
         except Exception:
             pass
+
+    def save_generated_resource(
+        self,
+        *,
+        user_id: str,
+        name: str,
+        content: str,
+        resource_type: str,
+        course_folder: str,
+        source_type: str = "generated",
+    ) -> dict[str, Any]:
+        folder = (course_folder or "").strip() or DEFAULT_CATEGORY
+        resource_type = resource_type or "markdown"
+        if resource_type in ("review", "exercises"):
+            resource_type = "markdown"
+
+        file_id = uuid4().hex
+        resource_dir = self.base_dir / file_id
+        resource_dir.mkdir(parents=True, exist_ok=False)
+
+        content_path = resource_dir / "content.txt"
+        content_path.write_text(content, encoding="utf-8")
+
+        metadata = {
+            "id": file_id,
+            "user_id": user_id,
+            "name": name.strip()[:120] or "未命名资料",
+            "type": resource_type,
+            "size": len(content.encode("utf-8")),
+            "page_count": 0,
+            "text_length": len(content),
+            "status": "ready",
+            "course_folder": folder[:60],
+            "source_type": source_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        (resource_dir / "metadata.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        # 对于文本类资源，也加入向量库方便检索
+        try:
+            if content.strip() and resource_type in ("markdown", "lecture", "review", "reading"):
+                vector_store = get_vector_store()
+                vector_store.add_user_pdf(file_id, metadata["name"], content)
+        except Exception:
+            pass
+
+        return self._normalize_metadata(metadata)
+
+    def update_resource_folder(self, user_id: str, file_id: str, course_folder: str) -> dict[str, Any]:
+        metadata = self.get_metadata(user_id, file_id)
+        folder = (course_folder or "").strip() or DEFAULT_CATEGORY
+        resource_dir = self._resource_dir(file_id)
+        metadata_path = resource_dir / "metadata.json"
+        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        data["course_folder"] = folder[:60]
+        metadata_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return self._normalize_metadata(data)
+
+    def list_categories(self, user_id: str) -> list[dict[str, Any]]:
+        resources = self.list_resources(user_id)
+        category_map: dict[str, int] = {}
+        for item in resources:
+            cat = item.get("course_folder") or DEFAULT_CATEGORY
+            category_map[cat] = category_map.get(cat, 0) + 1
+        return [
+            {"name": name, "count": count}
+            for name, count in sorted(category_map.items(), key=lambda x: x[0])
+        ]
 
     def build_context(self, user_id: str, file_ids: list[str], max_chars: int = 24000) -> tuple[str, list[dict[str, Any]]]:
         return self.build_context_with_rag(user_id, file_ids)
@@ -129,6 +212,7 @@ class ResourceService:
         """使用 RAG 检索构建上下文，只返回最相关的片段"""
         blocks: list[str] = []
         sources: list[dict[str, Any]] = []
+        seen_file_ids: set[str] = set()
 
         if query:
             # 使用 RAG 检索相关片段
@@ -137,12 +221,15 @@ class ResourceService:
             
             for result in results:
                 source_name = result.get("source", "")
+                file_id = result.get("metadata", {}).get("file_id", "")
                 blocks.append(f"【文件：{source_name}】\n{result['content']}")
-                sources.append({
-                    "id": result.get("metadata", {}).get("file_id", ""),
-                    "name": source_name,
-                    "title": result.get("title", ""),
-                })
+                if file_id and file_id not in seen_file_ids:
+                    sources.append({
+                        "id": file_id,
+                        "name": source_name,
+                        "title": result.get("title", ""),
+                    })
+                    seen_file_ids.add(file_id)
         else:
             # 回退到传统方式（获取前几个文件的部分内容）
             remaining = max_chars
@@ -192,4 +279,9 @@ class ResourceService:
     def _normalize_metadata(cls, metadata: dict[str, Any]) -> dict[str, Any]:
         folder = (metadata.get("course_folder") or "").strip()
         metadata["course_folder"] = folder[:60] or LEGACY_RESOURCE_FOLDER
+        metadata["source_type"] = metadata.get("source_type", "uploaded")
+        resource_type = metadata.get("type", "pdf")
+        if resource_type in ("review", "exercises"):
+            resource_type = "markdown"
+        metadata["type"] = resource_type
         return metadata

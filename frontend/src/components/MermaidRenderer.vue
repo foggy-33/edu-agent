@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUpdate, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUpdate, onMounted, onUnmounted, ref, watch, getCurrentInstance } from 'vue'
 import mermaid from 'mermaid'
 
 interface MindMapNode {
@@ -15,12 +15,47 @@ interface MindMapConnection {
   d: string
 }
 
+let mermaidInitialized = false
+let renderQueue: Promise<void> = Promise.resolve()
+
+function ensureMermaidInitialized() {
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'loose',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      flowchart: {
+        curve: 'basis',
+        htmlLabels: true,
+        useMaxWidth: true,
+      },
+    })
+    mermaidInitialized = true
+  }
+}
+
+async function queueMermaidRender(id: string, source: string): Promise<{ svg: string }> {
+  return new Promise((resolve, reject) => {
+    renderQueue = renderQueue.then(async () => {
+      try {
+        const result = await mermaid.render(id, source)
+        resolve(result)
+      } catch (err) {
+        reject(err)
+      }
+    })
+  })
+}
+
 const props = defineProps<{
   chart: string
   className?: string
 }>()
 
-const chartId = ref(`mermaid-${Date.now()}`)
+const instance = getCurrentInstance()
+const instanceId = instance?.uid ?? Math.random().toString(36).slice(2, 10)
+const chartId = ref(`mermaid-${instanceId}`)
 const svgContent = ref('')
 const hasError = ref(false)
 const mindMapEl = ref<HTMLElement | null>(null)
@@ -159,17 +194,7 @@ function isMermaidSource(value: string) {
 }
 
 function initMermaid() {
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: 'default',
-    securityLevel: 'loose',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    flowchart: {
-      curve: 'basis',
-      htmlLabels: true,
-      useMaxWidth: true,
-    },
-  })
+  ensureMermaidInitialized()
 }
 
 async function renderMermaid() {
@@ -189,7 +214,8 @@ async function renderMermaid() {
 
   try {
     await mermaid.parse(cleanedChart.value)
-    const { svg } = await mermaid.render(`${chartId.value}-${Date.now()}`, cleanedChart.value)
+    const renderId = `${chartId.value}-${Date.now()}`
+    const { svg } = await queueMermaidRender(renderId, cleanedChart.value)
     svgContent.value = svg
   } catch (err) {
     console.error('Mermaid render error:', err)

@@ -6,4 +6,10 @@ export interface UserProfile {
   email: string
   school: string
   major: string
+  gradeLevel: string
+  weakSubjects: string[]
+  improvementAreas: string[]
+  learningStyle: string[]
+  learningGoal: string
+  onboardingCompleted: boolean
 }

@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   LearningRequest,
   EvaluateRequest,
   GenerateResponse,
@@ -105,6 +105,34 @@ export async function deleteResource(userId: string, fileId: string): Promise<vo
   })
 }
 
+export async function saveGeneratedResource(payload: {
+  user_id: string
+  name: string
+  content: string
+  resource_type: string
+  course_folder: string
+}): Promise<{ resource: UploadedResource }> {
+  return httpRequest<{ resource: UploadedResource }>(`${API_BASE}/resources/generated`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function updateResourceFolder(
+  userId: string,
+  fileId: string,
+  courseFolder: string
+): Promise<{ resource: UploadedResource }> {
+  return httpRequest<{ resource: UploadedResource }>(`${API_BASE}/resources/${encodeURIComponent(fileId)}/folder`, {
+    method: 'PUT',
+    body: JSON.stringify({ user_id: userId, course_folder: courseFolder }),
+  })
+}
+
+export async function listCategories(userId: string): Promise<{ categories: Array<{ name: string; count: number }> }> {
+  return httpRequest(`${API_BASE}/resources/categories/list?user_id=${encodeURIComponent(userId)}`)
+}
+
 export function resourceDownloadUrl(userId: string, fileId: string): string {
   return `${API_BASE}/resources/${encodeURIComponent(fileId)}/download?user_id=${encodeURIComponent(userId)}`
 }
@@ -113,8 +141,17 @@ export function resourcePreviewUrl(userId: string, fileId: string): string {
   return `${API_BASE}/resources/${encodeURIComponent(fileId)}/preview?user_id=${encodeURIComponent(userId)}`
 }
 
+export async function getResourceContent(userId: string, fileId: string): Promise<{ content: string }> {
+  return httpRequest(`${API_BASE}/resources/${encodeURIComponent(fileId)}/content?user_id=${encodeURIComponent(userId)}`)
+}
+
 export async function listDynamicProfiles(userId: string): Promise<{ profiles: SubjectProfileSummary[] }> {
   return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}/subjects`)
+}
+
+export async function getLearningStats(userId: string, course?: string): Promise<{ stats: any }> {
+  const params = course ? `?course=${encodeURIComponent(course)}` : ''
+  return httpRequest(`${API_BASE}/learning/stats/${encodeURIComponent(userId)}${params}`)
 }
 
 export async function chatDynamicProfile(payload: SiliconFlowConfig & {

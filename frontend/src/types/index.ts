@@ -180,11 +180,13 @@ export interface UploadedResource {
   id: string
   user_id: string
   name: string
-  type: 'pdf'
+  type: 'pdf' | 'markdown' | 'mindmap' | 'lecture' | 'review' | 'reading' | 'exercises'
   size: number
   page_count: number
   text_length: number
   status: 'ready'
   course_folder: string
+  source_type: 'uploaded' | 'generated'
   created_at: string
+  summary?: string
 }

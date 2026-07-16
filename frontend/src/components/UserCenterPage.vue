@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { testSiliconFlow } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
+import { updateUserProfile } from '../api/auth'
 
 const emit = defineEmits<{
   logout: []
@@ -19,6 +20,8 @@ const apiTesting = ref(false)
 const apiMessage = ref('')
 const apiError = ref(false)
 
+const userSaving = ref(false)
+
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 
 function chooseAvatar() {
@@ -32,8 +35,8 @@ function handleAvatar(event: Event) {
     userError.value = '请选择图片文件'
     return
   }
-  if (file.size > 2 * 1024 * 1024) {
-    userError.value = '头像图片不能超过 2 MB'
+  if (file.size > 10 * 1024 * 1024) {
+    userError.value = '头像图片不能超过 10 MB'
     return
   }
   const reader = new FileReader()
@@ -44,15 +47,44 @@ function handleAvatar(event: Event) {
   reader.readAsDataURL(file)
 }
 
-function saveProfile() {
+async function saveProfile() {
   if (!userProfile.value.name.trim()) {
     userError.value = '名称不能为空'
     return
   }
   userProfile.value.name = userProfile.value.name.trim()
-  saveUserProfile(userProfile.value)
+  userSaving.value = true
   userError.value = ''
-  userSuccess.value = '个人资料已保存'
+  userSuccess.value = ''
+  try {
+    const result = await updateUserProfile({
+      display_name: userProfile.value.name,
+      avatar: userProfile.value.avatar,
+      phone: userProfile.value.phone,
+      email: userProfile.value.email,
+      school: userProfile.value.school,
+      major: userProfile.value.major,
+      grade_level: userProfile.value.gradeLevel,
+      learning_goal: userProfile.value.learningGoal,
+    })
+    userProfile.value.userId = result.username
+    userProfile.value.name = result.display_name
+    userProfile.value.avatar = result.avatar
+    userProfile.value.phone = result.phone
+    userProfile.value.email = result.email
+    userProfile.value.school = result.school
+    userProfile.value.major = result.major
+    userProfile.value.gradeLevel = result.grade_level
+    if (result.learning_goal !== undefined && result.learning_goal !== null) {
+      userProfile.value.learningGoal = result.learning_goal
+    }
+    saveUserProfile(userProfile.value)
+    userSuccess.value = '个人资料已保存'
+  } catch (err: any) {
+    userError.value = err.message || '保存失败，请稍后重试'
+  } finally {
+    userSaving.value = false
+  }
 }
 
 function reset() {
@@ -101,18 +133,6 @@ async function testApiSettings() {
 
 <template>
   <div class="settings-container">
-    <section class="settings-hero">
-      <div>
-        <span>SETTINGS</span>
-        <h1>账户设置</h1>
-        <p>管理账号资料和系统设置</p>
-      </div>
-      <div class="hero-avatar">
-        <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
-        <span v-else>{{ initials }}</span>
-      </div>
-    </section>
-
     <div class="settings-grid">
       <section class="profile-section">
         <header>
@@ -129,39 +149,10 @@ async function testApiSettings() {
             <div class="preview-name">{{ userProfile.name }}</div>
             <div class="preview-id">ID: {{ userProfile.userId }}</div>
           </div>
-          <button class="btn-secondary" type="button" @click="chooseAvatar">更换头像</button>
-          <input ref="fileInput" type="file" accept="image/*" hidden @change="handleAvatar" />
-          <small class="avatar-hint">支持 JPG、PNG、WebP，文件不超过 2 MB</small>
-        </div>
-
-        <div class="profile-info-grid">
-          <div class="info-card">
-            <div class="info-icon">📱</div>
-            <div class="info-content">
-              <span class="info-label">手机号码</span>
-              <span class="info-value">{{ userProfile.phone || '未填写' }}</span>
-            </div>
-          </div>
-          <div class="info-card">
-            <div class="info-icon">📧</div>
-            <div class="info-content">
-              <span class="info-label">邮箱地址</span>
-              <span class="info-value">{{ userProfile.email || '未填写' }}</span>
-            </div>
-          </div>
-          <div class="info-card">
-            <div class="info-icon">🏛️</div>
-            <div class="info-content">
-              <span class="info-label">所在院校</span>
-              <span class="info-value">{{ userProfile.school || '未填写' }}</span>
-            </div>
-          </div>
-          <div class="info-card">
-            <div class="info-icon">📚</div>
-            <div class="info-content">
-              <span class="info-label">专业班级</span>
-              <span class="info-value">{{ userProfile.major || '未填写' }}</span>
-            </div>
+          <div class="preview-right">
+            <button class="btn-secondary" type="button" @click="chooseAvatar">更换头像</button>
+            <input ref="fileInput" type="file" accept="image/*" hidden @change="handleAvatar" />
+            <small class="avatar-hint">支持 JPG、PNG、WebP，文件不超过 10 MB</small>
           </div>
         </div>
 
@@ -186,11 +177,61 @@ async function testApiSettings() {
             <label>专业班级</label>
             <input v-model="userProfile.major" placeholder="请输入专业班级" />
           </div>
+          <div class="form-group">
+            <label>学习阶段</label>
+            <select v-model="userProfile.gradeLevel">
+              <option value="">请选择</option>
+              <option value="大一">大一</option>
+              <option value="大二">大二</option>
+              <option value="大三">大三</option>
+              <option value="大四">大四</option>
+              <option value="研一">研一</option>
+              <option value="研二">研二</option>
+              <option value="研三">研三</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>学习目标</label>
+            <select v-model="userProfile.learningGoal">
+              <option value="">请选择</option>
+              <option value="课程学习">跟上课程进度</option>
+              <option value="考试复习">应对期末考试</option>
+              <option value="考研准备">考研复习</option>
+              <option value="竞赛准备">竞赛/项目</option>
+              <option value="求职面试">求职面试</option>
+              <option value="兴趣学习">兴趣驱动</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="userProfile.learningStyle.length || userProfile.weakSubjects.length || userProfile.improvementAreas.length" class="profile-tags">
+          <div v-if="userProfile.learningStyle.length" class="tag-group">
+            <span class="tag-label">偏好的学习方式</span>
+            <div class="tag-list">
+              <span v-for="style in userProfile.learningStyle" :key="style" class="tag">{{ style }}</span>
+            </div>
+          </div>
+          <div v-if="userProfile.weakSubjects.length" class="tag-group">
+            <span class="tag-label">有困难的科目</span>
+            <div class="tag-list">
+              <span v-for="subject in userProfile.weakSubjects" :key="subject" class="tag tag-warn">{{ subject }}</span>
+            </div>
+          </div>
+          <div v-if="userProfile.improvementAreas.length" class="tag-group">
+            <span class="tag-label">希望提升的方面</span>
+            <div class="tag-list">
+              <span v-for="area in userProfile.improvementAreas" :key="area" class="tag tag-info">{{ area }}</span>
+            </div>
+          </div>
         </div>
 
         <div class="profile-actions">
-          <button class="btn-secondary" type="button" @click="reset">恢复默认</button>
-          <button class="btn-primary" type="button" @click="saveProfile">保存资料</button>
+          <button class="btn-secondary" type="button" @click="reset" :disabled="userSaving">恢复默认</button>
+          <button class="btn-primary" type="button" @click="saveProfile" :disabled="userSaving">
+            <span v-if="userSaving">保存中...</span>
+            <span v-else>保存资料</span>
+          </button>
         </div>
 
         <div v-if="userSuccess" class="message success">{{ userSuccess }}</div>
@@ -260,64 +301,10 @@ async function testApiSettings() {
   color: #241d35;
 }
 
-.settings-hero {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22px;
-  padding: 30px;
-  border: 1px solid #eee9ff;
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at 92% 18%, rgba(139, 92, 246, .18), transparent 18rem),
-    #fff;
-  box-shadow: 0 18px 45px rgba(93, 73, 170, .08);
-}
-
-.settings-hero span {
-  color: #8b75d7;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .14em;
-}
-
-.settings-hero h1 {
-  margin: 7px 0 8px;
-  color: #25144f;
-  font-size: clamp(26px, 4vw, 38px);
-  font-weight: 780;
-}
-
-.settings-hero p {
-  margin: 0;
-  color: #80758f;
-  font-size: 14px;
-}
-
-.hero-avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 108px;
-  height: 108px;
-  border-radius: 50%;
-  color: #fff;
-  background: linear-gradient(135deg, #6d5df2, #a855f7);
-  font-size: 40px;
-  overflow: hidden;
-}
-
-.hero-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 500px);
+  grid-template-columns: 1fr;
   gap: 22px;
-  align-items: start;
 }
 
 .profile-section,
@@ -367,10 +354,10 @@ async function testApiSettings() {
 }
 
 .profile-preview {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
   padding: 20px;
   margin-top: 20px;
   border-radius: 16px;
@@ -397,7 +384,7 @@ async function testApiSettings() {
 }
 
 .preview-info {
-  flex: 1;
+  min-width: 0;
 }
 
 .preview-name {
@@ -412,6 +399,13 @@ async function testApiSettings() {
   margin-top: 4px;
 }
 
+.preview-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .profile-preview .btn-secondary {
   padding: 8px 14px;
   border-radius: 10px;
@@ -419,48 +413,9 @@ async function testApiSettings() {
 }
 
 .avatar-hint {
-  flex: 1;
-  width: 100%;
   font-size: 12px;
   color: #9ca3af;
-  margin-top: 4px;
-}
-
-.profile-info-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 20px;
-}
-
-.info-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px;
-  border-radius: 12px;
-  background: #f9fafb;
-}
-
-.info-icon {
-  font-size: 20px;
-}
-
-.info-content {
-  display: flex;
-  flex-direction: column;
-}
-
-.info-label {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.info-value {
-  font-size: 14px;
-  color: #241d35;
-  font-weight: 500;
-  margin-top: 2px;
+  text-align: right;
 }
 
 .profile-form {
@@ -495,6 +450,73 @@ async function testApiSettings() {
   outline: none;
   border-color: #8b5cf6;
   box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
+}
+
+.form-group select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #e7ddff;
+  border-radius: 10px;
+  color: #241d35;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.form-group select:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, .1);
+}
+
+.profile-tags {
+  margin-top: 20px;
+  padding: 16px;
+  background: #faf8ff;
+  border-radius: 12px;
+  border: 1px solid #eee6ff;
+}
+
+.tag-group {
+  margin-bottom: 12px;
+}
+
+.tag-group:last-child {
+  margin-bottom: 0;
+}
+
+.tag-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7c6c9f;
+  margin-bottom: 8px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #eef0ff;
+  color: #5b35c8;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tag.tag-warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.tag.tag-info {
+  background: #dbeafe;
+  color: #1e40af;
 }
 
 .profile-actions,
@@ -596,22 +618,22 @@ async function testApiSettings() {
   margin: 0;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 700px) {
   .settings-container {
     max-width: none;
   }
 
-  .settings-hero {
-    flex-direction: column;
+  .profile-preview {
+    grid-template-columns: auto 1fr;
+  }
+
+  .preview-right {
+    grid-column: 1 / -1;
     align-items: flex-start;
   }
 
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-info-grid {
-    grid-template-columns: 1fr;
+  .avatar-hint {
+    text-align: left;
   }
 
   .profile-form {
