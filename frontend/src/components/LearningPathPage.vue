@@ -6,7 +6,7 @@ import { loadUserProfile } from '../api/userProfile'
 import type { UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 
-const emit = defineEmits<{
+defineEmits<{
   navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account' | 'portrait' | 'resources']
 }>()
 
@@ -278,8 +278,6 @@ const parsedPath = computed<PathInfo | null>(() => {
   }
   totalGoal = goalLines.join(' ')
 
-  const headingRegex = /^#{3}\s+(.+)$/gm
-  let match
   const stageHeadings: { title: string; startLine: number }[] = []
   let lineIdx = 0
   for (const line of lines) {
@@ -455,10 +453,6 @@ async function generateNewPath() {
 }
 
 const activeStageIndex = ref(0)
-
-function selectStage(index: number) {
-  activeStageIndex.value = index
-}
 
 watch(() => currentPathId.value, () => {
   activeStageIndex.value = Math.max(0, getCurrentStageIndex() - 1)

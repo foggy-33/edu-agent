@@ -144,7 +144,6 @@ const availableTabs = computed(() => [
 
 void availableTabs.value
 
-const selectedOptions = computed(() => resourceOptions.filter(item => item.key !== 'chat' && selectedTypes.value.includes(item.key as CollaborativeResourceType)))
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
@@ -304,10 +303,6 @@ function toggleResource(key: CollaborativeResourceType | 'chat') {
   selectedTypes.value = key === 'chat' ? [] : [key]
 }
 
-function removeResource(key: CollaborativeResourceType) {
-  selectedTypes.value = selectedTypes.value.filter(item => item !== key)
-}
-
 function toggleFile(fileId: string) {
   selectedFileIds.value = selectedFileIds.value.includes(fileId)
     ? selectedFileIds.value.filter(item => item !== fileId)
@@ -462,6 +457,7 @@ function hydrateFromHistory(id: string | null | undefined) {
     exercises: lastTurn.result.exercises || '',
     reading: lastTurn.result.reading || '',
     codeCase: lastTurn.result.codeCase || '',
+    learningPath: lastTurn.result.learningPath || '',
     review: lastTurn.result.review || '',
   }
   thinkingSteps.value = [...lastTurn.thinkingSteps]
@@ -479,6 +475,8 @@ function hydrateFromHistory(id: string | null | undefined) {
       mindmap: turn.result.mindmap || '',
       exercises: turn.result.exercises || '',
       reading: turn.result.reading || '',
+      codeCase: turn.result.codeCase || '',
+      learningPath: turn.result.learningPath || '',
       review: turn.result.review || '',
     },
     thinkingSteps: [...turn.thinkingSteps],

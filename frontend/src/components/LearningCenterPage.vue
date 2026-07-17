@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
-import { getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz, getLearningStats, getRecommendations, generateRecommendationContent } from '../api/client'
-import type { RecommendedResource } from '../api/client'
+import { computed, onMounted, ref, nextTick } from 'vue'
+import { getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz, getLearningStats } from '../api/client'
 import { loadUserProfile } from '../api/userProfile'
 import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 import mermaid from 'mermaid'
@@ -13,6 +12,15 @@ marked.setOptions({ breaks: true, gfm: true })
 defineEmits<{
   navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account' | 'portrait' | 'resources']
 }>()
+
+interface RecommendedResource {
+  id: string
+  icon: string
+  topic: string
+  description: string
+  course: string
+  priority: 'high' | 'medium' | 'low'
+}
 
 const userProfile = ref(loadUserProfile())
 const profileLoading = ref(false)
@@ -89,7 +97,6 @@ const recommendations = ref<RecommendedResource[]>([])
 const recommendationsLoading = ref(false)
 
 const showLearningModal = ref(false)
-const mindmapContainer = ref<HTMLElement | null>(null)
 const learningContent = ref<{
   lectureDoc: string
   exercises: string
@@ -283,8 +290,19 @@ async function loadProfileOverview() {
 async function loadRecommendations() {
   recommendationsLoading.value = true
   try {
-    const result = await getRecommendations(userProfile.value.userId)
-    recommendations.value = result.recommendations
+    const weakPoints = portrait.value?.llm_context.weak_points || []
+    const fallbackTopics = ['进程与线程', '树与二叉树', 'CPU 结构与指令系统']
+    const courses = ['操作系统', '数据结构', '计算机组成原理']
+    recommendations.value = courses.map<RecommendedResource>((course, index) => ({
+      id: `${course}-${index}`,
+      icon: ['⚙️', '🌳', '💻'][index],
+      topic: weakPoints[index] || fallbackTopics[index],
+      description: weakPoints[index]
+        ? `结合当前学习画像，重点巩固“${weakPoints[index]}”相关知识。`
+        : `通过讲解、思维导图和练习巩固${fallbackTopics[index]}。`,
+      course,
+      priority: index === 0 ? 'high' : index === 1 ? 'medium' : 'low',
+    }))
   } catch (err) {
     console.error('加载推荐资源失败', err)
     recommendations.value = []
@@ -424,6 +442,16 @@ function closeLearningModal() {
   showLearningModal.value = false
 }
 
+function profileDimension(name: 'knowledge_level' | 'learning_style' | 'learning_goal') {
+  const dimensionNames = {
+    knowledge_level: '知识基础',
+    learning_style: '认知风格',
+    learning_goal: '学习目标',
+  } as const
+  const value = portrait.value?.dimensions[dimensionNames[name]]?.value
+  return Array.isArray(value) ? value.join('、') : value || '待完善'
+}
+
 onMounted(async () => {
   await loadProfileOverview()
   await loadRecommendations()
@@ -526,15 +554,15 @@ onMounted(async () => {
         <div v-if="portrait" class="portrait-details">
           <div class="detail-row">
             <span class="detail-label">知识水平</span>
-            <span class="detail-value">{{ portrait.knowledge_level }}</span>
+            <span class="detail-value">{{ profileDimension('knowledge_level') }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">学习风格</span>
-            <span class="detail-value">{{ portrait.learning_style }}</span>
+            <span class="detail-value">{{ profileDimension('learning_style') }}</span>
           </div>
           <div class="detail-row">
             <span class="detail-label">学习目标</span>
-            <span class="detail-value">{{ portrait.learning_goal }}</span>
+            <span class="detail-value">{{ profileDimension('learning_goal') }}</span>
           </div>
         </div>
       </section>
