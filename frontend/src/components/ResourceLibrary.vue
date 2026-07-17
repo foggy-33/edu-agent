@@ -130,7 +130,8 @@ async function loadResourceList() {
       listResources(userProfile.value.userId),
       listCategories(userProfile.value.userId).catch(() => ({ categories: [] })),
     ])
-    resources.value = res.resources
+    const filtered = res.resources.filter((r: UploadedResource) => r.type !== 'path')
+    resources.value = filtered
     serverCategories.value = catRes.categories || []
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '资料加载失败'

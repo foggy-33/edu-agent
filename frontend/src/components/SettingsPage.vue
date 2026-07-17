@@ -191,81 +191,85 @@ async function testConnection() {
       <p>配置大模型接口，用于对话、资源生成和学习分析</p>
     </div>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>接口配置</h2>
-        <span class="current-model">当前：{{ config.model }}</span>
-      </div>
+    <section class="panel main-panel">
+      <div class="config-section">
+        <div class="section-title-row">
+          <h2>接口配置</h2>
+          <span class="current-model">当前：{{ config.model }}</span>
+        </div>
 
-      <div class="form-grid">
-        <div class="form-item">
-          <label>API Key</label>
-          <div class="input-with-btn">
-            <input v-model="config.api_key" :type="showKey ? 'text' : 'password'" placeholder="sk-..." />
-            <button type="button" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
+        <div class="form-grid">
+          <div class="form-item">
+            <label>API Key</label>
+            <div class="input-with-btn">
+              <input v-model="config.api_key" :type="showKey ? 'text' : 'password'" placeholder="sk-..." />
+              <button type="button" @click="showKey = !showKey">{{ showKey ? '隐藏' : '显示' }}</button>
+            </div>
+          </div>
+          <div class="form-item">
+            <label>Base URL</label>
+            <input v-model="config.base_url" type="url" placeholder="https://api.siliconflow.cn/v1" />
+          </div>
+          <div class="form-item">
+            <label>自定义模型</label>
+            <div class="input-with-btn">
+              <input v-model="customModel" type="text" placeholder="deepseek-ai/DeepSeek-V4-Pro" @change="applyCustomModel" />
+              <button type="button" @click="applyCustomModel">应用</button>
+            </div>
           </div>
         </div>
-        <div class="form-item">
-          <label>Base URL</label>
-          <input v-model="config.base_url" type="url" placeholder="https://api.siliconflow.cn/v1" />
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="model-section">
+        <div class="section-title-row">
+          <h2>选择模型</h2>
         </div>
-        <div class="form-item">
-          <label>自定义模型</label>
-          <div class="input-with-btn">
-            <input v-model="customModel" type="text" placeholder="deepseek-ai/DeepSeek-V4-Pro" @change="applyCustomModel" />
-            <button type="button" @click="applyCustomModel">应用</button>
+
+        <div class="model-toolbar">
+          <div class="kind-tabs">
+            <button
+              v-for="kind in modelKinds"
+              :key="kind"
+              type="button"
+              :class="{ active: activeKind === kind }"
+              @click="activeKind = kind"
+            >
+              {{ kind }}
+            </button>
+          </div>
+          <div class="model-search">
+            <span>⌕</span>
+            <input v-model="query" placeholder="搜索模型" />
           </div>
         </div>
-      </div>
-    </section>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>选择模型</h2>
-      </div>
-
-      <div class="model-toolbar">
-        <div class="kind-tabs">
+        <div class="model-list">
           <button
-            v-for="kind in modelKinds"
-            :key="kind"
+            v-for="model in filteredModels"
+            :key="model.id"
             type="button"
-            :class="{ active: activeKind === kind }"
-            @click="activeKind = kind"
+            :class="['model-item', config.model === model.id ? 'selected' : '']"
+            @click="selectModel(model)"
           >
-            {{ kind }}
+            <div class="model-main">
+              <div class="model-name">
+                {{ model.title }}
+                <span v-if="model.hot" class="hot-tag">热门</span>
+              </div>
+              <div class="model-provider">{{ model.provider }}</div>
+            </div>
+            <p class="model-desc">{{ model.description }}</p>
+            <div class="model-tags">
+              <span v-for="tag in model.tags" :key="tag">{{ tag }}</span>
+            </div>
           </button>
         </div>
-        <div class="model-search">
-          <span>⌕</span>
-          <input v-model="query" placeholder="搜索模型" />
-        </div>
-      </div>
-
-      <div class="model-list">
-        <button
-          v-for="model in filteredModels"
-          :key="model.id"
-          type="button"
-          :class="['model-item', config.model === model.id ? 'selected' : '']"
-          @click="selectModel(model)"
-        >
-          <div class="model-main">
-            <div class="model-name">
-              {{ model.title }}
-              <span v-if="model.hot" class="hot-tag">热门</span>
-            </div>
-            <div class="model-provider">{{ model.provider }}</div>
-          </div>
-          <p class="model-desc">{{ model.description }}</p>
-          <div class="model-tags">
-            <span v-for="tag in model.tags" :key="tag">{{ tag }}</span>
-          </div>
-        </button>
       </div>
     </section>
 
-    <section class="panel panel-actions-row">
+    <div class="action-bar">
       <div class="selected-info">
         <strong>{{ selectedModel?.title || '自定义模型' }}</strong>
         <span>{{ selectedModel?.description || '将直接使用你输入的模型标识。' }}</span>
@@ -276,7 +280,7 @@ async function testConnection() {
           {{ testing ? '测试中...' : '测试连接' }}
         </button>
       </div>
-    </section>
+    </div>
 
     <div v-if="message" :class="['tip', isError ? 'tip-error' : 'tip-success']">{{ message }}</div>
   </div>
@@ -284,7 +288,7 @@ async function testConnection() {
 
 <style scoped>
 .settings-page {
-  max-width: 960px;
+  max-width: 880px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -304,28 +308,31 @@ async function testConnection() {
   color: #6b7280;
 }
 
-.panel {
+.main-panel {
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
-  padding: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-.panel-header {
+.section-title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
-.panel-header h2 {
+.section-title-row h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .current-model {
-  padding: 4px 10px;
+  padding: 3px 10px;
   border-radius: 6px;
   background: #f3f4f6;
   color: #4b5563;
@@ -333,10 +340,16 @@ async function testConnection() {
   font-weight: 500;
 }
 
+.divider {
+  height: 1px;
+  background: #f0f0f0;
+  margin: 0 -4px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 
 .form-grid .form-item:last-child {
@@ -346,20 +359,20 @@ async function testConnection() {
 .form-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .form-item label {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  color: #374151;
+  color: #6b7280;
 }
 
 .form-item input {
-  padding: 9px 12px;
-  border: 1px solid #d1d5db;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   color: #1f2937;
   background: #fff;
   outline: none;
@@ -373,7 +386,7 @@ async function testConnection() {
 
 .input-with-btn {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .input-with-btn input {
@@ -383,12 +396,12 @@ async function testConnection() {
 
 .input-with-btn button {
   flex: none;
-  padding: 0 14px;
-  border: 1px solid #d1d5db;
+  padding: 0 12px;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f9fafb;
-  color: #374151;
-  font-size: 13px;
+  color: #6b7280;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -401,23 +414,23 @@ async function testConnection() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .kind-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .kind-tabs button {
-  padding: 6px 12px;
+  padding: 5px 11px;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
   color: #6b7280;
   background: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -435,43 +448,43 @@ async function testConnection() {
 }
 
 .model-search {
-  width: min(240px, 100%);
+  width: min(200px, 100%);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid #d1d5db;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #fff;
 }
 
 .model-search span {
   color: #9ca3af;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .model-search input {
   width: 100%;
-  padding: 8px 0;
+  padding: 7px 0;
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .model-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .model-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px;
+  gap: 6px;
+  padding: 12px;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
+  border-radius: 9px;
   color: #374151;
   background: #fff;
   text-align: left;
@@ -481,32 +494,32 @@ async function testConnection() {
 
 .model-item:hover {
   border-color: #d1d5db;
-  background: #f9fafb;
+  background: #fafafa;
 }
 
 .model-item.selected {
   border-color: #111827;
-  background: #f9fafb;
+  background: #fafafa;
 }
 
 .model-main {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
 }
 
 .model-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #111827;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .hot-tag {
-  padding: 2px 6px;
+  padding: 1px 5px;
   border-radius: 4px;
   background: #fef3c7;
   color: #92400e;
@@ -515,35 +528,41 @@ async function testConnection() {
 }
 
 .model-provider {
-  font-size: 12px;
+  font-size: 11px;
   color: #9ca3af;
   flex-shrink: 0;
 }
 
 .model-desc {
   margin: 0;
-  font-size: 12px;
+  font-size: 11px;
   color: #6b7280;
   line-height: 1.5;
-  min-height: 36px;
+  min-height: 32px;
 }
 
 .model-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
 }
 
 .model-tags span {
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 4px;
   color: #6b7280;
   background: #f3f4f6;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 500;
 }
 
-.panel-actions-row {
+.action-bar {
+  position: sticky;
+  bottom: 0;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -555,11 +574,11 @@ async function testConnection() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .selected-info strong {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #111827;
 }
@@ -571,15 +590,15 @@ async function testConnection() {
 
 .action-buttons {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .btn-primary,
 .btn-ghost {
-  padding: 9px 16px;
+  padding: 8px 14px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -641,24 +660,28 @@ button:disabled {
 
   .model-toolbar {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .model-search {
-    width: auto;
+    width: 100%;
   }
 
   .model-list {
     grid-template-columns: 1fr;
   }
 
-  .panel-actions-row {
+  .action-bar {
     flex-direction: column;
-    align-items: stretch;
+    align-items: flex-start;
   }
 
   .action-buttons {
-    justify-content: flex-end;
+    width: 100%;
+  }
+
+  .action-buttons button {
+    flex: 1;
   }
 }
 </style>

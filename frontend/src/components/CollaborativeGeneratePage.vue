@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import {
   createConversationTitle,
@@ -199,7 +199,7 @@ const resultTypeLabelMap: Record<string, { label: string; type: string }> = {
   exercises: { label: '练习题', type: 'markdown' },
   reading: { label: '阅读材料', type: 'reading' },
   codeCase: { label: '代码案例', type: 'markdown' },
-  learningPath: { label: '学习路径', type: 'markdown' },
+  learningPath: { label: '学习路径', type: 'path' },
   review: { label: '复习总结', type: 'markdown' },
 }
 

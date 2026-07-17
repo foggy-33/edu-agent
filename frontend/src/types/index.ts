@@ -182,7 +182,7 @@ export interface UploadedResource {
   id: string
   user_id: string
   name: string
-  type: 'pdf' | 'markdown' | 'mindmap' | 'lecture' | 'review' | 'reading' | 'exercises'
+  type: 'pdf' | 'markdown' | 'mindmap' | 'lecture' | 'review' | 'reading' | 'exercises' | 'path'
   size: number
   page_count: number
   text_length: number
