@@ -1,0 +1,64 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-pypi.tuna.tsinghua.edu.cn}
+    restart: unless-stopped
+    environment:
+      LLM_MODE: ${LLM_MODE:-mock}
+      SPARK_APP_ID: ${SPARK_APP_ID:-}
+      SPARK_API_KEY: ${SPARK_API_KEY:-}
+      SPARK_API_SECRET: ${SPARK_API_SECRET:-}
+      SPARK_API_URL: ${SPARK_API_URL:-}
+      CHROMA_PERSIST_DIR: /app/chroma_db
+      KNOWLEDGE_BASE_DIR: /app/knowledge_base
+      RAG_AUTO_INGEST: ${RAG_AUTO_INGEST:-true}
+      RAG_TOP_K: ${RAG_TOP_K:-5}
+      PROFILE_DATA_DIR: /app/data/profiles
+      RESOURCE_DATA_DIR: /app/data/resources
+      USER_DATA_FILE: /app/data/auth/users.json
+    volumes:
+      - chroma_data:/app/chroma_db
+      - profile_data:/app/data/profiles
+      - resource_data:/app/data/resources
+      - auth_data:/app/data/auth
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  chroma_data:
+  profile_data:
+  resource_data:
+  auth_data:
