@@ -126,6 +126,22 @@ export interface Course {
   questions: Question[]
 }
 
+export interface CoursePdfMaterial {
+  id: string
+  name: string
+  filename: string
+  size: number
+}
+
+export interface CoursePdfAnnotation {
+  id: string
+  page: number
+  content: string
+  x: number | null
+  y: number | null
+  created_at: string
+}
+
 export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'path'
 
 export interface CollaborativeLearningRequest {

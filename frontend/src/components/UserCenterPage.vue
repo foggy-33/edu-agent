@@ -1,10 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { getDynamicProfile, listDynamicProfiles, testSiliconFlow, testSpark } from '../api/client'
-import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
-import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
+import { computed, ref } from 'vue'
+import { loadUserProfile, saveUserProfile } from '../api/userProfile'
 import { updateUserProfile } from '../api/auth'
-import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 
 const emit = defineEmits<{
   logout: []
@@ -15,21 +12,9 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const userError = ref('')
 const userSuccess = ref('')
 
-const apiConfig = ref(loadSiliconFlowConfig())
-const apiTesting = ref(false)
-const apiMessage = ref('')
-const apiError = ref(false)
-
 const userSaving = ref(false)
-const subjectProfiles = ref<SubjectProfileSummary[]>([])
-const selectedPortraitCourse = ref('')
-const portraitDetails = ref<DynamicProfile | null>(null)
-const portraitLoading = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
-const activeModelName = computed(() => apiConfig.value.active_provider === 'spark'
-  ? '讯飞星火 · X2'
-  : `硅基流动 · ${apiConfig.value.model}`)
 
 function chooseAvatar() {
   fileInput.value?.click()
@@ -69,22 +54,12 @@ async function saveProfile() {
       avatar: userProfile.value.avatar,
       phone: userProfile.value.phone,
       email: userProfile.value.email,
-      school: userProfile.value.school,
-      major: userProfile.value.major,
-      grade_level: userProfile.value.gradeLevel,
-      learning_goal: userProfile.value.learningGoal,
     })
     userProfile.value.userId = result.username
     userProfile.value.name = result.display_name
     userProfile.value.avatar = result.avatar
     userProfile.value.phone = result.phone
     userProfile.value.email = result.email
-    userProfile.value.school = result.school
-    userProfile.value.major = result.major
-    userProfile.value.gradeLevel = result.grade_level
-    if (result.learning_goal !== undefined && result.learning_goal !== null) {
-      userProfile.value.learningGoal = result.learning_goal
-    }
     saveUserProfile(userProfile.value)
     userSuccess.value = '个人资料已保存'
   } catch (err: any) {
@@ -94,80 +69,13 @@ async function saveProfile() {
   }
 }
 
-function reset() {
-  userProfile.value = { ...defaultUserProfile }
-  saveUserProfile(userProfile.value)
-  userError.value = ''
-  userSuccess.value = '已恢复默认资料'
-}
-
-function normalizeApiConfig() {
-  apiConfig.value = {
-    ...apiConfig.value,
-    api_key: '',
-    base_url: apiConfig.value.base_url.trim() || 'https://api.siliconflow.cn/v1',
-    model: apiConfig.value.model.trim() || 'deepseek-ai/DeepSeek-V4-Pro',
-    spark_api_password: '',
-    spark_base_url: '',
-    spark_model: '',
-  }
-}
-
-function saveApiSettings() {
-  normalizeApiConfig()
-  saveSiliconFlowConfig(apiConfig.value)
-  apiError.value = false
-  apiMessage.value = '设置已保存'
-}
-
-async function testApiSettings() {
-  saveApiSettings()
-  const isSpark = apiConfig.value.active_provider === 'spark'
-  apiTesting.value = true
-  try {
-    const result = isSpark ? await testSpark(apiConfig.value) : await testSiliconFlow(apiConfig.value)
-    apiError.value = false
-    apiMessage.value = `${result.model}：${result.message}`
-  } catch (err) {
-    apiError.value = true
-    apiMessage.value = err instanceof Error ? err.message : '连接测试失败'
-  } finally {
-    apiTesting.value = false
-  }
-}
-
-async function loadPortraitDetails(course?: string) {
-  const targetCourse = course || selectedPortraitCourse.value
-  if (!targetCourse) return
-  portraitLoading.value = true
-  try {
-    selectedPortraitCourse.value = targetCourse
-    const result = await getDynamicProfile(userProfile.value.userId, targetCourse)
-    portraitDetails.value = result.profile
-  } catch {
-    portraitDetails.value = null
-  } finally {
-    portraitLoading.value = false
-  }
-}
-
-onMounted(async () => {
-  try {
-    const result = await listDynamicProfiles(userProfile.value.userId)
-    subjectProfiles.value = result.profiles
-    const firstCourse = result.profiles[0]?.course
-    if (firstCourse) await loadPortraitDetails(firstCourse)
-  } catch {
-    subjectProfiles.value = []
-  }
-})
 </script>
 
 <template>
   <div class="page-container">
     <div class="page-header">
       <h1>个人中心</h1>
-      <p>管理你的个人信息和系统设置</p>
+      <p>管理名称和联系方式</p>
     </div>
 
     <div class="content-grid">
@@ -205,155 +113,21 @@ onMounted(async () => {
             <label>邮箱地址</label>
             <input v-model="userProfile.email" type="email" placeholder="请输入邮箱地址" />
           </div>
-          <div class="form-item">
-            <label>所在院校</label>
-            <input v-model="userProfile.school" placeholder="请输入院校名称" />
-          </div>
-          <div class="form-item">
-            <label>专业班级</label>
-            <input v-model="userProfile.major" placeholder="请输入专业班级" />
-          </div>
-          <div class="form-item">
-            <label>学习阶段</label>
-            <select v-model="userProfile.gradeLevel">
-              <option value="">请选择</option>
-              <option value="大一">大一</option>
-              <option value="大二">大二</option>
-              <option value="大三">大三</option>
-              <option value="大四">大四</option>
-              <option value="研一">研一</option>
-              <option value="研二">研二</option>
-              <option value="研三">研三</option>
-              <option value="其他">其他</option>
-            </select>
-          </div>
-          <div class="form-item">
-            <label>学习目标</label>
-            <select v-model="userProfile.learningGoal">
-              <option value="">请选择</option>
-              <option value="课程学习">跟上课程进度</option>
-              <option value="考试复习">应对期末考试</option>
-              <option value="考研准备">考研复习</option>
-              <option value="竞赛准备">竞赛/项目</option>
-              <option value="求职面试">求职面试</option>
-              <option value="兴趣学习">兴趣驱动</option>
-            </select>
-          </div>
         </div>
 
-        <div v-if="userProfile.learningStyle.length || userProfile.weakSubjects.length || userProfile.improvementAreas.length" class="tag-section">
-          <div v-if="userProfile.learningStyle.length" class="tag-group">
-            <div class="tag-label">偏好的学习方式</div>
-            <div class="tag-list">
-              <span v-for="style in userProfile.learningStyle" :key="style" class="tag">{{ style }}</span>
-            </div>
-          </div>
-          <div v-if="userProfile.weakSubjects.length" class="tag-group">
-            <div class="tag-label">有困难的科目</div>
-            <div class="tag-list">
-              <span v-for="subject in userProfile.weakSubjects" :key="subject" class="tag tag-warn">{{ subject }}</span>
-            </div>
-          </div>
-          <div v-if="userProfile.improvementAreas.length" class="tag-group">
-            <div class="tag-label">希望提升的方面</div>
-            <div class="tag-list">
-              <span v-for="area in userProfile.improvementAreas" :key="area" class="tag tag-info">{{ area }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel-actions">
-          <button class="btn-ghost" type="button" @click="reset" :disabled="userSaving">恢复默认</button>
+        <div class="panel-actions profile-actions">
           <button class="btn-primary" type="button" @click="saveProfile" :disabled="userSaving">
             <span v-if="userSaving">保存中...</span>
             <span v-else>保存资料</span>
           </button>
+          <button class="btn-danger" type="button" @click="emit('logout')">退出登录</button>
         </div>
 
         <div v-if="userSuccess" class="tip tip-success">{{ userSuccess }}</div>
         <div v-if="userError" class="tip tip-error">{{ userError }}</div>
       </section>
 
-      <section class="panel">
-        <div class="panel-header">
-          <h2>模型设置</h2>
-          <span class="model-badge">{{ activeModelName }}</span>
-        </div>
-
-        <p class="panel-desc">
-          硅基流动和讯飞星火的密钥均由服务器环境变量统一托管，前端仅保存当前模型选择。
-        </p>
-
-        <div class="provider-switch" role="tablist" aria-label="模型服务商">
-          <button
-            type="button"
-            :class="{ active: apiConfig.active_provider === 'siliconflow' }"
-            @click="apiConfig.active_provider = 'siliconflow'; apiMessage = ''"
-          >硅基流动</button>
-          <button
-            type="button"
-            :class="{ active: apiConfig.active_provider === 'spark' }"
-            @click="apiConfig.active_provider = 'spark'; apiMessage = ''"
-          >讯飞星火</button>
-        </div>
-
-        <div class="server-managed-config">
-          <strong>{{ apiConfig.active_provider === 'spark' ? '讯飞星火 X2' : '硅基流动' }}由服务器统一配置</strong>
-          <p>API 凭据、接口地址和默认模型从服务器环境变量读取，浏览器不会保存密钥。</p>
-          <code v-if="apiConfig.active_provider === 'spark'">SPARK_API_PASSWORD · SPARK_BASE_URL · SPARK_MODEL</code>
-          <code v-else>SILICONFLOW_API_KEY · SILICONFLOW_BASE_URL · SILICONFLOW_MODEL</code>
-        </div>
-
-        <div class="panel-actions">
-          <button class="btn-ghost" type="button" @click="saveApiSettings">保存设置</button>
-          <button class="btn-primary" type="button" :disabled="apiTesting" @click="testApiSettings">
-            {{ apiTesting ? '测试中...' : '测试连接' }}
-          </button>
-        </div>
-
-        <p v-if="apiMessage" :class="['tip', apiError ? 'tip-error' : 'tip-success']">{{ apiMessage }}</p>
-      </section>
     </div>
-
-    <section id="portrait-details" class="panel portrait-panel">
-      <div class="panel-header portrait-panel-header">
-        <div>
-          <h2>学习画像</h2>
-          <p>查看画像对话形成的六维分析与学习建议</p>
-        </div>
-        <select
-          v-if="subjectProfiles.length"
-          v-model="selectedPortraitCourse"
-          :disabled="portraitLoading"
-          @change="loadPortraitDetails()"
-        >
-          <option v-for="item in subjectProfiles" :key="item.course" :value="item.course">{{ item.course }}</option>
-        </select>
-      </div>
-
-      <div v-if="portraitLoading" class="portrait-empty">正在加载画像...</div>
-      <div v-else-if="portraitDetails" class="portrait-content">
-        <p class="portrait-overview">{{ portraitDetails.llm_context.summary || '继续完成画像对话后，这里会生成学科画像总结。' }}</p>
-        <div class="portrait-metrics">
-          <article v-for="(value, name) in portraitDetails.radar_metrics" :key="name">
-            <div><strong>{{ name }}</strong><span>{{ value }}</span></div>
-            <i><em :style="{ width: `${value}%` }"></em></i>
-            <p>{{ portraitDetails.radar_summaries[name] || '继续对话后补充该维度总结。' }}</p>
-          </article>
-        </div>
-      </div>
-      <div v-else class="portrait-empty">还没有画像记录，请先到“画像对话”完成一轮访谈。</div>
-    </section>
-
-    <section class="panel panel-security">
-      <div class="panel-header">
-        <h2>账号安全</h2>
-      </div>
-      <div class="security-content">
-        <p>退出当前登录的账号</p>
-        <button class="btn-danger" type="button" @click="emit('logout')">退出登录</button>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -750,9 +524,20 @@ button:disabled {
   color: #6b7280;
 }
 
+/* Minimal account profile */
+.form-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.profile-actions { justify-content: space-between; }
+.btn-danger { color: #202123; border-color: #d1d5db; }
+.btn-danger:hover { color: #202123; border-color: #bfc1c6; background: #f3f4f6; }
+
 @media (max-width: 640px) {
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .profile-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .profile-basic {

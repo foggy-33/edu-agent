@@ -15,6 +15,7 @@ RUN pip install --upgrade pip -i ${PIP_INDEX_URL} --trusted-host ${PIP_TRUSTED_H
 
 COPY app ./app
 COPY knowledge_base ./knowledge_base
+COPY sourse ./sourse
 COPY scripts ./scripts
 
 RUN mkdir -p /app/chroma_db /app/data/profiles /app/data/resources /app/data/auth \

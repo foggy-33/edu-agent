@@ -11,6 +11,7 @@ import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
+import sparkOfficialLogo from '../assets/spark-official.ico'
 
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'review'
 type ProcessState = 'running' | 'done'
@@ -309,6 +310,15 @@ function setTurnCollapsed(turnId: string, collapsed: boolean) {
 function toggleResource(key: CollaborativeResourceType | 'chat') {
   selectedType.value = key
   selectedTypes.value = key === 'chat' ? [] : [key]
+  menuOpen.value = false
+}
+
+function toggleToolMenu() {
+  menuOpen.value = !menuOpen.value
+  if (menuOpen.value) {
+    speedMenuOpen.value = false
+    modelMenuOpen.value = false
+  }
 }
 
 function toggleFile(fileId: string) {
@@ -765,23 +775,9 @@ watch(prompt, resizePromptInput)
         <div class="message-bubble">{{ turn.question }}</div>
       </article>
 
-      <article :class="['chat-message', 'assistant-message', { 'spark-response': turn.provider === 'spark' }]">
-        <div v-if="turn.provider === 'spark'" class="spark-mark" title="讯飞星火" aria-label="讯飞星火生成">
-          <svg viewBox="0 0 36 44" aria-hidden="true">
-            <defs>
-              <linearGradient :id="`spark-blue-${turn.id}`" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#4bb8ff" />
-                <stop offset="1" stop-color="#2b73e8" />
-              </linearGradient>
-              <linearGradient :id="`spark-red-${turn.id}`" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#ff5a4f" />
-                <stop offset="1" stop-color="#d92f45" />
-              </linearGradient>
-            </defs>
-            <path d="M18 2c1 8-6 10-8 17-2 7 2 15 10 16-3-3-3-7-1-10 2-4 7-6 7-13 5 6 8 12 5 20-3 8-10 11-17 10C5 41 0 34 1 26 2 17 12 12 18 2Z" :fill="`url(#spark-blue-${turn.id})`" />
-            <path d="M21 4c4 5 9 7 12 12-4-1-8 0-11 3 2-5 1-10-1-15Z" :fill="`url(#spark-red-${turn.id})`" />
-            <path d="M12 25c-1 5 2 9 7 10-5 2-10-1-11-5-1-3 1-6 4-8-1 1-1 2 0 3Z" fill="#ffffff" opacity=".92" />
-          </svg>
+      <article class="chat-message assistant-message spark-response">
+        <div class="spark-mark" title="讯飞星火" aria-label="讯飞星火 AI 回复">
+          <img :src="sparkOfficialLogo" alt="" aria-hidden="true" />
         </div>
         <div class="assistant-body">
           <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
@@ -930,22 +926,19 @@ watch(prompt, resizePromptInput)
     <section class="composer-section">
       <div v-if="error" class="composer-error">{{ error }}</div>
 
-      <div class="resource-type-bar">
-        <button
-          v-for="item in resourceOptions"
-          :key="item.key"
-          type="button"
-          :class="{ active: selectedType === item.key }"
-          :disabled="loading"
-          @click="toggleResource(item.key)"
-        >
-          <span class="rt-icon">{{ item.icon }}</span>
-          <span class="rt-label">{{ item.label }}</span>
-        </button>
-      </div>
-
       <div class="composer">
-        <div v-if="selectedFiles.length" class="selected-tools">
+        <div v-if="selectedType !== 'chat' || selectedFiles.length" class="selected-tools">
+          <button
+            v-if="selectedType !== 'chat'"
+            type="button"
+            class="selected-capability"
+            :disabled="loading"
+            @click="toggleResource('chat')"
+          >
+            <span>{{ resourceOptions.find(item => item.key === selectedType)?.icon }}</span>
+            {{ resourceOptions.find(item => item.key === selectedType)?.label }}
+            <i>×</i>
+          </button>
           <button
             v-for="file in selectedFiles"
             :key="file.id"
@@ -962,33 +955,55 @@ watch(prompt, resizePromptInput)
           <div class="tool-picker">
             <button
               class="add-button"
+              :class="{ open: menuOpen }"
               type="button"
               :disabled="loading"
               aria-label="选择生成内容"
-              @click="menuOpen = !menuOpen"
+              :aria-expanded="menuOpen"
+              @click="toggleToolMenu"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
 
-            <div v-if="menuOpen" class="tool-menu">
-              <div class="menu-title">引用资料库文件</div>
-              <div v-if="resources.length" class="file-options">
-                <button
-                  v-for="file in resources"
-                  :key="file.id"
-                  type="button"
-                  :class="{ selected: selectedFileIds.includes(file.id) }"
-                  @click="toggleFile(file.id)"
-                >
-                  <span class="tool-icon pdf">PDF</span>
-                  <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
-                  <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
-                </button>
+            <Transition name="tool-pop">
+              <div v-if="menuOpen" class="tool-menu">
+                <div class="menu-title">选择功能</div>
+                <div class="capability-grid">
+                  <button
+                    v-for="(item, index) in resourceOptions"
+                    :key="item.key"
+                    type="button"
+                    class="capability-option"
+                    :class="{ selected: selectedType === item.key }"
+                    :style="{ animationDelay: `${index * 38 + 40}ms` }"
+                    @click="toggleResource(item.key)"
+                  >
+                    <span class="tool-icon">{{ item.icon }}</span>
+                    <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
+                    <i>{{ selectedType === item.key ? '✓' : '' }}</i>
+                  </button>
+                </div>
+
+                <div class="menu-divider"></div>
+                <div class="menu-title">引用资料库文件</div>
+                <div v-if="resources.length" class="file-options">
+                  <button
+                    v-for="file in resources"
+                    :key="file.id"
+                    type="button"
+                    :class="{ selected: selectedFileIds.includes(file.id) }"
+                    @click="toggleFile(file.id)"
+                  >
+                    <span class="tool-icon pdf">PDF</span>
+                    <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
+                    <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
+                  </button>
+                </div>
+                <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
               </div>
-              <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
-            </div>
+            </Transition>
           </div>
 
           <textarea
@@ -1006,7 +1021,7 @@ watch(prompt, resizePromptInput)
               type="button"
               class="model-button"
               :disabled="loading"
-              @click="speedMenuOpen = !speedMenuOpen; modelMenuOpen = false"
+              @click="speedMenuOpen = !speedMenuOpen; modelMenuOpen = false; menuOpen = false"
             >
               {{ activeSpeed.label }}
               <span>⌄</span>
@@ -1031,7 +1046,7 @@ watch(prompt, resizePromptInput)
               type="button"
               class="model-button model-name-button"
               :disabled="loading"
-              @click="modelMenuOpen = !modelMenuOpen; speedMenuOpen = false"
+              @click="modelMenuOpen = !modelMenuOpen; speedMenuOpen = false; menuOpen = false"
             >
               {{ activeModelLabel }}
               <span>⌄</span>
@@ -1141,7 +1156,7 @@ watch(prompt, resizePromptInput)
 .spark-response { gap: 12px; }
 .spark-response .assistant-body { padding: 16px 18px; border: 1px solid #eeeeee; border-radius: 18px; background: #ffffff; }
 .spark-mark { width: 34px; height: 42px; flex: 0 0 34px; display: grid; place-items: center; }
-.spark-mark svg { width: 30px; height: 38px; overflow: visible; filter: drop-shadow(0 2px 4px rgba(43, 115, 232, .14)); }
+.spark-mark img { width: 30px; height: 30px; object-fit: contain; }
 .result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 0 0 10px; color: #858585; font-size: 10px; }
 .result-sources b { padding: 5px 8px; border-radius: 999px; color: #7d3434; background: #fff0f0; font-weight: 650; }
 .result-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; border-bottom: 1px solid #ececec; }
@@ -1202,27 +1217,34 @@ watch(prompt, resizePromptInput)
 .selected-tools { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 4px 7px; }
 .selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
 .selected-tools button i { color: #929292; font-style: normal; font-size: 14px; }
-.selected-tools button.selected-file { max-width: 260px; border-color: #f1caca; color: #8d3434; background: #fff5f5; }
+.selected-tools button.selected-capability { border-color: #d5d5d5; color: #202123; background: #f3f3f3; }
+.selected-tools button.selected-capability > span { display: grid; place-items: center; width: 17px; height: 17px; color: #202123; font-size: 11px; }
+.selected-tools button.selected-file { max-width: 260px; border-color: #dedede; color: #555; background: #fafafa; }
 .selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
 .composer-actions { display: flex; align-items: center; gap: 8px; }
 .tool-picker { position: relative; }
 .add-button { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; line-height: 1; }
-.add-button svg { width: 19px; height: 19px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.add-button svg { width: 19px; height: 19px; display: block; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; transition: transform .3s cubic-bezier(.16, 1, .3, 1); }
 .add-button:hover { background: #e6e6e6; }
-.tool-menu { position: absolute; left: 0; bottom: 46px; width: 310px; padding: 8px; border: 1px solid #dadada; border-radius: 16px; background: #fff; box-shadow: 0 14px 38px rgba(0, 0, 0, .16); z-index: 20; }
-.generate-page.idle .tool-menu { top: 46px; bottom: auto; }
+.add-button.open { color: #fff; background: #202123; box-shadow: 0 7px 20px rgba(0, 0, 0, .2); }
+.add-button.open svg { transform: rotate(45deg); }
+.tool-menu { position: absolute; left: 0; bottom: 46px; width: 430px; padding: 10px; border: 1px solid #dadada; border-radius: 18px; background: rgba(255, 255, 255, .98); box-shadow: 0 24px 70px rgba(0, 0, 0, .18); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); }
 .menu-title { padding: 8px 10px 6px; color: #888; font-size: 11px; font-weight: 700; }
 .file-options { display: grid; max-height: 190px; overflow-y: auto; }
 .no-files { padding: 10px; color: #969696; font-size: 11px; }
-.menu-divider { height: 1px; margin: 7px 5px; background: #ececec; }
+.menu-divider { height: 1px; margin: 9px 6px 3px; background: #ececec; }
+.capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .tool-menu button { display: grid; grid-template-columns: 32px 1fr 20px; align-items: center; gap: 9px; width: 100%; padding: 10px; border: 0; border-radius: 10px; color: #282828; text-align: left; background: transparent; }
 .tool-menu button:hover, .tool-menu button.selected { background: #f2f2f2; }
+.capability-option { opacity: 0; animation: capabilityItemIn .42s cubic-bezier(.16, 1, .3, 1) forwards; }
 .tool-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #dedede; border-radius: 9px; font-size: 13px; }
-.tool-icon.pdf { color: #b83838; background: #fff1f1; font-size: 9px; font-weight: 850; }
+.tool-icon.pdf { color: #555; background: #f5f5f5; font-size: 9px; font-weight: 850; }
 .tool-menu button > span:nth-child(2) { display: grid; gap: 2px; }
 .tool-menu b { font-size: 13px; }
 .tool-menu small { color: #8a8a8a; font-size: 10px; }
 .tool-menu i { color: #202123; text-align: center; font-style: normal; }
+.tool-pop-enter-active { animation: toolMenuIn .32s cubic-bezier(.16, 1, .3, 1); }
+.tool-pop-leave-active { animation: toolMenuOut .16s ease both; }
 .model-picker { position: relative; flex: 0 0 auto; }
 .model-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; min-width: 76px; padding: 0 12px; border: 0; border-radius: 999px; color: #777; background: #f1f1f1; font-size: 15px; font-weight: 650; white-space: nowrap; }
 .model-button:hover { color: #333; background: #e9e9e9; }
@@ -1243,49 +1265,23 @@ watch(prompt, resizePromptInput)
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-section:focus-within, .composer:focus, .composer textarea:focus, .add-button:focus, .model-button:focus, .model-menu-item:focus, .send-button:focus { outline: none; }
 
-.resource-type-bar {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-bottom: 10px;
-  flex-wrap: wrap;
-}
-.resource-type-bar button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 12px;
-  border: 1px solid #d9d9d9;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #555;
-  font-size: 13px;
-  transition: all 0.2s;
-  backdrop-filter: blur(8px);
-}
-.resource-type-bar button:hover:not(:disabled) {
-  border-color: #b8b8b8;
-  background: #fff;
-  color: #222;
-}
-.resource-type-bar button.active {
-  border-color: #202123;
-  background: #202123;
-  color: #fff;
-}
-.resource-type-bar .rt-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-.resource-type-bar .rt-label {
-  font-weight: 500;
-}
-
 .composer-hint { margin: 7px 0 0; color: rgba(80, 80, 80, .62); text-align: center; font-size: 10px; text-shadow: 0 1px 8px rgba(255, 255, 255, .9); }
 .composer-error { margin: 0 auto 9px; padding: 9px 12px; border-radius: 10px; color: #a13838; background: #fff0f0; font-size: 12px; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }
 @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
+@keyframes toolMenuIn {
+  from { opacity: 0; transform: translateY(14px) scale(.9); filter: blur(6px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes toolMenuOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(7px) scale(.96); }
+}
+@keyframes capabilityItemIn {
+  from { opacity: 0; transform: translateY(9px) scale(.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 @keyframes tracePulse {
   0% { box-shadow: 0 0 0 0 rgba(32, 33, 35, .28); }
   70% { box-shadow: 0 0 0 7px rgba(32, 33, 35, 0); }
@@ -1300,7 +1296,8 @@ button:disabled { cursor: default; opacity: .65; }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .thinking-trace { width: min(320px, 88vw); }
-  .tool-menu { width: min(310px, calc(100vw - 60px)); }
+  .tool-menu { width: min(360px, calc(100vw - 44px)); }
+  .capability-grid { grid-template-columns: 1fr; max-height: 300px; overflow-y: auto; }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
 }

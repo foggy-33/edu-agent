@@ -845,6 +845,22 @@ textarea:focus-visible {
   padding: clamp(20px, 2.8vw, 40px);
 }
 
+.app-main.resource-view {
+  background: #fff;
+}
+
+.app-main.course-view {
+  background: #fff;
+}
+
+.app-main.resource-view .app-content {
+  width: min(1240px, 100%);
+}
+
+.app-main.course-view .app-content {
+  width: min(1240px, 100%);
+}
+
 .home-generate-center {
   min-height: calc(100vh - 80px);
   display: flex;

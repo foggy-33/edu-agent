@@ -7,7 +7,9 @@
   StudentProfile,
   CollaborativeLearningRequest,
   CollaborativeLearningResponse,
-  UploadedResource
+  UploadedResource,
+  CoursePdfMaterial,
+  CoursePdfAnnotation
 } from '../types'
 import type { DynamicProfile, ProfileChatResponse, ProfileInterviewResponse, SiliconFlowConfig, SubjectProfileSummary } from '../types/profile'
 
@@ -55,6 +57,53 @@ export async function evaluate(payload: EvaluateRequest): Promise<EvaluateRespon
 
 export async function getCourses(): Promise<{ courses: Course[] }> {
   return httpRequest<{ courses: Course[] }>(`${API_BASE}/courses`)
+}
+
+export async function listCourseMaterials(course: string): Promise<{ materials: CoursePdfMaterial[] }> {
+  return httpRequest(`${API_BASE}/course-materials?course=${encodeURIComponent(course)}`)
+}
+
+export function courseMaterialPreviewUrl(course: string, materialId: string): string {
+  return `${API_BASE}/course-materials/${encodeURIComponent(materialId)}/preview?course=${encodeURIComponent(course)}`
+}
+
+export async function listCoursePdfAnnotations(
+  userId: string,
+  course: string,
+  materialId: string
+): Promise<{ annotations: CoursePdfAnnotation[] }> {
+  const params = new URLSearchParams({ user_id: userId, course })
+  return httpRequest(`${API_BASE}/course-materials/${encodeURIComponent(materialId)}/annotations?${params}`)
+}
+
+export async function addCoursePdfAnnotation(
+  materialId: string,
+  payload: {
+    user_id: string
+    course: string
+    page: number
+    content: string
+    x: number | null
+    y: number | null
+  }
+): Promise<{ annotation: CoursePdfAnnotation }> {
+  return httpRequest(`${API_BASE}/course-materials/${encodeURIComponent(materialId)}/annotations`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function deleteCoursePdfAnnotation(
+  materialId: string,
+  annotationId: string,
+  userId: string,
+  course: string
+): Promise<void> {
+  const params = new URLSearchParams({ user_id: userId, course })
+  return httpRequest(
+    `${API_BASE}/course-materials/${encodeURIComponent(materialId)}/annotations/${encodeURIComponent(annotationId)}?${params}`,
+    { method: 'DELETE' }
+  )
 }
 
 export async function generateLearningResources(payload: CollaborativeLearningRequest): Promise<CollaborativeLearningResponse> {

@@ -25,6 +25,8 @@ services:
       RAG_TOP_K: ${RAG_TOP_K:-5}
       PROFILE_DATA_DIR: /app/data/profiles
       RESOURCE_DATA_DIR: /app/data/resources
+      COURSE_SOURCE_DIR: /app/sourse
+      COURSE_ANNOTATION_DIR: /app/data/resources/course_annotations
       USER_DATA_FILE: /app/data/auth/users.json
     volumes:
       - chroma_data:/app/chroma_db

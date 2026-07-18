@@ -22,12 +22,12 @@ const ALL_FOLDERS = '全部资料'
 const LEGACY_FOLDER = '历史资料'
 
 const TYPE_FILTERS = [
-  { value: 'all', label: '全部类型', icon: '📚' },
-  { value: 'pdf', label: 'PDF', icon: '📄' },
-  { value: 'lecture', label: '讲义', icon: '📖' },
-  { value: 'mindmap', label: '思维导图', icon: '🧠' },
-  { value: 'reading', label: '阅读材料', icon: '📖' },
-  { value: 'markdown', label: '文档', icon: '📝' },
+  { value: 'all', label: '全部类型', icon: '▦' },
+  { value: 'pdf', label: 'PDF', icon: 'PDF' },
+  { value: 'lecture', label: '讲义', icon: '≡' },
+  { value: 'mindmap', label: '思维导图', icon: '⌘' },
+  { value: 'reading', label: '阅读材料', icon: '▤' },
+  { value: 'markdown', label: '文档', icon: '□' },
 ]
 
 const userProfile = ref(loadUserProfile())
@@ -155,15 +155,15 @@ function resourceTypeLabel(type: string) {
 
 function resourceTypeIcon(type: string) {
   const map: Record<string, string> = {
-    pdf: '📄',
-    markdown: '📝',
-    mindmap: '🧠',
-    lecture: '📖',
-    reading: '�',
-    review: '�',
-    exercises: '📝',
+    pdf: 'PDF',
+    markdown: '□',
+    mindmap: '⌘',
+    lecture: '≡',
+    reading: '▤',
+    review: '✓',
+    exercises: '?',
   }
-  return map[type] || '📁'
+  return map[type] || '□'
 }
 
 function resourceSummary(item: UploadedResource) {
@@ -415,7 +415,7 @@ onMounted(() => {
         <div v-else-if="visibleResources.length" class="resources-list">
           <article v-for="resource in visibleResources" :key="resource.id" class="resource-list-item">
             <div class="list-item-icon">
-              <span class="icon-emoji-lg">{{ resourceTypeIcon(resource.type) }}</span>
+              <span :class="['type-glyph', `type-glyph-${resource.type}`]" aria-hidden="true">{{ resourceTypeIcon(resource.type) }}</span>
             </div>
             <div class="list-item-body">
               <div class="list-item-header">
@@ -429,17 +429,17 @@ onMounted(() => {
               <div class="list-item-footer">
                 <span class="list-item-stats">
                   <template v-if="resource.type === 'pdf'">
-                    📄 {{ resource.page_count }} 页 · {{ formatSize(resource.size) }} · {{ resource.text_length }} 字
+                    {{ resource.page_count }} 页 · {{ formatSize(resource.size) }} · {{ resource.text_length }} 字
                   </template>
                   <template v-else>
-                    📝 {{ formatSize(resource.size) }} · {{ resource.text_length }} 字
+                    {{ formatSize(resource.size) }} · {{ resource.text_length }} 字
                   </template>
                 </span>
                 <span class="list-item-date">{{ formatDate(resource.created_at) }}</span>
                 <div class="list-item-actions">
-                  <button class="list-action-btn" title="预览" @click="openPreview(resource)">👁</button>
-                  <button class="list-action-btn" title="移动分类" @click="openMoveDialog(resource)">📁</button>
-                  <a class="list-action-btn" :href="resourceDownloadUrl(userProfile.userId, resource.id)" target="_blank" title="下载">↗</a>
+                  <button class="list-action-btn" title="预览" aria-label="预览" @click="openPreview(resource)">⌕</button>
+                  <button class="list-action-btn" title="移动分类" aria-label="移动分类" @click="openMoveDialog(resource)">↪</button>
+                  <a class="list-action-btn" :href="resourceDownloadUrl(userProfile.userId, resource.id)" target="_blank" title="下载" aria-label="下载">↓</a>
                   <button class="list-action-btn danger" title="删除" @click="removeResource(resource)">×</button>
                 </div>
               </div>
@@ -448,7 +448,7 @@ onMounted(() => {
         </div>
 
         <div v-else class="empty-state">
-          <div class="empty-icon">📚</div>
+          <div class="empty-icon" aria-hidden="true">▦</div>
           <h2>{{ searchQuery ? '没有匹配的资料' : (uploadTargetFolder ? `向“${uploadTargetFolder}”上传资料` : '先新建课程文件夹') }}</h2>
           <p>{{ searchQuery ? '换个关键词再试试。' : (uploadTargetFolder ? '可一次选择多个 PDF，资料会保存到当前课程文件夹。' : '上传资料前必须选择一个课程文件夹。') }}</p>
           <button v-if="!searchQuery && uploadTargetFolder" :disabled="uploading" @click="choosePdf">选择 PDF 文件</button>
@@ -703,11 +703,6 @@ onMounted(() => {
   background: #f3f4f6;
 }
 
-.icon-emoji-lg {
-  font-size: 24px;
-  line-height: 1;
-}
-
 .list-item-body {
   display: flex;
   flex-direction: column;
@@ -863,7 +858,6 @@ onMounted(() => {
     height: 56px;
     border-radius: 12px;
   }
-  .icon-emoji-lg { font-size: 24px; }
   .list-item-header {
     flex-direction: column;
     align-items: flex-start;
@@ -1095,5 +1089,243 @@ button:disabled { cursor: default; opacity: .55; }
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* GPT-style monochrome resource workspace */
+.resource-library {
+  width: min(1100px, 100%);
+  max-width: none;
+  gap: 28px;
+  color: #202123;
+}
+
+.library-header {
+  align-items: center;
+  padding: 2px 0 18px;
+  border-bottom: 1px solid #ececec;
+}
+
+.library-header h1 {
+  margin-bottom: 7px;
+  color: #202123;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -.035em;
+}
+
+.library-header p {
+  color: #6e6e80;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.generate-btn,
+.upload-btn,
+.folder-form button,
+.empty-state button,
+.btn-primary {
+  border-radius: 10px;
+  color: #fff;
+  background: #202123;
+  font-weight: 600;
+}
+
+.generate-btn { padding: 11px 16px; }
+.generate-btn:hover,
+.upload-btn:hover,
+.btn-primary:hover:not(:disabled) { background: #000; }
+
+.library-shell {
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 28px;
+}
+
+.folder-panel {
+  position: sticky;
+  top: 20px;
+  gap: 3px;
+  padding: 12px;
+  border: 0;
+  border-radius: 14px;
+  background: #f7f7f8;
+}
+
+.folder-panel-head { padding: 5px 6px 11px; }
+.folder-panel-head strong { color: #202123; font-size: 13px; font-weight: 650; }
+.folder-panel-head button {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  color: #444654;
+  background: transparent;
+  font-size: 17px;
+}
+.folder-panel-head button:hover { background: #e9e9ec; }
+.folder-form input { border-color: #d9d9df; border-radius: 9px; background: #fff; }
+.folder-item {
+  min-height: 39px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  color: #444654;
+  font-size: 13px;
+}
+.folder-item:hover { background: #ededf0; }
+.folder-item.active { color: #202123; background: #e7e7ea; font-weight: 650; }
+.folder-item small { color: #8e8e9b; font-variant-numeric: tabular-nums; }
+
+.file-panel {
+  min-height: 440px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.library-toolbar {
+  align-items: flex-end;
+  margin-bottom: 17px;
+  padding-bottom: 17px;
+  border-bottom: 1px solid #ececec;
+}
+.library-toolbar h2 { color: #202123; font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+.library-toolbar p { color: #8e8e9b; font-size: 12px; }
+.toolbar-actions { gap: 8px; }
+.search-bar {
+  width: min(270px, 32vw);
+  min-height: 38px;
+  padding: 0 11px;
+  border-color: transparent;
+  border-radius: 10px;
+  color: #8e8e9b;
+  background: #f7f7f8;
+}
+.search-bar:focus-within { border-color: #cfcfd5; background: #fff; }
+.search-bar input { color: #202123; }
+.upload-btn { min-height: 38px; padding: 9px 14px; }
+
+.type-filter-bar {
+  gap: 7px;
+  padding: 0;
+  margin-bottom: 12px;
+  border-radius: 0;
+  background: transparent;
+}
+.type-filter-chip {
+  min-height: 32px;
+  gap: 7px;
+  padding: 5px 11px;
+  border-color: #e1e1e4;
+  border-radius: 999px;
+  color: #666674;
+  background: #fff;
+  font-size: 12px;
+}
+.type-filter-chip:hover { border-color: #bcbcc3; color: #202123; background: #f7f7f8; }
+.type-filter-chip.active { border-color: #202123; color: #fff; background: #202123; }
+.type-filter-chip .chip-icon {
+  min-width: 16px;
+  color: inherit;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.resources-list { gap: 0; }
+.resource-list-item {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 8px;
+  border: 0;
+  border-bottom: 1px solid #eeeeef;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.resource-list-item:first-child { border-top: 1px solid #eeeeef; }
+.resource-list-item:hover { border-color: #e5e5e7; background: #fafafa; box-shadow: none; }
+.list-item-icon {
+  width: 42px;
+  height: 42px;
+  border: 1px solid #e4e4e7;
+  border-radius: 11px;
+  color: #444654;
+  background: #f7f7f8;
+}
+.type-glyph { display: inline-grid; place-items: center; color: currentColor; font-size: 18px; font-weight: 500; line-height: 1; }
+.type-glyph-pdf { font-size: 9px; font-weight: 750; letter-spacing: -.03em; }
+.list-item-body { gap: 7px; }
+.list-item-title { color: #202123; font-size: 15px; font-weight: 620; }
+.list-item-summary { color: #6e6e80; font-size: 12px; line-height: 1.6; }
+.meta-tag {
+  padding: 3px 7px;
+  border: 1px solid #e5e5e7;
+  border-radius: 999px;
+  color: #6e6e80;
+  background: #f7f7f8;
+  font-size: 10px;
+}
+.folder-tag { color: #6e6e80; background: #fff; }
+.list-item-stats,
+.list-item-date { color: #9b9ba7; font-size: 11px; }
+.list-item-actions { opacity: 0; transition: opacity .15s ease; }
+.resource-list-item:hover .list-item-actions,
+.resource-list-item:focus-within .list-item-actions { opacity: 1; }
+.list-action-btn {
+  width: 29px;
+  height: 29px;
+  border-color: transparent;
+  border-radius: 8px;
+  color: #6e6e80;
+  background: transparent;
+  font-size: 15px;
+}
+.list-action-btn:hover { border-color: #e1e1e4; color: #202123; background: #f0f0f1; }
+.list-action-btn.danger:hover { border-color: #e1e1e4; color: #202123; background: #ececee; }
+
+.library-state,
+.library-error { border-radius: 10px; }
+.library-state { color: #6e6e80; background: #f7f7f8; }
+.library-error { color: #7f1d1d; background: #faf3f3; }
+.empty-state {
+  min-height: 300px;
+  align-content: center;
+  padding: 44px 20px;
+  border: 0;
+  border-radius: 14px;
+  color: #202123;
+  background: #fafafa;
+}
+.empty-icon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #dedee2; border-radius: 12px; color: #555563; background: #fff; font-size: 19px; }
+.empty-state h2 { margin: 14px 0 6px; color: #202123; font-size: 16px; font-weight: 650; }
+.empty-state p { color: #858592; }
+
+.preview-modal { background: rgba(0, 0, 0, .42); backdrop-filter: blur(2px); }
+.preview-content,
+.move-dialog { border: 1px solid #dedee2; border-radius: 16px; box-shadow: 0 24px 70px rgba(0, 0, 0, .18); }
+.preview-header { border-bottom-color: #ececee; }
+.preview-header h3 { color: #202123; }
+.preview-header p { color: #858592; }
+.preview-close { border-radius: 9px; color: #555563; background: #f2f2f3; }
+.preview-body { background: #f7f7f8; }
+.loading-spinner { border-color: #dedee2; border-top-color: #202123; }
+.folder-option.active { border-color: #202123; color: #202123; background: #f0f0f1; }
+
+@media (max-width: 900px) {
+  .library-shell { gap: 18px; }
+  .folder-panel { position: static; }
+  .library-toolbar { align-items: stretch; }
+  .search-bar { width: auto; }
+}
+
+@media (max-width: 720px) {
+  .resource-library { gap: 20px; }
+  .library-header { align-items: stretch; }
+  .library-header h1 { font-size: 26px; }
+  .generate-btn { align-self: flex-start; }
+  .resource-list-item { grid-template-columns: 38px minmax(0, 1fr); gap: 11px; padding: 15px 4px; }
+  .list-item-icon { width: 36px; height: 36px; border-radius: 9px; }
+  .list-item-actions { opacity: 1; }
+  .list-item-date { flex-basis: 100%; }
 }
 </style>

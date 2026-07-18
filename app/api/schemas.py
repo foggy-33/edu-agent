@@ -44,6 +44,15 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     response_speed: Literal["fast", "balanced", "deep"] = "balanced"
 
 
+class CoursePdfAnnotationRequest(BaseModel):
+    user_id: str
+    course: str
+    page: int = Field(..., ge=1)
+    content: str = Field(..., min_length=1, max_length=2000)
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
+
+
 class ProfileChatRequest(SiliconFlowConfig):
     user_id: str = "demo_user_001"
     course: str = "数据库系统"

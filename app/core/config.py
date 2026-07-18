@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     resource_data_dir: str = "./data/resources"
     user_data_file: str = "./data/auth/users.json"
     avatar_dir: str = "./data/avatars"
+    course_source_dir: str = "./sourse"
+    course_annotation_dir: str = "./data/course_annotations"
 
 
 @lru_cache

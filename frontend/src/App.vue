@@ -252,7 +252,7 @@ onUnmounted(() => {
       </div>
     </aside>
 
-    <main class="app-main">
+    <main :class="['app-main', { 'resource-view': currentPage === 'resources', 'course-view': currentPage === 'courses' }]">
       <div class="app-content">
         <div v-if="currentPage === 'home'" class="home-generate-center">
           <CollaborativeGeneratePage

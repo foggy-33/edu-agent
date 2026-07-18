@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 
 from app.api.schemas import (
     CollaborativeLearningRequest,
+    CoursePdfAnnotationRequest,
     EvaluateRequest,
     LearningRequest,
     LoginRequest,
@@ -24,6 +25,7 @@ from app.api.schemas import (
     UpdateUserProfileRequest,
 )
 from app.auth.service import AuthError, AuthService
+from app.courses.materials import CourseMaterialError, CourseMaterialService
 from app.learning.agents import (
     _context,
     _exercises_to_markdown,
@@ -49,6 +51,7 @@ router = APIRouter()
 profile_service = DynamicProfileService()
 auth_service = AuthService()
 resource_service = ResourceService()
+course_material_service = CourseMaterialService()
 
 
 def bearer_token(authorization: str | None) -> str:
@@ -1035,6 +1038,61 @@ COURSE_CATALOG: list[dict[str, Any]] = [
 @router.get("/courses")
 def course_catalog() -> dict:
     return {"courses": COURSE_CATALOG}
+
+
+@router.get("/course-materials")
+def list_course_materials(course: str) -> dict:
+    return {"materials": course_material_service.list_materials(course)}
+
+
+@router.get("/course-materials/{material_id}/preview")
+def preview_course_material(material_id: str, course: str) -> FileResponse:
+    try:
+        return FileResponse(
+            course_material_service.material_path(course, material_id),
+            media_type="application/pdf",
+        )
+    except CourseMaterialError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/course-materials/{material_id}/annotations")
+def list_course_material_annotations(material_id: str, user_id: str, course: str) -> dict:
+    try:
+        annotations = course_material_service.list_annotations(user_id, course, material_id)
+        return {"annotations": annotations}
+    except CourseMaterialError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/course-materials/{material_id}/annotations", status_code=201)
+def add_course_material_annotation(material_id: str, request: CoursePdfAnnotationRequest) -> dict:
+    try:
+        annotation = course_material_service.add_annotation(
+            user_id=request.user_id,
+            course=request.course,
+            material_id=material_id,
+            page=request.page,
+            content=request.content,
+            x=request.x,
+            y=request.y,
+        )
+        return {"annotation": annotation}
+    except CourseMaterialError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/course-materials/{material_id}/annotations/{annotation_id}", status_code=204)
+def delete_course_material_annotation(
+    material_id: str,
+    annotation_id: str,
+    user_id: str,
+    course: str,
+) -> None:
+    try:
+        course_material_service.delete_annotation(user_id, course, material_id, annotation_id)
+    except CourseMaterialError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/evaluate")
