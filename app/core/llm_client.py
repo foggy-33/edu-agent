@@ -59,8 +59,66 @@ class LLMClient:
         }
         return mock_outputs.get(task, mock_outputs["general"])
 
-    def spark_generate(self, prompt: str, task: str = "general", **kwargs: Any) -> str:
-        raise NotImplementedError("Spark API adapter is reserved. Configure keys in .env before implementation.")
+    def spark_generate(
+        self,
+        prompt: str,
+        task: str = "general",
+        *,
+        spark_api_password: str = "",
+        spark_base_url: str = "",
+        spark_model: str = "",
+        system_prompt: str = "你是一个严谨的智能学习助手。",
+        temperature: float = 0.3,
+        max_tokens: int = 1800,
+        messages: list[dict[str, str]] | None = None,
+        **_: Any,
+    ) -> str:
+        password = spark_api_password or self.settings.spark_api_password
+        if not password:
+            raise ValueError("未配置讯飞星火 API Password")
+
+        base_url = (spark_base_url or self.settings.spark_base_url).rstrip("/")
+        url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        payload: dict[str, Any] = {
+            "model": spark_model or self.settings.spark_model,
+            "messages": messages or [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {password}", "Content-Type": "application/json"},
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500]
+            raise ValueError(f"讯飞星火请求失败 ({exc.response.status_code}): {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise ValueError(f"无法连接讯飞星火 API: {exc}") from exc
+
+        data = response.json()
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"讯飞星火返回格式异常: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+
+    def configured_generate(
+        self,
+        prompt: str,
+        *,
+        active_provider: str = "siliconflow",
+        **kwargs: Any,
+    ) -> str:
+        if active_provider == "spark":
+            return self.spark_generate(prompt, **kwargs)
+        return self.siliconflow_generate(prompt, **kwargs)
 
     def siliconflow_generate(
         self,

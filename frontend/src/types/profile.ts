@@ -1,7 +1,11 @@
 export interface SiliconFlowConfig {
+  active_provider: 'siliconflow' | 'spark'
   api_key: string
   base_url: string
   model: string
+  spark_api_password: string
+  spark_base_url: string
+  spark_model: string
 }
 
 export interface ProfileDimension {
@@ -50,13 +54,13 @@ export interface ProfileChatResponse {
   reply: string
   profile: DynamicProfile
   updated_dimensions: string[]
-  provider: 'siliconflow' | 'rule-fallback'
+  provider: 'siliconflow' | 'spark' | 'rule-fallback'
   warning?: string
 }
 
 export interface ProfileInterviewResponse {
   question: string
   profile: DynamicProfile
-  provider: 'siliconflow' | 'rule-fallback'
+  provider: 'siliconflow' | 'spark' | 'rule-fallback'
   warning?: string
 }

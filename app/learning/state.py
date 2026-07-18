@@ -16,6 +16,10 @@ class LearningState(TypedDict, total=False):
     api_key: str
     base_url: str
     model: str
+    active_provider: str
+    spark_api_password: str
+    spark_base_url: str
+    spark_model: str
     studentProfile: dict[str, Any]
     taskPlan: list[dict[str, str]]
     lectureDoc: str

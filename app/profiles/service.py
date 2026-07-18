@@ -54,6 +54,10 @@ class DynamicProfileService:
         api_key: str = "",
         base_url: str = "",
         model: str = "",
+        active_provider: str = "siliconflow",
+        spark_api_password: str = "",
+        spark_base_url: str = "",
+        spark_model: str = "",
     ) -> dict[str, Any]:
         current = self.get_profile(user_id, course)
         provider = "rule-fallback"
@@ -66,8 +70,12 @@ class DynamicProfileService:
                 api_key=api_key,
                 base_url=base_url,
                 model=model,
+                active_provider=active_provider,
+                spark_api_password=spark_api_password,
+                spark_base_url=spark_base_url,
+                spark_model=spark_model,
             )
-            provider = "siliconflow"
+            provider = active_provider
         except ValueError as exc:
             extracted = self._extract_with_rules(course=course, message=message)
             known = set(current.get("dimensions", {})) | set(extracted)
@@ -93,6 +101,10 @@ class DynamicProfileService:
         api_key: str = "",
         base_url: str = "",
         model: str = "",
+        active_provider: str = "siliconflow",
+        spark_api_password: str = "",
+        spark_base_url: str = "",
+        spark_model: str = "",
     ) -> dict[str, Any]:
         current = self.get_profile(user_id, course)
         missing = [name for name in PROFILE_DIMENSIONS if name not in current.get("dimensions", {})]
@@ -105,23 +117,27 @@ class DynamicProfileService:
                 f"学科：{course}\n缺失维度：{missing}\n"
                 f"已有画像：{json.dumps(current.get('llm_context', {}), ensure_ascii=False)}"
             )
-            question = self.llm.siliconflow_generate(
+            question = self.llm.configured_generate(
                 prompt,
                 task="profile_interview",
+                active_provider=active_provider,
                 api_key=api_key,
                 base_url=base_url,
                 model=model,
+                spark_api_password=spark_api_password,
+                spark_base_url=spark_base_url,
+                spark_model=spark_model,
                 system_prompt="你是善于主动提问的学科学习画像访谈助手。",
                 temperature=0.45,
                 max_tokens=160,
             ).strip()
-            provider = "siliconflow"
+            provider = active_provider
         except ValueError as exc:
             question = self._fallback_question(course, missing)
             warning = str(exc)
         return {"question": question, "profile": current, "provider": provider, "warning": warning}
 
-    def test_connection(self, *, api_key: str, base_url: str, model: str) -> dict[str, Any]:
+    def test_connection(self, *, api_key: str, base_url: str, model: str, **_: Any) -> dict[str, Any]:
         content = self.llm.siliconflow_generate(
             "只回复：连接成功",
             api_key=api_key,
@@ -131,6 +147,24 @@ class DynamicProfileService:
             temperature=0,
         )
         return {"status": "ok", "model": model, "message": content.strip()}
+
+    def test_spark_connection(
+        self,
+        *,
+        spark_api_password: str,
+        spark_base_url: str,
+        spark_model: str,
+        **_: Any,
+    ) -> dict[str, Any]:
+        content = self.llm.spark_generate(
+            "只回复：连接成功",
+            spark_api_password=spark_api_password,
+            spark_base_url=spark_base_url,
+            spark_model=spark_model,
+            max_tokens=32,
+            temperature=0,
+        )
+        return {"status": "ok", "model": spark_model, "message": content.strip()}
 
     def initialize_from_onboarding(self, user_id: str, onboarding_data: dict[str, Any]) -> None:
         grade_level = onboarding_data.get("grade_level", "")
@@ -213,6 +247,10 @@ class DynamicProfileService:
         api_key: str,
         base_url: str,
         model: str,
+        active_provider: str,
+        spark_api_password: str,
+        spark_base_url: str,
+        spark_model: str,
     ) -> tuple[dict[str, Any], str]:
         prompt = (
             "通过自然语言对话持续构建学生的单学科学习画像。只提取本轮有明确证据的维度，不要猜测；"
@@ -221,12 +259,16 @@ class DynamicProfileService:
             f"已有画像：{json.dumps(current.get('llm_context', {}), ensure_ascii=False)}\n"
             f"学生本轮输入：{message}"
         )
-        raw = self.llm.siliconflow_generate(
+        raw = self.llm.configured_generate(
             prompt,
             task="profile",
+            active_provider=active_provider,
             api_key=api_key,
             base_url=base_url,
             model=model,
+            spark_api_password=spark_api_password,
+            spark_base_url=spark_base_url,
+            spark_model=spark_model,
             system_prompt="你是学生画像分析专家，只输出合法 JSON。",
             response_format={"type": "json_object"},
             temperature=0.2,

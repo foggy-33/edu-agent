@@ -1304,6 +1304,16 @@ def test_siliconflow(request: SiliconFlowConfig) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/settings/spark/test")
+def test_spark(request: SiliconFlowConfig) -> dict:
+    if not request.spark_api_password.strip():
+        raise HTTPException(status_code=400, detail="请输入讯飞星火 API Password")
+    try:
+        return profile_service.test_spark_connection(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ========== 错题本 API ==========
 
 from app.mistakes.store import MistakeStore
