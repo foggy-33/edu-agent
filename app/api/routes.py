@@ -203,7 +203,7 @@ def _generation_prompt(state: LearningState, task: str) -> str:
     return f"{_context(state)}\n\n任务：{task}\n请直接输出可展示的中文内容，不要解释你的生成过程。"
 
 
-def _stream_generated_text(state: LearningState, key: str, task: str, fallback: str) -> Iterator[str]:
+def _stream_generated_text(state: LearningState, key: str, task: str, _fallback: str) -> Iterator[str]:
     collected: list[str] = []
     for chunk in stream_llm(
         _generation_prompt(state, task),
@@ -225,9 +225,7 @@ def _stream_generated_text(state: LearningState, key: str, task: str, fallback: 
     text = "".join(collected).strip()
     if text:
         return text
-
-    yield from _stream_text(key, fallback)
-    return fallback
+    raise ValueError("大模型没有返回回答，请检查所选模型、API 密钥和接口授权")
 
 
 def _lecture_fallback(state: LearningState) -> str:

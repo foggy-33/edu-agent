@@ -73,8 +73,8 @@ const resourceOptions: {
 
 const speedOptions: Array<{ key: ResponseSpeed; label: string; description: string }> = [
   { key: 'fast', label: '极速', description: '优先快速、简洁回答' },
-  { key: 'balanced', label: '均衡', description: '兼顾速度与完整性' },
-  { key: 'deep', label: '深度', description: '更充分分析与核对' },
+  { key: 'balanced', label: '中', description: '兼顾速度与完整性' },
+  { key: 'deep', label: '高', description: '更充分分析与核对' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -334,12 +334,23 @@ function selectComposerModel(option: ComposerModelOption) {
     : { ...modelConfig.value, active_provider: 'siliconflow', model: option.model }
   saveSiliconFlowConfig(modelConfig.value)
   modelMenuOpen.value = false
+  speedMenuOpen.value = false
 }
 
 function selectResponseSpeed(speed: ResponseSpeed) {
   responseSpeed.value = speed
   localStorage.setItem('studyflow_response_speed', speed)
   speedMenuOpen.value = false
+}
+
+function toggleModelSpeedMenu() {
+  speedMenuOpen.value = !speedMenuOpen.value
+  modelMenuOpen.value = false
+  menuOpen.value = false
+}
+
+function toggleModelSubmenu() {
+  modelMenuOpen.value = !modelMenuOpen.value
 }
 
 function normalizeAnswer(value: string) {
@@ -807,7 +818,7 @@ watch(prompt, resizePromptInput)
           <details v-if="turn.reasoningContent || turn.processCompleted || (loading && turn.id === streamingTurnId)" class="reasoning-panel" :open="loading && turn.id === streamingTurnId">
             <summary>
               <span>{{ loading && turn.id === streamingTurnId ? '模型正在思考…' : '模型思考过程' }}</span>
-              <small>{{ turn.responseSpeed === 'fast' ? '极速' : turn.responseSpeed === 'deep' ? '深度' : '均衡' }}</small>
+              <small>{{ turn.responseSpeed === 'fast' ? '极速' : turn.responseSpeed === 'deep' ? '高' : '中' }}</small>
             </summary>
             <div class="reasoning-text">
               {{ turn.reasoningContent || (loading && turn.id === streamingTurnId ? '正在等待模型返回推理片段…' : '当前模型未返回独立的推理字段；可查看上方处理过程了解任务执行步骤。') }}
@@ -1017,53 +1028,47 @@ watch(prompt, resizePromptInput)
             @keydown.enter.exact.prevent="submit"
           ></textarea>
 
-          <div class="model-picker speed-picker">
+          <div class="model-picker combined-picker">
             <button
               type="button"
-              class="model-button"
+              class="model-button combined-trigger"
               :disabled="loading"
-              @click="speedMenuOpen = !speedMenuOpen; modelMenuOpen = false; menuOpen = false"
+              @click="toggleModelSpeedMenu"
             >
               {{ activeSpeed.label }}
               <span>⌄</span>
             </button>
 
-            <div v-if="speedMenuOpen" class="model-menu speed-menu">
+            <div v-if="speedMenuOpen" class="model-menu combined-menu">
+              <div class="combined-menu-title">智能</div>
               <button
                 v-for="speed in speedOptions"
                 :key="speed.key"
                 type="button"
-                class="model-menu-item"
+                class="model-menu-item speed-choice"
                 @click="selectResponseSpeed(speed.key)"
               >
-                <span><strong>{{ speed.label }}</strong><small>{{ speed.description }}</small></span>
+                <span>{{ speed.label }}</span>
                 <b v-if="responseSpeed === speed.key">✓</b>
               </button>
-            </div>
-          </div>
-
-          <div class="model-picker">
-            <button
-              type="button"
-              class="model-button model-name-button"
-              :disabled="loading"
-              @click="modelMenuOpen = !modelMenuOpen; speedMenuOpen = false; menuOpen = false"
-            >
-              {{ activeModelLabel }}
-              <span>⌄</span>
-            </button>
-
-            <div v-if="modelMenuOpen" class="model-menu model-list-menu">
-              <button
-                v-for="model in composerModels"
-                :key="`${model.provider || 'siliconflow'}-${model.model}`"
-                type="button"
-                class="model-menu-item"
-                @click="selectComposerModel(model)"
-              >
-                <span>{{ model.label }}</span>
-                <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' && (modelConfig.spark_model || 'spark-x') === model.model : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
+              <div class="combined-divider"></div>
+              <button type="button" class="model-menu-item model-entry" @click.stop="toggleModelSubmenu">
+                <span>{{ activeModelLabel }}</span>
+                <b>›</b>
               </button>
+
+              <div v-if="modelMenuOpen" class="model-menu model-list-menu model-submenu">
+                <button
+                  v-for="model in composerModels"
+                  :key="`${model.provider || 'siliconflow'}-${model.model}`"
+                  type="button"
+                  class="model-menu-item"
+                  @click="selectComposerModel(model)"
+                >
+                  <span>{{ model.label }}</span>
+                  <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' && (modelConfig.spark_model || 'spark-x') === model.model : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1253,12 +1258,19 @@ watch(prompt, resizePromptInput)
 .model-button span { color: #8c8c8c; font-size: 13px; line-height: 1; }
 .model-menu { position: absolute; min-width: 160px; padding: 8px; border: 1px solid #d9d9d9; border-radius: 17px; background: #fff; box-shadow: 0 18px 44px rgba(0, 0, 0, .14); }
 .model-menu { right: 0; bottom: 46px; z-index: 12; }
-.speed-picker .model-menu { right: auto; left: 0; min-width: 220px; }
-.speed-menu .model-menu-item > span { display: grid; gap: 2px; }
-.speed-menu .model-menu-item strong { color: #222; font-size: 14px; }
-.speed-menu .model-menu-item small { color: #888; font-size: 10px; font-weight: 500; }
-.model-list-menu { min-width: 210px; }
+.combined-trigger { min-width: 64px; color: #5f5f5f; font-size: 16px; font-weight: 500; }
+.combined-menu { width: 202px; padding: 10px; }
+.combined-menu-title { padding: 5px 12px 7px; color: #999; font-size: 14px; }
+.combined-menu .speed-choice { min-height: 42px; font-size: 16px; }
+.combined-menu .speed-choice b { font-size: 20px; }
+.combined-divider { height: 1px; margin: 6px 12px 7px; background: #e4e4e4; }
+.combined-menu .model-entry { font-size: 15px; }
+.combined-menu .model-entry span { max-width: 142px; overflow: hidden; text-overflow: ellipsis; }
+.combined-menu .model-entry b { font-size: 27px; font-weight: 300; line-height: 1; }
+.model-list-menu { min-width: 225px; }
+.model-submenu { right: calc(100% + 10px); bottom: 0; z-index: 13; }
 .generate-page.idle .model-menu { top: 46px; bottom: auto; }
+.generate-page.idle .model-submenu { top: 0; bottom: auto; }
 .model-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 42px; padding: 9px 12px; border: 0; border-radius: 11px; color: #222; background: transparent; text-align: left; font-size: 15px; line-height: 1.25; white-space: nowrap; }
 .model-menu-item:hover { background: #f2f2f2; }
 .model-menu-item b { color: #111; font-size: 18px; font-weight: 500; }
@@ -1301,6 +1313,8 @@ button:disabled { cursor: default; opacity: .65; }
   .capability-grid { grid-template-columns: 1fr; max-height: 300px; overflow-y: auto; }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
+  .combined-menu { right: 0; }
+  .model-submenu, .generate-page.idle .model-submenu { top: calc(100% + 8px); right: 0; bottom: auto; }
 }
 
 .save-to-library-btn {

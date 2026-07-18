@@ -34,7 +34,8 @@ def call_llm(
         request_base_url = base_url or settings.siliconflow_base_url
         request_model = model or settings.siliconflow_model
     if not credential.strip():
-        return ""
+        provider_name = "讯飞星火" if active_provider == "spark" else "硅基流动"
+        raise ValueError(f"{provider_name}未配置 API 密钥，请检查服务器 .env 并重建后端容器")
 
     payload: dict[str, Any] = {
         "model": request_model,
@@ -55,7 +56,10 @@ def call_llm(
                 json=payload,
             )
             response.raise_for_status()
-        return str(response.json()["choices"][0]["message"]["content"]).strip()
+        content = str(response.json()["choices"][0]["message"]["content"]).strip()
+        if not content:
+            raise ValueError("大模型返回内容为空")
+        return content
     except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"大模型调用失败: {exc}") from exc
 
@@ -87,7 +91,8 @@ def stream_llm(
         request_base_url = base_url or settings.siliconflow_base_url
         request_model = model or settings.siliconflow_model
     if not credential.strip():
-        return
+        provider_name = "讯飞星火" if active_provider == "spark" else "硅基流动"
+        raise ValueError(f"{provider_name}未配置 API 密钥，请检查服务器 .env 并重建后端容器")
 
     speed_options = {
         "fast": {
@@ -134,6 +139,30 @@ def stream_llm(
                 json=payload,
             ) as response:
                 response.raise_for_status()
+                content_type = response.headers.get("content-type", "").lower()
+                if "text/event-stream" not in content_type:
+                    response.read()
+                    try:
+                        data = response.json()
+                    except (json.JSONDecodeError, ValueError) as exc:
+                        raise ValueError(f"大模型返回了无法解析的非流式响应: {response.text[:300]}") from exc
+                    try:
+                        message = data["choices"][0]["message"]
+                    except (KeyError, IndexError, TypeError) as exc:
+                        error = data.get("error") if isinstance(data, dict) else None
+                        error_detail = error.get("message") if isinstance(error, dict) else error
+                        error_message = (data.get("message") if isinstance(data, dict) else None) or error_detail or str(data)[:300]
+                        raise ValueError(f"大模型调用失败: {error_message}") from exc
+                    reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+                    content = message.get("content") or ""
+                    if reasoning:
+                        yield {"type": "reasoning", "text": str(reasoning)}
+                    if content:
+                        yield {"type": "content", "text": str(content)}
+                        return
+                    raise ValueError("大模型返回内容为空")
+
+                received_content = False
                 for line in response.iter_lines():
                     if not line or not line.startswith("data:"):
                         continue
@@ -153,6 +182,9 @@ def stream_llm(
                     if reasoning:
                         yield {"type": "reasoning", "text": str(reasoning)}
                     if content:
+                        received_content = True
                         yield {"type": "content", "text": str(content)}
+                if not received_content:
+                    raise ValueError("大模型连接成功，但没有返回可展示的回答内容")
     except httpx.HTTPError as exc:
         raise ValueError(f"大模型流式调用失败: {exc}") from exc
