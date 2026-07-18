@@ -13,9 +13,22 @@ defineEmits<{
   navigate: [page: 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'account' | 'portrait' | 'resources']
 }>()
 
+const learningIcons = {
+  database: ['M4 6c0 1.7 3.6 3 8 3s8-1.3 8-3-3.6-3-8-3-8 1.3-8 3Z', 'M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6', 'M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6'],
+  structure: ['M4 5h6v5H4Z', 'M14 14h6v5h-6Z', 'M14 5h6v5h-6Z', 'M10 7.5h4', 'M17 10v4', 'M10 17h4'],
+  processor: ['M8 8h8v8H8Z', 'M3 9h3', 'M3 15h3', 'M18 9h3', 'M18 15h3', 'M9 3v3', 'M15 3v3', 'M9 18v3', 'M15 18v3'],
+  target: ['M12 21a9 9 0 1 0-9-9 9 9 0 0 0 9 9Z', 'M12 17a5 5 0 1 0-5-5 5 5 0 0 0 5 5Z', 'M12 12l7-7'],
+  review: ['M4 5h16v14H4Z', 'M8 9h8', 'M8 13h5'],
+  practice: ['M5 19l4-.8L19 8.2 15.8 5 5.8 15Z', 'M14.5 6.5l3 3'],
+  video: ['M4 6h12v12H4Z', 'm16 10 4-2v8l-4-2Z'],
+  test: ['M6 3h12v18H6Z', 'M9 8h6', 'M9 12h6', 'M9 16h3'],
+  document: ['M6 2h8l4 4v16H6Z', 'M14 2v5h5', 'M9 12h6', 'M9 16h6'],
+  mindmap: ['M9 4h6v4H9Z', 'M4 16h6v4H4Z', 'M14 16h6v4h-6Z', 'M12 8v4', 'M7 16v-4h10v4'],
+} as const
+
 interface RecommendedResource {
   id: string
-  icon: string
+  icon: keyof typeof learningIcons
   topic: string
   description: string
   course: string
@@ -95,6 +108,11 @@ const evalQuizFinished = ref(false)
 
 const recommendations = ref<RecommendedResource[]>([])
 const recommendationsLoading = ref(false)
+
+function getStepIcon(type: string) {
+  if (type === 'review' || type === 'practice' || type === 'video') return learningIcons[type]
+  return learningIcons.test
+}
 
 const showLearningModal = ref(false)
 const learningContent = ref<{
@@ -295,7 +313,7 @@ async function loadRecommendations() {
     const courses = ['操作系统', '数据结构', '计算机组成原理']
     recommendations.value = courses.map<RecommendedResource>((course, index) => ({
       id: `${course}-${index}`,
-      icon: ['⚙️', '🌳', '💻'][index],
+      icon: (['database', 'structure', 'processor'] as const)[index] ?? 'database',
       topic: weakPoints[index] || fallbackTopics[index],
       description: weakPoints[index]
         ? `结合当前学习画像，重点巩固“${weakPoints[index]}”相关知识。`
@@ -462,8 +480,9 @@ onMounted(async () => {
   <div class="learning-center-container">
     <section class="learning-hero">
       <div>
+        <span class="hero-eyebrow">学习中心</span>
         <h1>{{ userProfile.name }}的学习中心</h1>
-        <p>查看学习进度、学科画像和学习时长统计</p>
+        <p>汇总你的学习进度、能力画像与下一步学习建议</p>
       </div>
       <div class="hero-avatar">
         <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
@@ -494,7 +513,6 @@ onMounted(async () => {
       <section class="portrait-card">
         <header>
           <h2>学科画像</h2>
-          <span class="completion-badge">完成度 {{ portrait?.completion || activeSubject?.completion || 0 }}%</span>
         </header>
 
         <div class="subject-switcher">
@@ -606,7 +624,7 @@ onMounted(async () => {
                   cy="50"
                   r="40"
                   fill="none"
-                  stroke="#3b82f6"
+                  stroke="#202123"
                   stroke-width="8"
                   stroke-linecap="round"
                   :stroke-dasharray="251.2"
@@ -673,7 +691,9 @@ onMounted(async () => {
             <h4>下一步建议</h4>
             <ul>
               <li v-for="step in evalResult.next_steps" :key="step.title">
-                <span class="step-type">{{ step.type === 'review' ? '📚' : step.type === 'practice' ? '✏️' : step.type === 'video' ? '🎬' : '📝' }}</span>
+                <span class="step-type" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path v-for="path in getStepIcon(step.type)" :key="path" :d="path" /></svg>
+                </span>
                 {{ step.title }}
                 <span class="step-duration">{{ step.duration }}</span>
               </li>
@@ -739,7 +759,9 @@ onMounted(async () => {
       </div>
 
       <div v-else-if="recommendations.length === 0" class="recommendation-empty">
-        <div class="empty-icon">🎯</div>
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path v-for="path in learningIcons.target" :key="path" :d="path" /></svg>
+        </div>
         <p>暂无推荐内容</p>
         <small>完成测评后会根据你的薄弱点生成个性化推荐</small>
       </div>
@@ -750,7 +772,9 @@ onMounted(async () => {
           :key="item.id"
           class="recommendation-item"
         >
-          <div class="recommendation-icon">{{ item.icon }}</div>
+          <div class="recommendation-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path v-for="path in learningIcons[item.icon]" :key="path" :d="path" /></svg>
+          </div>
           <div class="recommendation-content">
             <h3>{{ item.topic }}</h3>
             <p>{{ item.description }}</p>
@@ -778,17 +802,17 @@ onMounted(async () => {
             </div>
             <div v-else>
               <div v-if="learningContent.lectureDoc" class="content-section">
-                <h3>📖 讲解文档</h3>
+                <h3><svg class="section-heading-icon" viewBox="0 0 24 24"><path v-for="path in learningIcons.document" :key="path" :d="path" /></svg>讲解文档</h3>
                 <div class="content-text" v-html="marked(learningContent.lectureDoc)"></div>
               </div>
               <div v-if="learningContent.mindmap" class="content-section">
-                <h3>🧠 思维导图</h3>
+                <h3><svg class="section-heading-icon" viewBox="0 0 24 24"><path v-for="path in learningIcons.mindmap" :key="path" :d="path" /></svg>思维导图</h3>
                 <div class="mindmap-container">
                   <div id="mindmap-svg" class="mindmap-svg"></div>
                 </div>
               </div>
               <div v-if="learningContent.exerciseItems.length" class="content-section">
-                <h3>✏️ 练习题</h3>
+                <h3><svg class="section-heading-icon" viewBox="0 0 24 24"><path v-for="path in learningIcons.practice" :key="path" :d="path" /></svg>练习题</h3>
                 <div class="exercise-list">
                   <div v-for="(exercise, index) in learningContent.exerciseItems" :key="index" class="exercise-item">
                     <div class="exercise-question">
@@ -822,41 +846,57 @@ onMounted(async () => {
 
 <style scoped>
 .learning-center-container {
-  max-width: 1200px;
+  width: 100%;
+  max-width: 1080px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 8px 0 48px;
+  color: #202123;
 }
 
 .learning-hero {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 40px;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  border-radius: 16px;
-  color: white;
-  margin-bottom: 20px;
+  min-height: 132px;
+  padding: 28px 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  background: #ffffff;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .learning-hero h1 {
-  margin: 0 0 8px;
-  font-size: 28px;
+  margin: 5px 0 8px;
+  color: #202123;
+  font-size: clamp(24px, 2.4vw, 30px);
+  line-height: 1.2;
+  letter-spacing: -0.03em;
 }
 
 .learning-hero p {
   margin: 0;
-  opacity: 0.9;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.hero-eyebrow {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 650;
 }
 
 .hero-avatar {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.2);
+  width: 58px;
+  height: 58px;
+  border: 1px solid #202123;
+  border-radius: 16px;
+  background: #202123;
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 20px;
   font-weight: bold;
   overflow: hidden;
 }
@@ -870,23 +910,24 @@ onMounted(async () => {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .stat-card {
   background: white;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  text-align: center;
+  padding: 18px 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: bold;
-  color: #3b82f6;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
+  color: #202123;
+  font-size: 25px;
+  font-weight: 680;
+  line-height: 1.1;
 }
 
 .stat-label {
@@ -896,9 +937,9 @@ onMounted(async () => {
 
 .learning-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-  margin-bottom: 20px;
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, .82fr);
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .portrait-card,
@@ -906,9 +947,14 @@ onMounted(async () => {
 .evaluate-card,
 .recommendation-card {
   background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 24px;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.025);
+  padding: 24px 26px;
+}
+
+.evaluate-card {
+  margin-bottom: 16px;
 }
 
 .portrait-card header,
@@ -918,7 +964,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .portrait-card h2,
@@ -927,25 +973,19 @@ onMounted(async () => {
 .recommendation-card h2 {
   margin: 0;
   font-size: 18px;
+  font-weight: 650;
   color: #111827;
-}
-
-.completion-badge {
-  background: #3b82f6;
-  color: white;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 14px;
 }
 
 .subject-switcher {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .subject-switcher button {
-  padding: 8px 16px;
+  padding: 7px 13px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: white;
@@ -955,13 +995,14 @@ onMounted(async () => {
 }
 
 .subject-switcher button:hover {
-  border-color: #3b82f6;
+  border-color: #202123;
+  background: #f7f7f8;
 }
 
 .subject-switcher button.active {
-  background: #3b82f6;
+  background: #202123;
   color: white;
-  border-color: #3b82f6;
+  border-color: #202123;
 }
 
 .subject-switcher button:disabled {
@@ -972,12 +1013,12 @@ onMounted(async () => {
 .portrait-radar-wrap {
   display: flex;
   justify-content: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .portrait-radar {
-  width: 200px;
-  height: 200px;
+  width: 210px;
+  height: 210px;
 }
 
 .radar-ring {
@@ -992,13 +1033,13 @@ onMounted(async () => {
 }
 
 .radar-area {
-  fill: rgba(59, 130, 246, 0.2);
-  stroke: #3b82f6;
+  fill: rgba(32, 33, 35, 0.12);
+  stroke: #202123;
   stroke-width: 2;
 }
 
 .radar-point {
-  fill: #3b82f6;
+  fill: #202123;
 }
 
 .radar-label {
@@ -1026,8 +1067,9 @@ onMounted(async () => {
 }
 
 .stats-inner {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 104px;
+  gap: 22px;
   align-items: center;
 }
 
@@ -1038,7 +1080,7 @@ onMounted(async () => {
 .stat-row {
   display: flex;
   justify-content: space-between;
-  padding: 12px 0;
+  padding: 13px 0;
   border-bottom: 1px solid #f3f4f6;
 }
 
@@ -1048,7 +1090,7 @@ onMounted(async () => {
 
 .stat-num {
   font-weight: 600;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .stat-num.success {
@@ -1060,7 +1102,7 @@ onMounted(async () => {
 }
 
 .stats-right {
-  width: 120px;
+  width: 104px;
 }
 
 .progress-ring-wrap {
@@ -1082,7 +1124,7 @@ onMounted(async () => {
   transform: translate(-50%, -50%);
   font-weight: bold;
   font-size: 16px;
-  color: #3b82f6;
+  color: #202123;
 }
 
 .mode-switcher {
@@ -1100,9 +1142,9 @@ onMounted(async () => {
 }
 
 .mode-switcher button.active {
-  background: #3b82f6;
+  background: #202123;
   color: white;
-  border-color: #3b82f6;
+  border-color: #202123;
 }
 
 .evaluate-body {
@@ -1129,7 +1171,7 @@ onMounted(async () => {
 .evaluate-btn,
 .quiz-submit {
   padding: 12px;
-  background: #3b82f6;
+  background: #202123;
   color: white;
   border: none;
   border-radius: 8px;
@@ -1141,7 +1183,7 @@ onMounted(async () => {
 
 .evaluate-btn:hover:not(:disabled),
 .quiz-submit:hover:not(:disabled) {
-  background: #2563eb;
+  background: #343541;
 }
 
 .evaluate-btn:disabled,
@@ -1171,7 +1213,7 @@ onMounted(async () => {
 .result-score {
   font-size: 28px;
   font-weight: bold;
-  color: #3b82f6;
+  color: #202123;
 }
 
 .result-analysis {
@@ -1203,7 +1245,24 @@ onMounted(async () => {
 }
 
 .step-type {
-  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  margin-right: 7px;
+  vertical-align: -4px;
+}
+
+.step-type svg,
+.recommendation-icon svg,
+.empty-icon svg,
+.section-heading-icon {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .step-duration {
@@ -1233,7 +1292,7 @@ onMounted(async () => {
 
 .quiz-progress-fill {
   height: 100%;
-  background: #3b82f6;
+  background: #202123;
   border-radius: 4px;
   transition: width 0.3s;
 }
@@ -1323,7 +1382,7 @@ onMounted(async () => {
   width: 40px;
   height: 40px;
   border: 4px solid #e5e7eb;
-  border-top-color: #3b82f6;
+  border-top-color: #202123;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 16px;
@@ -1334,8 +1393,10 @@ onMounted(async () => {
 }
 
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 16px;
+  color: #4b5563;
 }
 
 .recommendation-list {
@@ -1357,12 +1418,13 @@ onMounted(async () => {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: #3b82f6;
-  color: white;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #202123;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  padding: 12px;
   flex-shrink: 0;
 }
 
@@ -1388,8 +1450,8 @@ onMounted(async () => {
 
 .course-tag {
   padding: 4px 10px;
-  background: #e0f2fe;
-  color: #0284c7;
+  background: #f0f0f0;
+  color: #4b5563;
   border-radius: 4px;
   font-size: 12px;
 }
@@ -1418,7 +1480,7 @@ onMounted(async () => {
 
 .start-learning-btn {
   padding: 10px 20px;
-  background: #3b82f6;
+  background: #202123;
   color: white;
   border: none;
   border-radius: 8px;
@@ -1430,7 +1492,7 @@ onMounted(async () => {
 }
 
 .start-learning-btn:hover {
-  background: #2563eb;
+  background: #343541;
 }
 
 .learning-modal-overlay {
@@ -1511,8 +1573,17 @@ onMounted(async () => {
 
 .content-section h3 {
   margin: 0 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 16px;
   color: #111827;
+}
+
+.section-heading-icon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
 }
 
 .content-text {
@@ -1529,7 +1600,7 @@ onMounted(async () => {
 
 .content-text h2 {
   font-size: 18px;
-  border-bottom: 2px solid #3b82f6;
+  border-bottom: 2px solid #202123;
   padding-bottom: 8px;
 }
 
@@ -1658,6 +1729,10 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
+  .learning-center-container {
+    padding-top: 0;
+  }
+
   .learning-grid {
     grid-template-columns: 1fr;
   }
@@ -1667,9 +1742,15 @@ onMounted(async () => {
   }
   
   .learning-hero {
-    flex-direction: column;
-    text-align: center;
-    gap: 20px;
+    min-height: auto;
+    padding: 24px;
+    gap: 16px;
+  }
+
+  .hero-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
   }
   
   .recommendation-item {
@@ -1678,6 +1759,33 @@ onMounted(async () => {
   
   .start-learning-btn {
     width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .portrait-card,
+  .stats-card,
+  .evaluate-card,
+  .recommendation-card {
+    padding: 20px;
+  }
+
+  .stats-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-right {
+    display: none;
+  }
+
+  .evaluate-card header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
   }
 }
 </style>
