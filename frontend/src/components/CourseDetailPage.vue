@@ -34,6 +34,19 @@ function chapterMaterials(chapter: CourseChapter) {
   })
 }
 
+function chapterMaterial(chapter: CourseChapter) {
+  return chapterMaterials(chapter)[0] || null
+}
+
+function openChapterMaterial(chapter: CourseChapter) {
+  const material = chapterMaterial(chapter)
+  if (material) activeMaterial.value = material
+}
+
+function materialTitle(material: CoursePdfMaterial) {
+  return material.name.replace(/^\d+\s*/, '').replace(/-\d+$/, '').trim() || '补充章节'
+}
+
 const supplementalMaterials = computed(() => {
   const assignedIds = new Set(chapters.value.flatMap((chapter) => chapterMaterials(chapter).map((item) => item.id)))
   return materials.value.filter((item) => !assignedIds.has(item.id))
@@ -52,12 +65,6 @@ async function loadMaterials() {
   } finally {
     materialsLoading.value = false
   }
-}
-
-function formatFileSize(size: number) {
-  return size >= 1024 * 1024
-    ? `${(size / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(size / 1024))} KB`
 }
 
 onMounted(loadMaterials)
@@ -186,7 +193,14 @@ function chapterStatusLabel(chapter: CourseChapter) {
           <article
             v-for="chapter in chapters"
             :key="chapter.id"
-            class="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-transparent hover:border-gray-200 transition-colors"
+            :class="[
+              'flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-transparent transition-all',
+              chapterMaterial(chapter) ? 'cursor-pointer hover:border-gray-300 hover:bg-white hover:shadow-sm' : ''
+            ]"
+            :role="chapterMaterial(chapter) ? 'button' : undefined"
+            :tabindex="chapterMaterial(chapter) ? 0 : undefined"
+            @click="openChapterMaterial(chapter)"
+            @keydown.enter="openChapterMaterial(chapter)"
           >
             <div :class="['w-10 h-10 rounded-xl flex items-center justify-center font-bold', getChapterStatusClass(chapter.status)]">
               {{ chapter.id.toString().split('-').pop() }}
@@ -199,38 +213,25 @@ function chapterStatusLabel(chapter: CourseChapter) {
                   {{ topic }}
                 </span>
               </div>
-              <div v-if="chapterMaterials(chapter).length" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-200">
-                <button
-                  v-for="material in chapterMaterials(chapter)"
-                  :key="material.id"
-                  class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 hover:border-gray-900 hover:text-gray-900 transition-colors"
-                  @click="activeMaterial = material"
-                >
-                  <span class="font-extrabold text-[9px]">PDF</span>
-                  <span>{{ material.name }}</span>
-                  <small class="text-gray-400">{{ formatFileSize(material.size) }}</small>
-                  <span>↗</span>
-                </button>
-              </div>
             </div>
+            <span v-if="chapterMaterial(chapter)" class="w-9 h-9 shrink-0 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-500">→</span>
           </article>
 
-          <article v-if="supplementalMaterials.length" class="p-4 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-            <div class="font-medium text-gray-900">补充章节资料</div>
-            <div class="text-xs text-gray-400 mt-1">尚未匹配到现有章节的课程 PDF</div>
-            <div class="flex flex-wrap gap-2 mt-3">
-              <button
-                v-for="material in supplementalMaterials"
-                :key="material.id"
-                class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700 hover:border-gray-900 transition-colors"
-                @click="activeMaterial = material"
-              >
-                <span class="font-extrabold text-[9px]">PDF</span>
-                <span>{{ material.name }}</span>
-                <small class="text-gray-400">{{ formatFileSize(material.size) }}</small>
-                <span>↗</span>
-              </button>
+          <article
+            v-for="material in supplementalMaterials"
+            :key="material.id"
+            class="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-dashed border-gray-200 cursor-pointer hover:border-gray-400 hover:bg-white hover:shadow-sm transition-all"
+            role="button"
+            tabindex="0"
+            @click="activeMaterial = material"
+            @keydown.enter="activeMaterial = material"
+          >
+            <div class="w-10 h-10 shrink-0 rounded-xl border border-gray-200 bg-white grid place-items-center text-xs font-bold text-gray-500">＋</div>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-gray-900">{{ materialTitle(material) }}</div>
+              <div class="text-sm text-gray-500 mt-1">补充章节 · 点击进入学习</div>
             </div>
+            <span class="w-9 h-9 shrink-0 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-500">→</span>
           </article>
         </div>
       </section>

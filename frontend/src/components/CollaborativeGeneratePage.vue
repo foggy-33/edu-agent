@@ -32,7 +32,6 @@ interface ConversationTurn {
   result: CollaborativeLearningResponse | null
   streamContent: Record<ResultKey, string>
   thinkingSteps: string[]
-  reasoningContent: string
   processSteps: AgentProcessStep[]
   processCollapsed: boolean
   processCompleted: boolean
@@ -121,7 +120,6 @@ const streamContent = ref<Record<ResultKey, string>>({
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
-const reasoningContent = ref('')
 const processSteps = ref<AgentProcessStep[]>([])
 const processQueue = ref<AgentProcessStep[]>([])
 const processCollapsed = ref(false)
@@ -151,7 +149,7 @@ const availableTabs = computed(() => [
 void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
-const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0 || Boolean(reasoningContent.value))
+const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeSpeed = computed(() => speedOptions.find(item => item.key === responseSpeed.value) || speedOptions[1])
 const activeComposerModel = computed(() => composerModels.find(item =>
   modelConfig.value.active_provider === 'spark'
@@ -292,7 +290,6 @@ function syncActiveTurn(targetId = streamingTurnId.value || activeTurnId.value) 
           result: result.value,
           streamContent: { ...streamContent.value },
           thinkingSteps: [...thinkingSteps.value],
-          reasoningContent: reasoningContent.value,
           processSteps: processSteps.value.map(step => ({ ...step })),
           processCollapsed: processCollapsed.value,
           processCompleted: processCompleted.value,
@@ -428,7 +425,6 @@ async function loadUploadedResources() {
 function resetStreamState() {
   streamContent.value = emptyStreamContent()
   thinkingSteps.value = []
-  reasoningContent.value = ''
   processSteps.value = []
   processQueue.value = []
   processCollapsed.value = false
@@ -481,7 +477,6 @@ function hydrateFromHistory(id: string | null | undefined) {
         resourceTypes: item.resourceTypes,
         result: item.result,
         thinkingSteps: item.thinkingSteps,
-        reasoningContent: '',
         responseSpeed: 'balanced' as ResponseSpeed,
       }]
   const lastTurn = turns[turns.length - 1]
@@ -501,7 +496,6 @@ function hydrateFromHistory(id: string | null | undefined) {
     review: lastTurn.result.review || '',
   }
   thinkingSteps.value = [...lastTurn.thinkingSteps]
-  reasoningContent.value = lastTurn.reasoningContent || ''
   responseSpeed.value = lastTurn.responseSpeed || 'balanced'
   processSteps.value = buildHistoryProcessSteps(lastTurn.thinkingSteps, 'history')
   processCollapsed.value = true
@@ -522,7 +516,6 @@ function hydrateFromHistory(id: string | null | undefined) {
       review: turn.result.review || '',
     },
     thinkingSteps: [...turn.thinkingSteps],
-    reasoningContent: turn.reasoningContent || '',
     processSteps: buildHistoryProcessSteps(turn.thinkingSteps, `${turn.id}-history`),
     processCollapsed: true,
     processCompleted: true,
@@ -544,7 +537,6 @@ function persistCurrentConversation(fallbackQuestion = '') {
       resourceTypes: [...turn.resourceTypes],
       result: turn.result!,
       thinkingSteps: [...turn.thinkingSteps],
-      reasoningContent: turn.reasoningContent,
       responseSpeed: turn.responseSpeed,
       provider: turn.provider,
     }))
@@ -643,11 +635,6 @@ function applyStreamEvent(event: string, data: any) {
     syncActiveTurn()
     return
   }
-  if (event === 'reasoning' && typeof data.text === 'string') {
-    reasoningContent.value += data.text
-    syncActiveTurn()
-    return
-  }
   if (event === 'done') {
     result.value = data.result
     processCompleted.value = true
@@ -720,7 +707,6 @@ async function submit() {
       result: null,
       streamContent: emptyStreamContent(),
       thinkingSteps: [],
-      reasoningContent: '',
       processSteps: [],
       processCollapsed: false,
       processCompleted: false,
@@ -814,16 +800,6 @@ watch(prompt, resizePromptInput)
               </li>
             </ol>
           </div>
-
-          <details v-if="turn.reasoningContent || turn.processCompleted || (loading && turn.id === streamingTurnId)" class="reasoning-panel" :open="loading && turn.id === streamingTurnId">
-            <summary>
-              <span>{{ loading && turn.id === streamingTurnId ? '模型正在思考…' : '模型思考过程' }}</span>
-              <small>{{ turn.responseSpeed === 'fast' ? '极速' : turn.responseSpeed === 'deep' ? '高' : '中' }}</small>
-            </summary>
-            <div class="reasoning-text">
-              {{ turn.reasoningContent || (loading && turn.id === streamingTurnId ? '正在等待模型返回推理片段…' : '当前模型未返回独立的推理字段；可查看上方处理过程了解任务执行步骤。') }}
-            </div>
-          </details>
 
           <div v-if="uniqueSources(turn.result?.sources).length" class="result-sources">
             <span>参考资料</span>
@@ -1190,10 +1166,6 @@ watch(prompt, resizePromptInput)
 .agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
 .agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
 .agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
-.reasoning-panel { width: min(680px, 100%); margin: 0 0 14px; border: 1px solid #e7e7e7; border-radius: 14px; background: #f8f8f8; overflow: hidden; }
-.reasoning-panel summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; color: #555; cursor: pointer; user-select: none; font-size: 12px; font-weight: 700; }
-.reasoning-panel summary small { padding: 3px 7px; border-radius: 999px; color: #777; background: #ededed; font-size: 10px; font-weight: 650; }
-.reasoning-text { max-height: 260px; padding: 0 13px 12px; overflow-y: auto; color: #686868; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }

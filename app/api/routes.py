@@ -217,7 +217,6 @@ def _stream_generated_text(state: LearningState, key: str, task: str, _fallback:
         response_speed=state.get("response_speed", "balanced"),
     ):
         if chunk["type"] == "reasoning":
-            yield _sse("reasoning", {"key": key, "text": chunk["text"]})
             continue
         collected.append(chunk["text"])
         yield _sse("content", {"key": key, "text": chunk["text"]})

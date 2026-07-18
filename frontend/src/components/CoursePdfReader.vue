@@ -42,6 +42,9 @@ const originalBodyOverflow = document.body.style.overflow
 const pageAnnotations = computed(() =>
   annotations.value.filter((item) => item.page === pageNumber.value)
 )
+const displayTitle = computed(() =>
+  props.material.name.replace(/^\d+\s*/, '').replace(/-\d+$/, '').trim() || props.course
+)
 
 async function loadDocument() {
   loading.value = true
@@ -112,6 +115,7 @@ async function changeScale(delta: number) {
 
 async function choosePosition(event: MouseEvent) {
   if (!placing.value || !pageStage.value) return
+  event.stopPropagation()
   const rect = pageStage.value.getBoundingClientRect()
   draftPosition.value = {
     x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
@@ -120,6 +124,18 @@ async function choosePosition(event: MouseEvent) {
   placing.value = false
   await nextTick()
   noteInput.value?.focus()
+}
+
+function turnPageFromSide(event: MouseEvent) {
+  if (placing.value || !pageCount.value) return
+  const area = event.currentTarget as HTMLElement
+  const rect = area.getBoundingClientRect()
+  const position = (event.clientX - rect.left) / rect.width
+  if (position <= 0.28 && pageNumber.value > 1) {
+    void changePage(pageNumber.value - 1)
+  } else if (position >= 0.72 && pageNumber.value < pageCount.value) {
+    void changePage(pageNumber.value + 1)
+  }
 }
 
 async function saveAnnotation() {
@@ -161,6 +177,15 @@ async function removeAnnotation(annotation: CoursePdfAnnotation) {
 
 function closeOnEscape(event: KeyboardEvent) {
   if (event.key === 'Escape') emit('close')
+  const target = event.target as HTMLElement | null
+  if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT') return
+  if (event.key === 'ArrowLeft') {
+    event.preventDefault()
+    void changePage(pageNumber.value - 1)
+  } else if (event.key === 'ArrowRight') {
+    event.preventDefault()
+    void changePage(pageNumber.value + 1)
+  }
 }
 
 watch(() => props.material.id, loadDocument)
@@ -183,7 +208,7 @@ onBeforeUnmount(() => {
       <div class="title-group">
         <span class="pdf-badge">PDF</span>
         <div>
-          <strong>{{ material.name }}</strong>
+          <strong>{{ displayTitle }}</strong>
           <span>{{ course }} · {{ Math.max(1, Math.round(material.size / 1024 / 1024 * 10) / 10) }} MB</span>
         </div>
       </div>
@@ -200,7 +225,9 @@ onBeforeUnmount(() => {
     </header>
 
     <main class="reader-body">
-      <section class="document-area">
+      <section class="document-area" @click="turnPageFromSide">
+        <span v-if="pageNumber > 1" class="page-side-hint previous" aria-hidden="true">‹</span>
+        <span v-if="pageNumber < pageCount" class="page-side-hint next" aria-hidden="true">›</span>
         <div v-if="loading" class="reader-state">正在打开 PDF…</div>
         <div v-else-if="error && !pageCount" class="reader-state error-state">{{ error }}</div>
         <div v-show="!loading && pageCount" class="page-stage" ref="pageStage" :class="{ placing }" @click="choosePosition">
@@ -287,7 +314,10 @@ onBeforeUnmount(() => {
 .page-controls i { width: 1px; height: 18px; background: #ddd; margin: 0 3px; }
 .close-button { justify-self: end; width: 38px; height: 38px; font-size: 26px; font-weight: 300; }
 .reader-body { min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
-.document-area { min-width: 0; overflow: auto; padding: 32px; display: flex; justify-content: center; align-items: flex-start; }
+.document-area { position: relative; min-width: 0; overflow: auto; padding: 32px; display: flex; justify-content: center; align-items: flex-start; }
+.page-side-hint { position: fixed; top: 50%; z-index: 3; width: 42px; height: 42px; border: 1px solid rgba(0,0,0,.1); border-radius: 50%; background: rgba(255,255,255,.82); color: #555; display: grid; place-items: center; font: 300 30px/1 sans-serif; box-shadow: 0 4px 18px rgba(0,0,0,.08); pointer-events: none; opacity: .48; }
+.page-side-hint.previous { left: 20px; }
+.page-side-hint.next { right: 360px; }
 .page-stage { position: relative; flex: 0 0 auto; box-shadow: 0 14px 50px rgba(0,0,0,.14); background: white; line-height: 0; }
 .page-stage.placing { cursor: crosshair; outline: 3px solid rgba(23,23,23,.15); outline-offset: 5px; }
 .page-stage canvas { display: block; max-width: none; }
@@ -326,6 +356,8 @@ onBeforeUnmount(() => {
   .page-controls { grid-column: 1 / -1; grid-row: 2; justify-self: center; }
   .reader-body { grid-template-columns: 1fr; overflow: auto; }
   .document-area { min-height: 60vh; overflow: visible; padding: 18px; }
+  .page-side-hint.previous { left: 10px; }
+  .page-side-hint.next { right: 10px; }
   .annotation-panel { border-left: 0; border-top: 1px solid #dededb; overflow: visible; }
 }
 </style>

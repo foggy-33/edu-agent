@@ -22,7 +22,6 @@ export interface ConversationHistoryTurn {
   resourceTypes: CollaborativeResourceType[]
   result: CollaborativeLearningResponse
   thinkingSteps: string[]
-  reasoningContent?: string
   responseSpeed?: 'fast' | 'balanced' | 'deep'
   provider?: 'siliconflow' | 'spark'
 }
