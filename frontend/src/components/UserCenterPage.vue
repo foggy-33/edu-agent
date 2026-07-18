@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { testSiliconFlow } from '../api/client'
+import { computed, onMounted, ref } from 'vue'
+import { getDynamicProfile, listDynamicProfiles, testSiliconFlow, testSpark } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { defaultUserProfile, loadUserProfile, saveUserProfile } from '../api/userProfile'
 import { updateUserProfile } from '../api/auth'
+import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 
 const emit = defineEmits<{
   logout: []
@@ -16,13 +17,21 @@ const userSuccess = ref('')
 
 const apiConfig = ref(loadSiliconFlowConfig())
 const apiShowKey = ref(false)
+const sparkShowPassword = ref(false)
 const apiTesting = ref(false)
 const apiMessage = ref('')
 const apiError = ref(false)
 
 const userSaving = ref(false)
+const subjectProfiles = ref<SubjectProfileSummary[]>([])
+const selectedPortraitCourse = ref('')
+const portraitDetails = ref<DynamicProfile | null>(null)
+const portraitLoading = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
+const activeModelName = computed(() => apiConfig.value.active_provider === 'spark'
+  ? `讯飞星火 · ${apiConfig.value.spark_model}`
+  : `硅基流动 · ${apiConfig.value.model}`)
 
 function chooseAvatar() {
   fileInput.value?.click()
@@ -100,6 +109,9 @@ function normalizeApiConfig() {
     api_key: apiConfig.value.api_key.trim(),
     base_url: apiConfig.value.base_url.trim() || 'https://api.siliconflow.cn/v1',
     model: apiConfig.value.model.trim() || 'deepseek-ai/DeepSeek-V4-Pro',
+    spark_api_password: apiConfig.value.spark_api_password.trim(),
+    spark_base_url: apiConfig.value.spark_base_url.trim() || 'https://spark-api-open.xf-yun.com/x2',
+    spark_model: apiConfig.value.spark_model.trim() || 'spark-x',
   }
 }
 
@@ -112,14 +124,15 @@ function saveApiSettings() {
 
 async function testApiSettings() {
   saveApiSettings()
-  if (!apiConfig.value.api_key.trim()) {
+  const isSpark = apiConfig.value.active_provider === 'spark'
+  if (isSpark ? !apiConfig.value.spark_api_password.trim() : !apiConfig.value.api_key.trim()) {
     apiError.value = true
-    apiMessage.value = '请先填写 API Key'
+    apiMessage.value = isSpark ? '请先填写讯飞星火 API Password' : '请先填写硅基流动 API Key'
     return
   }
   apiTesting.value = true
   try {
-    const result = await testSiliconFlow(apiConfig.value)
+    const result = isSpark ? await testSpark(apiConfig.value) : await testSiliconFlow(apiConfig.value)
     apiError.value = false
     apiMessage.value = `${result.model}：${result.message}`
   } catch (err) {
@@ -129,6 +142,32 @@ async function testApiSettings() {
     apiTesting.value = false
   }
 }
+
+async function loadPortraitDetails(course?: string) {
+  const targetCourse = course || selectedPortraitCourse.value
+  if (!targetCourse) return
+  portraitLoading.value = true
+  try {
+    selectedPortraitCourse.value = targetCourse
+    const result = await getDynamicProfile(userProfile.value.userId, targetCourse)
+    portraitDetails.value = result.profile
+  } catch {
+    portraitDetails.value = null
+  } finally {
+    portraitLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    const result = await listDynamicProfiles(userProfile.value.userId)
+    subjectProfiles.value = result.profiles
+    const firstCourse = result.profiles[0]?.course
+    if (firstCourse) await loadPortraitDetails(firstCourse)
+  } catch {
+    subjectProfiles.value = []
+  }
+})
 </script>
 
 <template>
@@ -245,14 +284,27 @@ async function testApiSettings() {
       <section class="panel">
         <div class="panel-header">
           <h2>模型设置</h2>
-          <span class="model-badge">{{ apiConfig.model }}</span>
+          <span class="model-badge">{{ activeModelName }}</span>
         </div>
 
         <p class="panel-desc">
-          配置大模型接口，用于对话、资源生成和学习分析。设置保存在当前浏览器中。
+          同时保存硅基流动和讯飞星火配置，可选择当前学习功能实际调用的模型。设置保存在当前浏览器中。
         </p>
 
-        <div class="form-stack">
+        <div class="provider-switch" role="tablist" aria-label="模型服务商">
+          <button
+            type="button"
+            :class="{ active: apiConfig.active_provider === 'siliconflow' }"
+            @click="apiConfig.active_provider = 'siliconflow'; apiMessage = ''"
+          >硅基流动</button>
+          <button
+            type="button"
+            :class="{ active: apiConfig.active_provider === 'spark' }"
+            @click="apiConfig.active_provider = 'spark'; apiMessage = ''"
+          >讯飞星火</button>
+        </div>
+
+        <div v-if="apiConfig.active_provider === 'siliconflow'" class="form-stack">
           <div class="form-item">
             <label>API Key</label>
             <div class="input-with-btn">
@@ -270,6 +322,30 @@ async function testApiSettings() {
           </div>
         </div>
 
+        <div v-else class="form-stack">
+          <div class="form-item">
+            <label>API Password</label>
+            <div class="input-with-btn">
+              <input
+                v-model="apiConfig.spark_api_password"
+                :type="sparkShowPassword ? 'text' : 'password'"
+                placeholder="控制台 HTTP 服务接口认证信息"
+                autocomplete="off"
+              />
+              <button type="button" @click="sparkShowPassword = !sparkShowPassword">{{ sparkShowPassword ? '隐藏' : '显示' }}</button>
+            </div>
+          </div>
+          <div class="form-item">
+            <label>Base URL</label>
+            <input v-model="apiConfig.spark_base_url" type="url" placeholder="https://spark-api-open.xf-yun.com/x2" />
+          </div>
+          <div class="form-item">
+            <label>模型名称</label>
+            <input v-model="apiConfig.spark_model" placeholder="spark-x" />
+            <small class="field-hint">X2 使用 /x2，X1.5 使用 /v2；两者模型名均为 spark-x。</small>
+          </div>
+        </div>
+
         <div class="panel-actions">
           <button class="btn-ghost" type="button" @click="saveApiSettings">保存设置</button>
           <button class="btn-primary" type="button" :disabled="apiTesting" @click="testApiSettings">
@@ -280,6 +356,36 @@ async function testApiSettings() {
         <p v-if="apiMessage" :class="['tip', apiError ? 'tip-error' : 'tip-success']">{{ apiMessage }}</p>
       </section>
     </div>
+
+    <section id="portrait-details" class="panel portrait-panel">
+      <div class="panel-header portrait-panel-header">
+        <div>
+          <h2>学习画像</h2>
+          <p>查看画像对话形成的六维分析与学习建议</p>
+        </div>
+        <select
+          v-if="subjectProfiles.length"
+          v-model="selectedPortraitCourse"
+          :disabled="portraitLoading"
+          @change="loadPortraitDetails()"
+        >
+          <option v-for="item in subjectProfiles" :key="item.course" :value="item.course">{{ item.course }}</option>
+        </select>
+      </div>
+
+      <div v-if="portraitLoading" class="portrait-empty">正在加载画像...</div>
+      <div v-else-if="portraitDetails" class="portrait-content">
+        <p class="portrait-overview">{{ portraitDetails.llm_context.summary || '继续完成画像对话后，这里会生成学科画像总结。' }}</p>
+        <div class="portrait-metrics">
+          <article v-for="(value, name) in portraitDetails.radar_metrics" :key="name">
+            <div><strong>{{ name }}</strong><span>{{ value }}</span></div>
+            <i><em :style="{ width: `${value}%` }"></em></i>
+            <p>{{ portraitDetails.radar_summaries[name] || '继续对话后补充该维度总结。' }}</p>
+          </article>
+        </div>
+      </div>
+      <div v-else class="portrait-empty">还没有画像记录，请先到“画像对话”完成一轮访谈。</div>
+    </section>
 
     <section class="panel panel-security">
       <div class="panel-header">
@@ -441,6 +547,38 @@ async function testApiSettings() {
   gap: 14px;
 }
 
+.provider-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f3f4f6;
+}
+
+.provider-switch button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.provider-switch button.active {
+  background: #111827;
+  color: #ffffff;
+}
+
+.field-hint {
+  color: #9ca3af;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .form-item {
   display: flex;
   flex-direction: column;
@@ -583,6 +721,20 @@ async function testApiSettings() {
   background: #f9fafb;
 }
 
+.portrait-panel-header { align-items: flex-start; }
+.portrait-panel-header p { margin: 5px 0 0; color: #8a8f98; font-size: 12px; }
+.portrait-panel-header select { min-width: 150px; padding: 8px 11px; border: 1px solid #d1d5db; border-radius: 8px; color: #202123; background: #ffffff; outline: none; }
+.portrait-overview { margin: 0 0 16px; padding: 14px 16px; border-radius: 10px; color: #4b5563; background: #f7f7f8; font-size: 13px; line-height: 1.7; }
+.portrait-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.portrait-metrics article { padding: 14px; border: 1px solid #e5e7eb; border-radius: 12px; }
+.portrait-metrics article > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.portrait-metrics strong { font-size: 13px; }
+.portrait-metrics span { color: #6b7280; font-size: 12px; }
+.portrait-metrics i { display: block; height: 4px; margin: 8px 0; overflow: hidden; border-radius: 999px; background: #e5e7eb; }
+.portrait-metrics em { display: block; height: 100%; border-radius: inherit; background: #202123; }
+.portrait-metrics p { margin: 0; color: #6b7280; font-size: 11px; line-height: 1.55; }
+.portrait-empty { padding: 28px 12px; color: #8a8f98; text-align: center; font-size: 13px; }
+
 .btn-danger {
   background: #fff;
   color: #dc2626;
@@ -637,6 +789,19 @@ button:disabled {
   .profile-basic {
     flex-direction: column;
     text-align: center;
+  }
+
+  .portrait-panel-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .portrait-panel-header select {
+    width: 100%;
+  }
+
+  .portrait-metrics {
+    grid-template-columns: 1fr;
   }
 
   .panel-security .security-content {

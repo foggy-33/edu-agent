@@ -27,8 +27,11 @@ const courses = computed(() => Array.from(new Set([
   ...subjectProfiles.value.map(item => item.course),
   ...defaultCourses,
 ])))
-const completionLabel = computed(() => `完成度 ${portrait.value?.completion || 0}%`)
-const subtitle = computed(() => `${course.value} · 画像 V${portrait.value?.version || 0} · ${completionLabel.value}`)
+const subtitle = computed(() => `${course.value} · 六维学习画像 · V${portrait.value?.version || 0}`)
+const emit = defineEmits<{
+  navigate: [page: 'account']
+}>()
+const hasCompletedTurn = computed(() => replies.value.some(item => item.role === 'user') && replies.value.some(item => item.role === 'assistant'))
 
 function fallbackQuestion(selectedCourse: string): ChatMessage {
   return {
@@ -140,6 +143,10 @@ async function sendMessage() {
   }
 }
 
+function finishConversation() {
+  emit('navigate', 'account')
+}
+
 onMounted(async () => {
   try {
     await refreshSubjects()
@@ -201,7 +208,8 @@ onMounted(async () => {
         ></textarea>
 
         <div class="composer-actions">
-          <span class="selection-label">画像 {{ course }} · {{ completionLabel }}</span>
+          <span class="selection-label">{{ course }} · 六维学习画像</span>
+          <button v-if="hasCompletedTurn" class="finish-button" type="button" :disabled="loading" @click="finishConversation">完成并查看画像</button>
           <button class="send-button" :disabled="loading || !userMessage.trim()" aria-label="发送消息" @click="sendMessage">
             {{ loading ? '...' : '↑' }}
           </button>
@@ -240,6 +248,8 @@ onMounted(async () => {
 .composer-actions { display: flex; align-items: center; gap: 9px; }
 .selection-label { flex: 1; color: #8b8b8b; font-size: 12px; }
 .start-button { min-height: 40px; padding: 0 16px; border-radius: 999px; color: #fff; background: #202123; font-weight: 700; white-space: nowrap; }
+.finish-button { min-height: 34px; padding: 0 12px; border: 1px solid #d6d6d6; border-radius: 999px; color: #333; background: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.finish-button:hover { background: #f3f3f3; }
 .send-button { display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 19px; }
 .send-button:disabled, .start-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-hint { margin: 7px 0 0; color: rgba(80, 80, 80, .62); text-align: center; font-size: 10px; text-shadow: 0 1px 8px rgba(255, 255, 255, .9); }
@@ -253,5 +263,6 @@ button:disabled { cursor: default; opacity: .55; }
   .message-column { width: calc(100% - 24px); padding-top: 24px; }
   .message-body { max-width: 88%; }
   .starter-composer { grid-template-columns: 1fr; }
+  .finish-button { padding: 0 10px; font-size: 11px; }
 }
 </style>

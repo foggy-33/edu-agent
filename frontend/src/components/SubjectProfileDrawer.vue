@@ -68,6 +68,7 @@ function formatTime(value: string | null) {
             <article v-for="(value, name) in profile?.radar_metrics || {}" :key="name">
               <div><span>{{ name }}</span><b>{{ value }}</b></div>
               <i><em :style="{ width: value + '%' }"></em></i>
+              <p>{{ profile?.radar_summaries?.[name] || '继续访谈后补充该维度总结' }}</p>
             </article>
           </div>
 
@@ -75,7 +76,6 @@ function formatTime(value: string | null) {
             <article v-for="name in profile?.dimension_catalog || []" :key="name">
               <div>
                 <strong>{{ name }}</strong>
-                <span>{{ Math.round((profile?.dimensions[name]?.confidence || 0) * 100) }}%</span>
               </div>
               <p>{{ displayValue(profile?.dimensions[name]?.value) }}</p>
               <small>{{ profile?.dimensions[name]?.evidence || '继续访谈后补充证据' }}</small>
@@ -114,9 +114,10 @@ header button { width: 36px; height: 36px; border: 0; border-radius: 50%; color:
 .metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .metric-grid article { padding: 11px; border: 1px solid #e6e8ee; border-radius: 11px; background: #fff; }
 .metric-grid article span { color: #626c7d; font-size: 11px; }
-.metric-grid article b { color: #574cc5; font-size: 12px; }
+.metric-grid article b { color: #202123; font-size: 12px; }
 .metric-grid article > i { display: block; height: 4px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: #e8eaf0; }
-.metric-grid em { display: block; height: 100%; border-radius: inherit; background: #6d62db; }
+.metric-grid em { display: block; height: 100%; border-radius: inherit; background: #202123; }
+.metric-grid article > p { margin: 7px 0 0; color: #7b8493; font-size: 10px; line-height: 1.45; }
 .dimension-list { display: grid; gap: 9px; margin-top: 16px; }
 .dimension-list article { padding: 13px; border: 1px solid #e6e8ee; border-radius: 12px; background: #fff; }
 .dimension-list strong { color: #394254; font-size: 12px; }

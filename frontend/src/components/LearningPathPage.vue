@@ -421,9 +421,7 @@ async function generateNewPath() {
       goal: genGoal.value,
       resourceTypes: ['path'],
       fileIds: [],
-      api_key: modelConfig.value.api_key,
-      base_url: modelConfig.value.base_url,
-      model: modelConfig.value.model,
+      ...modelConfig.value,
     })
 
     if (result.learningPath) {

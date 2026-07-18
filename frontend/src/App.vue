@@ -287,7 +287,7 @@ onUnmounted(() => {
         <UserCenterPage v-else-if="currentPage === 'account'" @logout="handleLogout" />
         <LearningCenterPage v-else-if="currentPage === 'learning'" @navigate="navigate" />
         <LearningPathPage v-else-if="currentPage === 'path'" @navigate="navigate" />
-        <PortraitPage v-else-if="currentPage === 'portrait'" />
+        <PortraitPage v-else-if="currentPage === 'portrait'" @navigate="navigate" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>
     </main>

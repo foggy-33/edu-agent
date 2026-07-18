@@ -9,6 +9,18 @@ from app.learning.llm import call_llm
 from app.learning.state import LearningState
 
 
+def _llm_config(state: LearningState) -> dict[str, str]:
+    return {
+        "api_key": state.get("api_key", ""),
+        "base_url": state.get("base_url", "https://api.siliconflow.cn/v1"),
+        "model": state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+        "active_provider": state.get("active_provider", "siliconflow"),
+        "spark_api_password": state.get("spark_api_password", ""),
+        "spark_base_url": state.get("spark_base_url", "https://spark-api-open.xf-yun.com/x2"),
+        "spark_model": state.get("spark_model", "spark-x"),
+    }
+
+
 def _context(state: LearningState) -> str:
     context = (
         f"专业：{state['major']}\n课程：{state['course']}\n章节：{state['chapter']}\n"
@@ -41,9 +53,7 @@ def _generate(state: LearningState, task: str, mock_builder: Callable[[], str]) 
     prompt = f"{_context(state)}\n\n任务：{task}\n请直接输出可展示的中文内容，不要解释你的生成过程。"
     return call_llm(
         prompt,
-        api_key=state.get("api_key", ""),
-        base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
-        model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+        **_llm_config(state),
     ) or mock_builder()
 
 
@@ -194,9 +204,7 @@ def _generate_exercise_items(state: LearningState) -> list[dict[str, Any]]:
     try:
         raw = call_llm(
             prompt,
-            api_key=state.get("api_key", ""),
-            base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
-            model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+            **_llm_config(state),
         )
         if not raw:
             return _fallback_exercise_items(state)

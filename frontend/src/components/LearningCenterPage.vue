@@ -52,13 +52,17 @@ const radarMetrics = computed<[string, number][]>(() => {
   const entries = Object.entries(source) as [string, number][]
   if (entries.length) return entries
   return [
-    ['概念理解', 52],
-    ['应用迁移', 44],
-    ['练习表现', 58],
-    ['学习稳定性', 48],
-    ['资源偏好', 62],
+    ['知识掌握', 20],
+    ['目标规划', 24],
+    ['策略运用', 26],
+    ['实践迁移', 30],
+    ['学习投入', 32],
+    ['自我调节', 28],
   ]
 })
+const radarSummaries = computed(() => portrait.value?.radar_summaries || Object.fromEntries(
+  radarMetrics.value.map(([name]) => [name, '继续完成画像对话后，这里会形成针对该维度的学习总结。'])
+))
 const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => {
   const total = radarMetrics.value.length
   const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
@@ -460,16 +464,6 @@ function closeLearningModal() {
   showLearningModal.value = false
 }
 
-function profileDimension(name: 'knowledge_level' | 'learning_style' | 'learning_goal') {
-  const dimensionNames = {
-    knowledge_level: '知识基础',
-    learning_style: '认知风格',
-    learning_goal: '学习目标',
-  } as const
-  const value = portrait.value?.dimensions[dimensionNames[name]]?.value
-  return Array.isArray(value) ? value.join('、') : value || '待完善'
-}
-
 onMounted(async () => {
   await loadProfileOverview()
   await loadRecommendations()
@@ -569,19 +563,14 @@ onMounted(async () => {
           </svg>
         </div>
 
-        <div v-if="portrait" class="portrait-details">
-          <div class="detail-row">
-            <span class="detail-label">知识水平</span>
-            <span class="detail-value">{{ profileDimension('knowledge_level') }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">学习风格</span>
-            <span class="detail-value">{{ profileDimension('learning_style') }}</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">学习目标</span>
-            <span class="detail-value">{{ profileDimension('learning_goal') }}</span>
-          </div>
+        <div class="portrait-details">
+          <article v-for="metric in radarMetrics" :key="metric[0]" class="dimension-summary">
+            <div>
+              <strong>{{ metric[0] }}</strong>
+              <span>{{ metric[1] }}</span>
+            </div>
+            <p>{{ radarSummaries[metric[0]] }}</p>
+          </article>
         </div>
       </section>
 
@@ -1049,21 +1038,44 @@ onMounted(async () => {
 
 .portrait-details {
   border-top: 1px solid #f3f4f6;
-  padding-top: 16px;
+  padding-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
-.detail-row {
+.dimension-summary {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #eceef1;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.dimension-summary > div {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 8px 0;
+  gap: 10px;
 }
 
-.detail-label {
-  color: #6b7280;
-}
-
-.detail-value {
+.dimension-summary strong {
+  color: #202123;
+  font-size: 13px;
   font-weight: 600;
+}
+
+.dimension-summary span {
+  color: #6b7280;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dimension-summary p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 .stats-inner {
@@ -1780,6 +1792,10 @@ onMounted(async () => {
 
   .stats-right {
     display: none;
+  }
+
+  .portrait-details {
+    grid-template-columns: 1fr;
   }
 
   .evaluate-card header {

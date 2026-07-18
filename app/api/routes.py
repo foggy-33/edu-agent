@@ -207,6 +207,10 @@ def _stream_generated_text(state: LearningState, key: str, task: str, fallback: 
         api_key=state.get("api_key", ""),
         base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
         model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+        active_provider=state.get("active_provider", "siliconflow"),
+        spark_api_password=state.get("spark_api_password", ""),
+        spark_base_url=state.get("spark_base_url", "https://spark-api-open.xf-yun.com/x2"),
+        spark_model=state.get("spark_model", "spark-x"),
     ):
         collected.append(chunk)
         yield _sse("content", {"key": key, "text": chunk})

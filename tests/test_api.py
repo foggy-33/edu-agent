@@ -266,3 +266,5 @@ def test_dynamic_profiles_are_stored_by_subject() -> None:
     assert "进程调度" in os_profile["dimensions"]["易错点"]["value"]
     assert database_profile["llm_context"]["schema_version"] == "subject-profile-v1"
     assert len(database_profile["radar_metrics"]) == 6
+    assert "画像可信" not in database_profile["radar_metrics"]
+    assert set(database_profile["radar_metrics"]) == set(database_profile["radar_summaries"])

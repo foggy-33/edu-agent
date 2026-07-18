@@ -26,6 +26,7 @@ export interface DynamicProfile {
   dimension_catalog: string[]
   radar_catalog: Record<string, string>
   radar_metrics: Record<string, number>
+  radar_summaries: Record<string, string>
   llm_context: {
     schema_version: string
     instruction: string
@@ -36,6 +37,7 @@ export interface DynamicProfile {
     weak_points: string[]
     resource_preferences: string[]
     radar_metrics: Record<string, number>
+    radar_summaries: Record<string, string>
     completion: number
     updated_at: string | null
   }

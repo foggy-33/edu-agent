@@ -21,12 +21,12 @@ PROFILE_DIMENSIONS = [
 ]
 
 RADAR_DIMENSIONS = {
-    "知识掌握": "反映当前学科知识基础与测评表现",
-    "目标清晰": "反映学习目标和学习动机的明确程度",
-    "学习策略": "反映认知风格和学习方法的成熟程度",
-    "资源适配": "反映资源偏好是否已经识别",
-    "学习投入": "反映学习节奏和持续学习证据",
-    "画像可信": "反映画像维度覆盖率和证据可信度",
+    "知识掌握": "当前学科的概念理解、知识基础与测评表现",
+    "目标规划": "学习目标是否明确，并能否拆分为可执行计划",
+    "策略运用": "是否形成适合自己的理解、记忆和练习方法",
+    "实践迁移": "能否把知识用于题目、项目和新情境",
+    "学习投入": "学习节奏、持续性与主动参与程度",
+    "自我调节": "能否识别薄弱点、复盘错误并调整学习安排",
 }
 
 
@@ -349,6 +349,7 @@ class DynamicProfileService:
         profile["completion"] = min(100, round(len(profile.get("dimensions", {})) / len(PROFILE_DIMENSIONS) * 100))
         profile["radar_catalog"] = RADAR_DIMENSIONS
         profile["radar_metrics"] = self._build_radar_metrics(profile)
+        profile["radar_summaries"] = self._build_radar_summaries(profile)
         profile["llm_context"] = self._build_llm_context(profile)
         return profile
 
@@ -358,8 +359,6 @@ class DynamicProfileService:
 
     def _build_radar_metrics(self, profile: dict[str, Any]) -> dict[str, int]:
         dimensions = profile.get("dimensions", {})
-        confidence_values = [float(item.get("confidence", 0)) for item in dimensions.values()]
-        average_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0
         knowledge_text = str(self._dimension_value(profile, "知识基础", ""))
         knowledge = 50
         score_match = re.search(r"(\d{1,3})%", knowledge_text)
@@ -370,13 +369,54 @@ class DynamicProfileService:
         elif any(word in knowledge_text for word in ["熟练", "优秀", "进阶"]):
             knowledge = 82
 
+        history_count = len(profile.get("history", []))
+        has_goal = "学习目标" in dimensions
+        has_motivation = "学习动机" in dimensions
+        has_style = "认知风格" in dimensions
+        has_resources = "资源偏好" in dimensions
+        has_weakness = "易错点" in dimensions
+        has_rhythm = "学习节奏" in dimensions
         return {
             "知识掌握": knowledge if "知识基础" in dimensions else 20,
-            "目标清晰": 85 if "学习目标" in dimensions and "学习动机" in dimensions else 60 if "学习目标" in dimensions else 20,
-            "学习策略": 78 if "认知风格" in dimensions else 25,
-            "资源适配": 82 if "资源偏好" in dimensions else 25,
-            "学习投入": min(95, 35 + len(profile.get("history", [])) * 7 + (20 if "学习节奏" in dimensions else 0)),
-            "画像可信": min(100, round(average_confidence * 70 + profile.get("completion", 0) * 0.3)),
+            "目标规划": 88 if has_goal and has_motivation else 64 if has_goal else 24,
+            "策略运用": 84 if has_style and has_resources else 62 if has_style or has_resources else 26,
+            "实践迁移": min(90, 30 + history_count * 5 + (18 if has_weakness else 0) + (12 if "知识基础" in dimensions else 0)),
+            "学习投入": min(95, 32 + history_count * 7 + (20 if has_rhythm else 0) + (10 if has_motivation else 0)),
+            "自我调节": min(92, 28 + (26 if has_weakness else 0) + (20 if has_rhythm else 0) + (12 if has_goal else 0) + history_count * 3),
+        }
+
+    def _build_radar_summaries(self, profile: dict[str, Any]) -> dict[str, str]:
+        dimensions = profile.get("dimensions", {})
+        metrics = profile.get("radar_metrics", {})
+
+        def value(name: str, fallback: str) -> str:
+            raw = self._dimension_value(profile, name, "")
+            if isinstance(raw, list):
+                return "、".join(str(item) for item in raw if item) or fallback
+            return str(raw).strip() or fallback
+
+        def level(name: str) -> str:
+            score = int(metrics.get(name, 0))
+            if score >= 75:
+                return "表现较稳定"
+            if score >= 50:
+                return "已有基础，仍可加强"
+            return "当前信息较少，建议优先补充"
+
+        knowledge = value("知识基础", "尚未形成明确的知识基础描述")
+        goal = value("学习目标", "学习目标尚未明确")
+        motivation = value("学习动机", "学习动机仍待了解")
+        style = value("认知风格", "尚未识别稳定的学习方法")
+        resources = value("资源偏好", "资源形式偏好仍待了解")
+        weakness = value("易错点", "尚未识别明确薄弱点")
+        rhythm = value("学习节奏", "学习频率和时间安排仍待了解")
+        return {
+            "知识掌握": f"{level('知识掌握')}。当前基础：{knowledge}。",
+            "目标规划": f"{level('目标规划')}。目标：{goal}；动力来源：{motivation}。",
+            "策略运用": f"{level('策略运用')}。学习方式：{style}；适合资源：{resources}。",
+            "实践迁移": f"{level('实践迁移')}。当前重点应围绕“{weakness}”增加例题、练习与实际应用。",
+            "学习投入": f"{level('学习投入')}。当前节奏：{rhythm}。",
+            "自我调节": f"{level('自我调节')}。已识别问题：{weakness}；建议按学习结果持续复盘并调整计划。",
         }
 
     def _build_llm_context(self, profile: dict[str, Any]) -> dict[str, Any]:
@@ -403,6 +443,7 @@ class DynamicProfileService:
             "weak_points": weak_points if isinstance(weak_points, list) else [weak_points],
             "resource_preferences": preferences if isinstance(preferences, list) else [preferences],
             "radar_metrics": profile.get("radar_metrics", {}),
+            "radar_summaries": profile.get("radar_summaries", {}),
             "completion": profile.get("completion", 0),
             "updated_at": profile.get("updated_at"),
         }

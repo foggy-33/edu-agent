@@ -137,9 +137,13 @@ export interface CollaborativeLearningRequest {
   goal: string
   resourceTypes: CollaborativeResourceType[]
   fileIds: string[]
+  active_provider: 'siliconflow' | 'spark'
   api_key: string
   base_url: string
   model: string
+  spark_api_password: string
+  spark_base_url: string
+  spark_model: string
 }
 
 export interface AgentTraceItem {

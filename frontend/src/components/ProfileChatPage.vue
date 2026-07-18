@@ -86,7 +86,7 @@ onMounted(async () => {
     </section>
     <section class="profile-board">
       <div class="profile-summary"><div><span>画像完成度</span><strong>{{ profile?.completion || 0 }}%</strong></div><div><span>画像版本</span><strong>V{{ profile?.version || 0 }}</strong></div><div><span>已识别维度</span><strong>{{ Object.keys(profile?.dimensions || {}).length }}/{{ dimensions.length || 8 }}</strong></div></div>
-      <div class="profile-dimension-grid"><article v-for="name in dimensions" :key="name" class="surface dimension-card"><div class="dimension-head"><span>{{ name }}</span><b>{{ Math.round((profile?.dimensions[name]?.confidence || 0) * 100) }}%</b></div><p>{{ displayValue(profile?.dimensions[name]?.value) }}</p><small>{{ profile?.dimensions[name]?.evidence || '继续对话后自动补全' }}</small></article></div>
+      <div class="profile-dimension-grid"><article v-for="name in dimensions" :key="name" class="surface dimension-card"><div class="dimension-head"><span>{{ name }}</span></div><p>{{ displayValue(profile?.dimensions[name]?.value) }}</p><small>{{ profile?.dimensions[name]?.evidence || '继续对话后自动补全' }}</small></article></div>
     </section>
   </div>
 </template>

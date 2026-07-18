@@ -38,10 +38,11 @@ interface ConversationTurn {
 interface ComposerModelOption {
   label: string
   model: string
+  provider?: 'siliconflow' | 'spark'
 }
 
 interface ComposerModeOption extends ComposerModelOption {
-  key: 'smart' | 'fast' | 'balanced' | 'advanced'
+  key: 'smart' | 'fast' | 'balanced' | 'advanced' | 'spark'
 }
 
 const props = defineProps<{
@@ -74,6 +75,7 @@ const modelModes: ComposerModeOption[] = [
   { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
   { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
   { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+  { key: 'spark', label: '星火', model: 'spark-x', provider: 'spark' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -81,6 +83,7 @@ const composerModels: ComposerModelOption[] = [
   { label: 'DeepSeek-V4-Flash', model: 'deepseek-ai/DeepSeek-V4-Flash' },
   { label: 'DeepSeek-V3.2 Pro', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
   { label: 'GLM-5.2', model: 'zai-org/GLM-5.2' },
+  { label: '讯飞星火 X2', model: 'spark-x', provider: 'spark' },
 ]
 
 const prompt = ref('')
@@ -146,9 +149,15 @@ void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
-const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
-const activeComposerModel = computed(() => composerModels.find(item => item.model === modelConfig.value.model))
-const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
+const activeMode = computed(() => modelConfig.value.active_provider === 'spark'
+  ? modelModes.find(item => item.provider === 'spark')!
+  : modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
+const activeComposerModel = computed(() => composerModels.find(item =>
+  (item.provider || 'siliconflow') === modelConfig.value.active_provider
+  && item.model === (modelConfig.value.active_provider === 'spark' ? modelConfig.value.spark_model : modelConfig.value.model)))
+const activeModelLabel = computed(() => activeComposerModel.value?.label
+  || (modelConfig.value.active_provider === 'spark' ? modelConfig.value.spark_model : modelConfig.value.model).split('/').pop()
+  || '自定义模型')
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
@@ -310,7 +319,10 @@ function toggleFile(fileId: string) {
 }
 
 function selectComposerModel(option: ComposerModelOption) {
-  modelConfig.value = { ...modelConfig.value, model: option.model }
+  const provider = option.provider || 'siliconflow'
+  modelConfig.value = provider === 'spark'
+    ? { ...modelConfig.value, active_provider: 'spark', spark_model: option.model }
+    : { ...modelConfig.value, active_provider: 'siliconflow', model: option.model }
   saveSiliconFlowConfig(modelConfig.value)
   modelMenuOpen.value = false
   modelSubmenuOpen.value = false
@@ -959,7 +971,7 @@ watch(prompt, resizePromptInput)
                 @click="selectComposerModel(mode)"
               >
                 <span>{{ mode.label }}</span>
-                <b v-if="modelConfig.model === mode.model">✓</b>
+                <b v-if="modelConfig.active_provider === (mode.provider || 'siliconflow') && (mode.provider === 'spark' ? modelConfig.spark_model : modelConfig.model) === mode.model">✓</b>
               </button>
 
               <div class="model-menu-divider"></div>
@@ -982,7 +994,7 @@ watch(prompt, resizePromptInput)
                   @click="selectComposerModel(model)"
                 >
                   <span>{{ model.label }}</span>
-                  <b v-if="modelConfig.model === model.model">✓</b>
+                  <b v-if="modelConfig.active_provider === (model.provider || 'siliconflow') && (model.provider === 'spark' ? modelConfig.spark_model : modelConfig.model) === model.model">✓</b>
                 </button>
               </div>
             </div>
