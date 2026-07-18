@@ -16,7 +16,6 @@ const userError = ref('')
 const userSuccess = ref('')
 
 const apiConfig = ref(loadSiliconFlowConfig())
-const apiShowKey = ref(false)
 const apiTesting = ref(false)
 const apiMessage = ref('')
 const apiError = ref(false)
@@ -105,7 +104,7 @@ function reset() {
 function normalizeApiConfig() {
   apiConfig.value = {
     ...apiConfig.value,
-    api_key: apiConfig.value.api_key.trim(),
+    api_key: '',
     base_url: apiConfig.value.base_url.trim() || 'https://api.siliconflow.cn/v1',
     model: apiConfig.value.model.trim() || 'deepseek-ai/DeepSeek-V4-Pro',
     spark_api_password: '',
@@ -124,11 +123,6 @@ function saveApiSettings() {
 async function testApiSettings() {
   saveApiSettings()
   const isSpark = apiConfig.value.active_provider === 'spark'
-  if (!isSpark && !apiConfig.value.api_key.trim()) {
-    apiError.value = true
-    apiMessage.value = '请先填写硅基流动 API Key'
-    return
-  }
   apiTesting.value = true
   try {
     const result = isSpark ? await testSpark(apiConfig.value) : await testSiliconFlow(apiConfig.value)
@@ -287,7 +281,7 @@ onMounted(async () => {
         </div>
 
         <p class="panel-desc">
-          硅基流动配置保存在当前浏览器；讯飞星火密钥由服务器环境变量统一托管，前端仅保存当前模型选择。
+          硅基流动和讯飞星火的密钥均由服务器环境变量统一托管，前端仅保存当前模型选择。
         </p>
 
         <div class="provider-switch" role="tablist" aria-label="模型服务商">
@@ -303,28 +297,11 @@ onMounted(async () => {
           >讯飞星火</button>
         </div>
 
-        <div v-if="apiConfig.active_provider === 'siliconflow'" class="form-stack">
-          <div class="form-item">
-            <label>API Key</label>
-            <div class="input-with-btn">
-              <input v-model="apiConfig.api_key" :type="apiShowKey ? 'text' : 'password'" placeholder="sk-..." />
-              <button type="button" @click="apiShowKey = !apiShowKey">{{ apiShowKey ? '隐藏' : '显示' }}</button>
-            </div>
-          </div>
-          <div class="form-item">
-            <label>Base URL</label>
-            <input v-model="apiConfig.base_url" type="url" placeholder="https://api.siliconflow.cn/v1" />
-          </div>
-          <div class="form-item">
-            <label>模型名称</label>
-            <input v-model="apiConfig.model" placeholder="deepseek-ai/DeepSeek-V4-Pro" />
-          </div>
-        </div>
-
-        <div v-else class="server-managed-config">
-          <strong>讯飞星火 X2 由服务器统一配置</strong>
-          <p>API Password、接口地址和模型名称从服务器环境变量读取，浏览器不会保存密钥。</p>
-          <code>SPARK_API_PASSWORD · SPARK_BASE_URL · SPARK_MODEL</code>
+        <div class="server-managed-config">
+          <strong>{{ apiConfig.active_provider === 'spark' ? '讯飞星火 X2' : '硅基流动' }}由服务器统一配置</strong>
+          <p>API 凭据、接口地址和默认模型从服务器环境变量读取，浏览器不会保存密钥。</p>
+          <code v-if="apiConfig.active_provider === 'spark'">SPARK_API_PASSWORD · SPARK_BASE_URL · SPARK_MODEL</code>
+          <code v-else>SILICONFLOW_API_KEY · SILICONFLOW_BASE_URL · SILICONFLOW_MODEL</code>
         </div>
 
         <div class="panel-actions">

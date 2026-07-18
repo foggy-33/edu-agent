@@ -41,6 +41,7 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     goal: str
     resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "path"]]
     fileIds: list[str] = Field(default_factory=list)
+    response_speed: Literal["fast", "balanced", "deep"] = "balanced"
 
 
 class ProfileChatRequest(SiliconFlowConfig):

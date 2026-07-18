@@ -14,6 +14,7 @@ import MermaidRenderer from './MermaidRenderer.vue'
 
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'review'
 type ProcessState = 'running' | 'done'
+type ResponseSpeed = 'fast' | 'balanced' | 'deep'
 
 interface AgentProcessStep {
   id: string
@@ -30,20 +31,18 @@ interface ConversationTurn {
   result: CollaborativeLearningResponse | null
   streamContent: Record<ResultKey, string>
   thinkingSteps: string[]
+  reasoningContent: string
   processSteps: AgentProcessStep[]
   processCollapsed: boolean
   processCompleted: boolean
   provider: 'siliconflow' | 'spark'
+  responseSpeed: ResponseSpeed
 }
 
 interface ComposerModelOption {
   label: string
   model: string
   provider?: 'siliconflow' | 'spark'
-}
-
-interface ComposerModeOption extends ComposerModelOption {
-  key: 'smart' | 'fast' | 'balanced' | 'advanced'
 }
 
 const props = defineProps<{
@@ -71,11 +70,10 @@ const resourceOptions: {
   { key: 'path', resultKey: 'learningPath', label: '学习路线', description: '生成阶段划分和个性化学习路径', icon: '↗' },
 ]
 
-const modelModes: ComposerModeOption[] = [
-  { key: 'smart', label: '智能', model: 'zai-org/GLM-5.2' },
-  { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
-  { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
-  { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
+const speedOptions: Array<{ key: ResponseSpeed; label: string; description: string }> = [
+  { key: 'fast', label: '极速', description: '优先快速、简洁回答' },
+  { key: 'balanced', label: '均衡', description: '兼顾速度与完整性' },
+  { key: 'deep', label: '深度', description: '更充分分析与核对' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -101,8 +99,10 @@ const selectedType = ref<CollaborativeResourceType | 'chat'>('chat')
 const selectedFileIds = ref<string[]>([])
 const submittedTypes = ref<CollaborativeResourceType[]>([])
 const menuOpen = ref(false)
+const speedMenuOpen = ref(false)
 const modelMenuOpen = ref(false)
-const modelSubmenuOpen = ref(false)
+const storedSpeed = localStorage.getItem('studyflow_response_speed')
+const responseSpeed = ref<ResponseSpeed>(storedSpeed === 'fast' || storedSpeed === 'deep' ? storedSpeed : 'balanced')
 const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
@@ -119,6 +119,7 @@ const streamContent = ref<Record<ResultKey, string>>({
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
+const reasoningContent = ref('')
 const processSteps = ref<AgentProcessStep[]>([])
 const processQueue = ref<AgentProcessStep[]>([])
 const processCollapsed = ref(false)
@@ -148,9 +149,8 @@ const availableTabs = computed(() => [
 void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
-const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
-const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[0])
-const activeModeLabel = computed(() => modelConfig.value.active_provider === 'spark' ? '星火' : activeMode.value.label)
+const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0 || Boolean(reasoningContent.value))
+const activeSpeed = computed(() => speedOptions.find(item => item.key === responseSpeed.value) || speedOptions[1])
 const activeComposerModel = computed(() => composerModels.find(item =>
   modelConfig.value.active_provider === 'spark'
     ? item.provider === 'spark'
@@ -290,6 +290,7 @@ function syncActiveTurn(targetId = streamingTurnId.value || activeTurnId.value) 
           result: result.value,
           streamContent: { ...streamContent.value },
           thinkingSteps: [...thinkingSteps.value],
+          reasoningContent: reasoningContent.value,
           processSteps: processSteps.value.map(step => ({ ...step })),
           processCollapsed: processCollapsed.value,
           processCompleted: processCompleted.value,
@@ -322,7 +323,12 @@ function selectComposerModel(option: ComposerModelOption) {
     : { ...modelConfig.value, active_provider: 'siliconflow', model: option.model }
   saveSiliconFlowConfig(modelConfig.value)
   modelMenuOpen.value = false
-  modelSubmenuOpen.value = false
+}
+
+function selectResponseSpeed(speed: ResponseSpeed) {
+  responseSpeed.value = speed
+  localStorage.setItem('studyflow_response_speed', speed)
+  speedMenuOpen.value = false
 }
 
 function normalizeAnswer(value: string) {
@@ -400,6 +406,7 @@ async function loadUploadedResources() {
 function resetStreamState() {
   streamContent.value = emptyStreamContent()
   thinkingSteps.value = []
+  reasoningContent.value = ''
   processSteps.value = []
   processQueue.value = []
   processCollapsed.value = false
@@ -452,6 +459,8 @@ function hydrateFromHistory(id: string | null | undefined) {
         resourceTypes: item.resourceTypes,
         result: item.result,
         thinkingSteps: item.thinkingSteps,
+        reasoningContent: '',
+        responseSpeed: 'balanced' as ResponseSpeed,
       }]
   const lastTurn = turns[turns.length - 1]
   prompt.value = ''
@@ -470,6 +479,8 @@ function hydrateFromHistory(id: string | null | undefined) {
     review: lastTurn.result.review || '',
   }
   thinkingSteps.value = [...lastTurn.thinkingSteps]
+  reasoningContent.value = lastTurn.reasoningContent || ''
+  responseSpeed.value = lastTurn.responseSpeed || 'balanced'
   processSteps.value = buildHistoryProcessSteps(lastTurn.thinkingSteps, 'history')
   processCollapsed.value = true
   activeTurnId.value = lastTurn.id
@@ -489,10 +500,12 @@ function hydrateFromHistory(id: string | null | undefined) {
       review: turn.result.review || '',
     },
     thinkingSteps: [...turn.thinkingSteps],
+    reasoningContent: turn.reasoningContent || '',
     processSteps: buildHistoryProcessSteps(turn.thinkingSteps, `${turn.id}-history`),
     processCollapsed: true,
     processCompleted: true,
     provider: turn.provider || 'siliconflow',
+    responseSpeed: turn.responseSpeed || 'balanced',
   }))
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
@@ -509,6 +522,8 @@ function persistCurrentConversation(fallbackQuestion = '') {
       resourceTypes: [...turn.resourceTypes],
       result: turn.result!,
       thinkingSteps: [...turn.thinkingSteps],
+      reasoningContent: turn.reasoningContent,
+      responseSpeed: turn.responseSpeed,
       provider: turn.provider,
     }))
   const latestTurn = turns[turns.length - 1]
@@ -606,6 +621,11 @@ function applyStreamEvent(event: string, data: any) {
     syncActiveTurn()
     return
   }
+  if (event === 'reasoning' && typeof data.text === 'string') {
+    reasoningContent.value += data.text
+    syncActiveTurn()
+    return
+  }
   if (event === 'done') {
     result.value = data.result
     processCompleted.value = true
@@ -658,6 +678,7 @@ async function submit() {
     goal: '理解并掌握相关知识',
     resourceTypes: [...selectedTypes.value],
     fileIds: [...selectedFileIds.value],
+    response_speed: responseSpeed.value,
     ...config,
   }
 
@@ -677,17 +698,19 @@ async function submit() {
       result: null,
       streamContent: emptyStreamContent(),
       thinkingSteps: [],
+      reasoningContent: '',
       processSteps: [],
       processCollapsed: false,
       processCompleted: false,
       provider: config.active_provider,
+      responseSpeed: responseSpeed.value,
     },
   ]
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
   menuOpen.value = false
   modelMenuOpen.value = false
-  modelSubmenuOpen.value = false
+  speedMenuOpen.value = false
   submittedTypes.value = [...selectedTypes.value]
   activeTab.value = resourceOptions.find(item => item.key !== 'chat' && submittedTypes.value.includes(item.key as CollaborativeResourceType))?.resultKey as ResultKey || 'lectureDoc'
 
@@ -783,6 +806,16 @@ watch(prompt, resizePromptInput)
               </li>
             </ol>
           </div>
+
+          <details v-if="turn.reasoningContent || turn.processCompleted || (loading && turn.id === streamingTurnId)" class="reasoning-panel" :open="loading && turn.id === streamingTurnId">
+            <summary>
+              <span>{{ loading && turn.id === streamingTurnId ? '模型正在思考…' : '模型思考过程' }}</span>
+              <small>{{ turn.responseSpeed === 'fast' ? '极速' : turn.responseSpeed === 'deep' ? '深度' : '均衡' }}</small>
+            </summary>
+            <div class="reasoning-text">
+              {{ turn.reasoningContent || (loading && turn.id === streamingTurnId ? '正在等待模型返回推理片段…' : '当前模型未返回独立的推理字段；可查看上方处理过程了解任务执行步骤。') }}
+            </div>
+          </details>
 
           <div v-if="uniqueSources(turn.result?.sources).length" class="result-sources">
             <span>参考资料</span>
@@ -968,52 +1001,53 @@ watch(prompt, resizePromptInput)
             @keydown.enter.exact.prevent="submit"
           ></textarea>
 
-          <div class="model-picker">
+          <div class="model-picker speed-picker">
             <button
               type="button"
               class="model-button"
               :disabled="loading"
-              @click="modelMenuOpen = !modelMenuOpen"
+              @click="speedMenuOpen = !speedMenuOpen; modelMenuOpen = false"
             >
-              {{ activeModeLabel }}
+              {{ activeSpeed.label }}
               <span>⌄</span>
             </button>
 
-            <div v-if="modelMenuOpen" class="model-menu">
+            <div v-if="speedMenuOpen" class="model-menu speed-menu">
               <button
-                v-for="mode in modelModes"
-                :key="mode.key"
+                v-for="speed in speedOptions"
+                :key="speed.key"
                 type="button"
                 class="model-menu-item"
-                @click="selectComposerModel(mode)"
+                @click="selectResponseSpeed(speed.key)"
               >
-                <span>{{ mode.label }}</span>
-                <b v-if="modelConfig.active_provider === 'siliconflow' && modelConfig.model === mode.model">✓</b>
+                <span><strong>{{ speed.label }}</strong><small>{{ speed.description }}</small></span>
+                <b v-if="responseSpeed === speed.key">✓</b>
               </button>
+            </div>
+          </div>
 
-              <div class="model-menu-divider"></div>
+          <div class="model-picker">
+            <button
+              type="button"
+              class="model-button model-name-button"
+              :disabled="loading"
+              @click="modelMenuOpen = !modelMenuOpen; speedMenuOpen = false"
+            >
+              {{ activeModelLabel }}
+              <span>⌄</span>
+            </button>
 
+            <div v-if="modelMenuOpen" class="model-menu model-list-menu">
               <button
+                v-for="model in composerModels"
+                :key="`${model.provider || 'siliconflow'}-${model.model}`"
                 type="button"
-                class="model-menu-item model-menu-parent"
-                @click="modelSubmenuOpen = !modelSubmenuOpen"
+                class="model-menu-item"
+                @click="selectComposerModel(model)"
               >
-                <span>{{ activeModelLabel }}</span>
-                <b>›</b>
+                <span>{{ model.label }}</span>
+                <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
               </button>
-
-              <div v-if="modelSubmenuOpen" class="model-submenu">
-                <button
-                  v-for="model in composerModels"
-                  :key="model.model"
-                  type="button"
-                  class="model-menu-item"
-                  @click="selectComposerModel(model)"
-                >
-                  <span>{{ model.label }}</span>
-                  <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1135,6 +1169,10 @@ watch(prompt, resizePromptInput)
 .agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
 .agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
 .agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
+.reasoning-panel { width: min(680px, 100%); margin: 0 0 14px; border: 1px solid #e7e7e7; border-radius: 14px; background: #f8f8f8; overflow: hidden; }
+.reasoning-panel summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 13px; color: #555; cursor: pointer; user-select: none; font-size: 12px; font-weight: 700; }
+.reasoning-panel summary small { padding: 3px 7px; border-radius: 999px; color: #777; background: #ededed; font-size: 10px; font-weight: 650; }
+.reasoning-text { max-height: 260px; padding: 0 13px 12px; overflow-y: auto; color: #686868; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
@@ -1188,16 +1226,19 @@ watch(prompt, resizePromptInput)
 .model-picker { position: relative; flex: 0 0 auto; }
 .model-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; min-width: 76px; padding: 0 12px; border: 0; border-radius: 999px; color: #777; background: #f1f1f1; font-size: 15px; font-weight: 650; white-space: nowrap; }
 .model-button:hover { color: #333; background: #e9e9e9; }
+.model-name-button { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
 .model-button span { color: #8c8c8c; font-size: 13px; line-height: 1; }
-.model-menu, .model-submenu { position: absolute; min-width: 160px; padding: 8px; border: 1px solid #d9d9d9; border-radius: 17px; background: #fff; box-shadow: 0 18px 44px rgba(0, 0, 0, .14); }
+.model-menu { position: absolute; min-width: 160px; padding: 8px; border: 1px solid #d9d9d9; border-radius: 17px; background: #fff; box-shadow: 0 18px 44px rgba(0, 0, 0, .14); }
 .model-menu { right: 0; bottom: 46px; z-index: 12; }
+.speed-picker .model-menu { right: auto; left: 0; min-width: 220px; }
+.speed-menu .model-menu-item > span { display: grid; gap: 2px; }
+.speed-menu .model-menu-item strong { color: #222; font-size: 14px; }
+.speed-menu .model-menu-item small { color: #888; font-size: 10px; font-weight: 500; }
+.model-list-menu { min-width: 210px; }
 .generate-page.idle .model-menu { top: 46px; bottom: auto; }
-.model-submenu { left: calc(100% + 6px); bottom: 0; z-index: 13; min-width: 178px; }
-.generate-page.idle .model-submenu { top: auto; bottom: 0; }
 .model-menu-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; min-height: 42px; padding: 9px 12px; border: 0; border-radius: 11px; color: #222; background: transparent; text-align: left; font-size: 15px; line-height: 1.25; white-space: nowrap; }
-.model-menu-item:hover, .model-menu-parent { background: #f2f2f2; }
+.model-menu-item:hover { background: #f2f2f2; }
 .model-menu-item b { color: #111; font-size: 18px; font-weight: 500; }
-.model-menu-divider { height: 1px; margin: 7px 8px; background: #ededed; }
 .send-button { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; border: 0; border-radius: 50%; color: #fff; background: #202123; font-size: 20px; line-height: 1; }
 .send-button:disabled { background: #d0d0d0; cursor: default; }
 .composer-section:focus-within, .composer:focus, .composer textarea:focus, .add-button:focus, .model-button:focus, .model-menu-item:focus, .send-button:focus { outline: none; }
@@ -1262,7 +1303,6 @@ button:disabled { cursor: default; opacity: .65; }
   .tool-menu { width: min(310px, calc(100vw - 60px)); }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
-  .model-submenu { left: auto; right: 0; bottom: calc(100% + 6px); }
 }
 
 .save-to-library-btn {

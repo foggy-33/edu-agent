@@ -144,6 +144,7 @@ export interface CollaborativeLearningRequest {
   spark_api_password: string
   spark_base_url: string
   spark_model: string
+  response_speed?: 'fast' | 'balanced' | 'deep'
 }
 
 export interface AgentTraceItem {

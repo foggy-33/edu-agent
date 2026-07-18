@@ -211,9 +211,13 @@ def _stream_generated_text(state: LearningState, key: str, task: str, fallback: 
         spark_api_password=state.get("spark_api_password", ""),
         spark_base_url=state.get("spark_base_url", "https://spark-api-open.xf-yun.com/x2"),
         spark_model=state.get("spark_model", "spark-x"),
+        response_speed=state.get("response_speed", "balanced"),
     ):
-        collected.append(chunk)
-        yield _sse("content", {"key": key, "text": chunk})
+        if chunk["type"] == "reasoning":
+            yield _sse("reasoning", {"key": key, "text": chunk["text"]})
+            continue
+        collected.append(chunk["text"])
+        yield _sse("content", {"key": key, "text": chunk["text"]})
 
     text = "".join(collected).strip()
     if text:
@@ -709,7 +713,10 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
     return StreamingResponse(
         events(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
