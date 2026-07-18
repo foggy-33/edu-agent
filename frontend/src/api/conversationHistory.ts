@@ -22,6 +22,7 @@ export interface ConversationHistoryTurn {
   resourceTypes: CollaborativeResourceType[]
   result: CollaborativeLearningResponse
   thinkingSteps: string[]
+  provider?: 'siliconflow' | 'spark'
 }
 
 export function loadConversationHistory(): ConversationHistoryItem[] {

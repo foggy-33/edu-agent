@@ -164,7 +164,7 @@ class DynamicProfileService:
             max_tokens=32,
             temperature=0,
         )
-        return {"status": "ok", "model": spark_model, "message": content.strip()}
+        return {"status": "ok", "model": spark_model or self.llm.settings.spark_model, "message": content.strip()}
 
     def initialize_from_onboarding(self, user_id: str, onboarding_data: dict[str, Any]) -> None:
         grade_level = onboarding_data.get("grade_level", "")
@@ -207,7 +207,9 @@ class DynamicProfileService:
             return
 
         evidence = "新用户初始画像问卷"
-        courses = weak_subjects if weak_subjects else ["未分类画像"]
+        courses = [course for course in weak_subjects if course and course != "未分类画像"]
+        if not courses:
+            return
         for course in courses[:3]:
             current = self.get_profile(user_id, course)
             if current.get("version", 0) > 0:

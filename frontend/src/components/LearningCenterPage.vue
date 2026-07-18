@@ -926,7 +926,7 @@ onMounted(async () => {
 
 .learning-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.18fr) minmax(320px, .82fr);
+  grid-template-columns: minmax(0, 1fr) 330px;
   gap: 16px;
   margin-bottom: 16px;
 }
@@ -944,6 +944,10 @@ onMounted(async () => {
 
 .evaluate-card {
   margin-bottom: 16px;
+}
+
+.stats-card {
+  align-self: start;
 }
 
 .portrait-card header,

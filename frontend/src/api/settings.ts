@@ -8,18 +8,24 @@ export const defaultSiliconFlowConfig: SiliconFlowConfig = {
   base_url: 'https://api.siliconflow.cn/v1',
   model: 'deepseek-ai/DeepSeek-V4-Pro',
   spark_api_password: '',
-  spark_base_url: 'https://spark-api-open.xf-yun.com/x2',
-  spark_model: 'spark-x'
+  spark_base_url: '',
+  spark_model: ''
 }
 
 export function loadSiliconFlowConfig(): SiliconFlowConfig {
   try {
-    return { ...defaultSiliconFlowConfig, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
+    const stored = { ...defaultSiliconFlowConfig, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
+    return { ...stored, spark_api_password: '', spark_base_url: '', spark_model: '' }
   } catch {
     return { ...defaultSiliconFlowConfig }
   }
 }
 
 export function saveSiliconFlowConfig(config: SiliconFlowConfig) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    ...config,
+    spark_api_password: '',
+    spark_base_url: '',
+    spark_model: '',
+  }))
 }

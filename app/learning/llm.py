@@ -5,6 +5,8 @@ from typing import Any, Iterator
 
 import httpx
 
+from app.core.config import get_settings
+
 def call_llm(
     prompt: str,
     *,
@@ -18,12 +20,13 @@ def call_llm(
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> str:
     """Use the browser-provided OpenAI-compatible config, or return mock sentinel."""
-    credential = spark_api_password if active_provider == "spark" else api_key
+    settings = get_settings()
+    credential = (spark_api_password or settings.spark_api_password) if active_provider == "spark" else (api_key or settings.siliconflow_api_key)
     if not credential.strip():
         return ""
 
-    request_base_url = spark_base_url if active_provider == "spark" else base_url
-    request_model = spark_model if active_provider == "spark" else model
+    request_base_url = (spark_base_url or settings.spark_base_url) if active_provider == "spark" else (base_url or settings.siliconflow_base_url)
+    request_model = (spark_model or settings.spark_model) if active_provider == "spark" else (model or settings.siliconflow_model)
 
     payload: dict[str, Any] = {
         "model": request_model,
@@ -62,12 +65,13 @@ def stream_llm(
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> Iterator[str]:
     """Stream OpenAI-compatible chat completion chunks."""
-    credential = spark_api_password if active_provider == "spark" else api_key
+    settings = get_settings()
+    credential = (spark_api_password or settings.spark_api_password) if active_provider == "spark" else (api_key or settings.siliconflow_api_key)
     if not credential.strip():
         return
 
-    request_base_url = spark_base_url if active_provider == "spark" else base_url
-    request_model = spark_model if active_provider == "spark" else model
+    request_base_url = (spark_base_url or settings.spark_base_url) if active_provider == "spark" else (base_url or settings.siliconflow_base_url)
+    request_model = (spark_model or settings.spark_model) if active_provider == "spark" else (model or settings.siliconflow_model)
 
     payload: dict[str, Any] = {
         "model": request_model,

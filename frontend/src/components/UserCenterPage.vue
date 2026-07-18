@@ -17,7 +17,6 @@ const userSuccess = ref('')
 
 const apiConfig = ref(loadSiliconFlowConfig())
 const apiShowKey = ref(false)
-const sparkShowPassword = ref(false)
 const apiTesting = ref(false)
 const apiMessage = ref('')
 const apiError = ref(false)
@@ -30,7 +29,7 @@ const portraitLoading = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const activeModelName = computed(() => apiConfig.value.active_provider === 'spark'
-  ? `讯飞星火 · ${apiConfig.value.spark_model}`
+  ? '讯飞星火 · X2'
   : `硅基流动 · ${apiConfig.value.model}`)
 
 function chooseAvatar() {
@@ -109,9 +108,9 @@ function normalizeApiConfig() {
     api_key: apiConfig.value.api_key.trim(),
     base_url: apiConfig.value.base_url.trim() || 'https://api.siliconflow.cn/v1',
     model: apiConfig.value.model.trim() || 'deepseek-ai/DeepSeek-V4-Pro',
-    spark_api_password: apiConfig.value.spark_api_password.trim(),
-    spark_base_url: apiConfig.value.spark_base_url.trim() || 'https://spark-api-open.xf-yun.com/x2',
-    spark_model: apiConfig.value.spark_model.trim() || 'spark-x',
+    spark_api_password: '',
+    spark_base_url: '',
+    spark_model: '',
   }
 }
 
@@ -125,9 +124,9 @@ function saveApiSettings() {
 async function testApiSettings() {
   saveApiSettings()
   const isSpark = apiConfig.value.active_provider === 'spark'
-  if (isSpark ? !apiConfig.value.spark_api_password.trim() : !apiConfig.value.api_key.trim()) {
+  if (!isSpark && !apiConfig.value.api_key.trim()) {
     apiError.value = true
-    apiMessage.value = isSpark ? '请先填写讯飞星火 API Password' : '请先填写硅基流动 API Key'
+    apiMessage.value = '请先填写硅基流动 API Key'
     return
   }
   apiTesting.value = true
@@ -288,7 +287,7 @@ onMounted(async () => {
         </div>
 
         <p class="panel-desc">
-          同时保存硅基流动和讯飞星火配置，可选择当前学习功能实际调用的模型。设置保存在当前浏览器中。
+          硅基流动配置保存在当前浏览器；讯飞星火密钥由服务器环境变量统一托管，前端仅保存当前模型选择。
         </p>
 
         <div class="provider-switch" role="tablist" aria-label="模型服务商">
@@ -322,28 +321,10 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div v-else class="form-stack">
-          <div class="form-item">
-            <label>API Password</label>
-            <div class="input-with-btn">
-              <input
-                v-model="apiConfig.spark_api_password"
-                :type="sparkShowPassword ? 'text' : 'password'"
-                placeholder="控制台 HTTP 服务接口认证信息"
-                autocomplete="off"
-              />
-              <button type="button" @click="sparkShowPassword = !sparkShowPassword">{{ sparkShowPassword ? '隐藏' : '显示' }}</button>
-            </div>
-          </div>
-          <div class="form-item">
-            <label>Base URL</label>
-            <input v-model="apiConfig.spark_base_url" type="url" placeholder="https://spark-api-open.xf-yun.com/x2" />
-          </div>
-          <div class="form-item">
-            <label>模型名称</label>
-            <input v-model="apiConfig.spark_model" placeholder="spark-x" />
-            <small class="field-hint">X2 使用 /x2，X1.5 使用 /v2；两者模型名均为 spark-x。</small>
-          </div>
+        <div v-else class="server-managed-config">
+          <strong>讯飞星火 X2 由服务器统一配置</strong>
+          <p>API Password、接口地址和模型名称从服务器环境变量读取，浏览器不会保存密钥。</p>
+          <code>SPARK_API_PASSWORD · SPARK_BASE_URL · SPARK_MODEL</code>
         </div>
 
         <div class="panel-actions">
@@ -578,6 +559,17 @@ onMounted(async () => {
   font-size: 11px;
   line-height: 1.5;
 }
+
+.server-managed-config {
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f8f8f8;
+}
+
+.server-managed-config strong { display: block; color: #202123; font-size: 14px; }
+.server-managed-config p { margin: 7px 0 10px; color: #6b7280; font-size: 12px; line-height: 1.6; }
+.server-managed-config code { color: #4b5563; font-size: 11px; overflow-wrap: anywhere; }
 
 .form-item {
   display: flex;

@@ -33,6 +33,7 @@ interface ConversationTurn {
   processSteps: AgentProcessStep[]
   processCollapsed: boolean
   processCompleted: boolean
+  provider: 'siliconflow' | 'spark'
 }
 
 interface ComposerModelOption {
@@ -42,7 +43,7 @@ interface ComposerModelOption {
 }
 
 interface ComposerModeOption extends ComposerModelOption {
-  key: 'smart' | 'fast' | 'balanced' | 'advanced' | 'spark'
+  key: 'smart' | 'fast' | 'balanced' | 'advanced'
 }
 
 const props = defineProps<{
@@ -75,7 +76,6 @@ const modelModes: ComposerModeOption[] = [
   { key: 'fast', label: '极速', model: 'deepseek-ai/DeepSeek-V4-Flash' },
   { key: 'balanced', label: '均衡', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
   { key: 'advanced', label: '高级', model: 'deepseek-ai/DeepSeek-V4-Pro' },
-  { key: 'spark', label: '星火', model: 'spark-x', provider: 'spark' },
 ]
 
 const composerModels: ComposerModelOption[] = [
@@ -149,15 +149,13 @@ void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
-const activeMode = computed(() => modelConfig.value.active_provider === 'spark'
-  ? modelModes.find(item => item.provider === 'spark')!
-  : modelModes.find(item => item.model === modelConfig.value.model) || modelModes[3])
+const activeMode = computed(() => modelModes.find(item => item.model === modelConfig.value.model) || modelModes[0])
+const activeModeLabel = computed(() => modelConfig.value.active_provider === 'spark' ? '星火' : activeMode.value.label)
 const activeComposerModel = computed(() => composerModels.find(item =>
-  (item.provider || 'siliconflow') === modelConfig.value.active_provider
-  && item.model === (modelConfig.value.active_provider === 'spark' ? modelConfig.value.spark_model : modelConfig.value.model)))
-const activeModelLabel = computed(() => activeComposerModel.value?.label
-  || (modelConfig.value.active_provider === 'spark' ? modelConfig.value.spark_model : modelConfig.value.model).split('/').pop()
-  || '自定义模型')
+  modelConfig.value.active_provider === 'spark'
+    ? item.provider === 'spark'
+    : !item.provider && item.model === modelConfig.value.model))
+const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
@@ -319,9 +317,8 @@ function toggleFile(fileId: string) {
 }
 
 function selectComposerModel(option: ComposerModelOption) {
-  const provider = option.provider || 'siliconflow'
-  modelConfig.value = provider === 'spark'
-    ? { ...modelConfig.value, active_provider: 'spark', spark_model: option.model }
+  modelConfig.value = option.provider === 'spark'
+    ? { ...modelConfig.value, active_provider: 'spark', spark_api_password: '', spark_base_url: '', spark_model: '' }
     : { ...modelConfig.value, active_provider: 'siliconflow', model: option.model }
   saveSiliconFlowConfig(modelConfig.value)
   modelMenuOpen.value = false
@@ -495,6 +492,7 @@ function hydrateFromHistory(id: string | null | undefined) {
     processSteps: buildHistoryProcessSteps(turn.thinkingSteps, `${turn.id}-history`),
     processCollapsed: true,
     processCompleted: true,
+    provider: turn.provider || 'siliconflow',
   }))
   exerciseAnswers.value = {}
   exerciseSubmitted.value = {}
@@ -511,6 +509,7 @@ function persistCurrentConversation(fallbackQuestion = '') {
       resourceTypes: [...turn.resourceTypes],
       result: turn.result!,
       thinkingSteps: [...turn.thinkingSteps],
+      provider: turn.provider,
     }))
   const latestTurn = turns[turns.length - 1]
   if (!latestTurn) return ''
@@ -681,6 +680,7 @@ async function submit() {
       processSteps: [],
       processCollapsed: false,
       processCompleted: false,
+      provider: config.active_provider,
     },
   ]
   exerciseAnswers.value = {}
@@ -742,7 +742,24 @@ watch(prompt, resizePromptInput)
         <div class="message-bubble">{{ turn.question }}</div>
       </article>
 
-      <article class="chat-message assistant-message">
+      <article :class="['chat-message', 'assistant-message', { 'spark-response': turn.provider === 'spark' }]">
+        <div v-if="turn.provider === 'spark'" class="spark-mark" title="讯飞星火" aria-label="讯飞星火生成">
+          <svg viewBox="0 0 36 44" aria-hidden="true">
+            <defs>
+              <linearGradient :id="`spark-blue-${turn.id}`" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#4bb8ff" />
+                <stop offset="1" stop-color="#2b73e8" />
+              </linearGradient>
+              <linearGradient :id="`spark-red-${turn.id}`" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff5a4f" />
+                <stop offset="1" stop-color="#d92f45" />
+              </linearGradient>
+            </defs>
+            <path d="M18 2c1 8-6 10-8 17-2 7 2 15 10 16-3-3-3-7-1-10 2-4 7-6 7-13 5 6 8 12 5 20-3 8-10 11-17 10C5 41 0 34 1 26 2 17 12 12 18 2Z" :fill="`url(#spark-blue-${turn.id})`" />
+            <path d="M21 4c4 5 9 7 12 12-4-1-8 0-11 3 2-5 1-10-1-15Z" :fill="`url(#spark-red-${turn.id})`" />
+            <path d="M12 25c-1 5 2 9 7 10-5 2-10-1-11-5-1-3 1-6 4-8-1 1-1 2 0 3Z" fill="#ffffff" opacity=".92" />
+          </svg>
+        </div>
         <div class="assistant-body">
           <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
             <div class="trace-head" role="button" tabindex="0" @click="setTurnCollapsed(turn.id, !turn.processCollapsed)">
@@ -958,7 +975,7 @@ watch(prompt, resizePromptInput)
               :disabled="loading"
               @click="modelMenuOpen = !modelMenuOpen"
             >
-              {{ activeMode.label }}
+              {{ activeModeLabel }}
               <span>⌄</span>
             </button>
 
@@ -971,7 +988,7 @@ watch(prompt, resizePromptInput)
                 @click="selectComposerModel(mode)"
               >
                 <span>{{ mode.label }}</span>
-                <b v-if="modelConfig.active_provider === (mode.provider || 'siliconflow') && (mode.provider === 'spark' ? modelConfig.spark_model : modelConfig.model) === mode.model">✓</b>
+                <b v-if="modelConfig.active_provider === 'siliconflow' && modelConfig.model === mode.model">✓</b>
               </button>
 
               <div class="model-menu-divider"></div>
@@ -994,7 +1011,7 @@ watch(prompt, resizePromptInput)
                   @click="selectComposerModel(model)"
                 >
                   <span>{{ model.label }}</span>
-                  <b v-if="modelConfig.active_provider === (model.provider || 'siliconflow') && (model.provider === 'spark' ? modelConfig.spark_model : modelConfig.model) === model.model">✓</b>
+                  <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
                 </button>
               </div>
             </div>
@@ -1087,6 +1104,10 @@ watch(prompt, resizePromptInput)
 .message-bubble { max-width: min(78%, 720px); padding: 12px 16px; border-radius: 22px; color: #202123; background: #f0f0f0; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-message { align-items: flex-start; }
 .assistant-body { min-width: 0; flex: 1; }
+.spark-response { gap: 12px; }
+.spark-response .assistant-body { padding: 16px 18px; border: 1px solid #eeeeee; border-radius: 18px; background: #ffffff; }
+.spark-mark { width: 34px; height: 42px; flex: 0 0 34px; display: grid; place-items: center; }
+.spark-mark svg { width: 30px; height: 38px; overflow: visible; filter: drop-shadow(0 2px 4px rgba(43, 115, 232, .14)); }
 .result-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 0 0 10px; color: #858585; font-size: 10px; }
 .result-sources b { padding: 5px 8px; border-radius: 999px; color: #7d3434; background: #fff0f0; font-weight: 650; }
 .result-tabs { display: flex; gap: 4px; margin-bottom: 16px; overflow-x: auto; border-bottom: 1px solid #ececec; }

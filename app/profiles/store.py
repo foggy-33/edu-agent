@@ -45,13 +45,15 @@ class ProfileStore:
         if user_dir.exists():
             for path in user_dir.glob("*.json"):
                 profile = self._read(path)
+                if str(profile.get("course") or "未分类画像") == "未分类画像":
+                    continue
                 profiles.append(self._summary(profile))
 
         legacy = self._legacy_path(user_id)
         if legacy.exists():
             profile = self._read(legacy)
             course = str(profile.get("course") or "未分类画像")
-            if not any(item["course"] == course for item in profiles):
+            if course != "未分类画像" and not any(item["course"] == course for item in profiles):
                 profile["course"] = course
                 profiles.append(self._summary(profile))
 
