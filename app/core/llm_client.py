@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.core.config import get_settings
+from app.core.spark_config import resolve_spark_config
 
 
 class LLMClient:
@@ -73,14 +74,19 @@ class LLMClient:
         messages: list[dict[str, str]] | None = None,
         **_: Any,
     ) -> str:
-        password = spark_api_password or self.settings.spark_api_password
+        password, base_url, request_model = resolve_spark_config(
+            self.settings,
+            api_password=spark_api_password,
+            base_url=spark_base_url,
+            model=spark_model,
+        )
         if not password:
             raise ValueError("未配置讯飞星火 API Password")
 
-        base_url = (spark_base_url or self.settings.spark_base_url).rstrip("/")
+        base_url = base_url.rstrip("/")
         url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
         payload: dict[str, Any] = {
-            "model": spark_model or self.settings.spark_model,
+            "model": request_model,
             "messages": messages or [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},

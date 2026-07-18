@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
-import type { PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   addCoursePdfAnnotation,
@@ -34,6 +34,7 @@ const note = ref('')
 const draftPosition = ref<{ x: number; y: number } | null>(null)
 const annotations = ref<CoursePdfAnnotation[]>([])
 let pdfDocument: PDFDocumentProxy | null = null
+let loadingTask: PDFDocumentLoadingTask | null = null
 let renderTask: RenderTask | null = null
 let renderSequence = 0
 const originalBodyOverflow = document.body.style.overflow
@@ -46,7 +47,10 @@ async function loadDocument() {
   loading.value = true
   error.value = ''
   try {
-    pdfDocument = await pdfjsLib.getDocument(courseMaterialPreviewUrl(props.course, props.material.id)).promise
+    loadingTask = pdfjsLib.getDocument({
+      url: courseMaterialPreviewUrl(props.course, props.material.id),
+    })
+    pdfDocument = await loadingTask.promise
     pageCount.value = pdfDocument.numPages
     pageNumber.value = 1
     const result = await listCoursePdfAnnotations(props.userId, props.course, props.material.id)
@@ -169,7 +173,7 @@ onBeforeUnmount(() => {
   renderTask?.cancel()
   document.body.style.overflow = originalBodyOverflow
   window.removeEventListener('keydown', closeOnEscape)
-  pdfDocument?.destroy()
+  loadingTask?.destroy()
 })
 </script>
 

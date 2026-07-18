@@ -6,6 +6,7 @@ from typing import Any, Iterator
 import httpx
 
 from app.core.config import get_settings
+from app.core.spark_config import resolve_spark_config
 
 def call_llm(
     prompt: str,
@@ -15,18 +16,25 @@ def call_llm(
     model: str = "Pro/deepseek-ai/DeepSeek-V3.2",
     active_provider: str = "siliconflow",
     spark_api_password: str = "",
-    spark_base_url: str = "https://spark-api-open.xf-yun.com/x2",
-    spark_model: str = "spark-x",
+    spark_base_url: str = "",
+    spark_model: str = "",
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> str:
     """Use the browser-provided OpenAI-compatible config, or return mock sentinel."""
     settings = get_settings()
-    credential = (spark_api_password or settings.spark_api_password) if active_provider == "spark" else (api_key or settings.siliconflow_api_key)
+    if active_provider == "spark":
+        credential, request_base_url, request_model = resolve_spark_config(
+            settings,
+            api_password=spark_api_password,
+            base_url=spark_base_url,
+            model=spark_model,
+        )
+    else:
+        credential = api_key or settings.siliconflow_api_key
+        request_base_url = base_url or settings.siliconflow_base_url
+        request_model = model or settings.siliconflow_model
     if not credential.strip():
         return ""
-
-    request_base_url = (spark_base_url or settings.spark_base_url) if active_provider == "spark" else (base_url or settings.siliconflow_base_url)
-    request_model = (spark_model or settings.spark_model) if active_provider == "spark" else (model or settings.siliconflow_model)
 
     payload: dict[str, Any] = {
         "model": request_model,
@@ -60,19 +68,26 @@ def stream_llm(
     model: str = "Pro/deepseek-ai/DeepSeek-V3.2",
     active_provider: str = "siliconflow",
     spark_api_password: str = "",
-    spark_base_url: str = "https://spark-api-open.xf-yun.com/x2",
-    spark_model: str = "spark-x",
+    spark_base_url: str = "",
+    spark_model: str = "",
     response_speed: str = "balanced",
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> Iterator[dict[str, str]]:
     """Stream normalized reasoning/content events from OpenAI-compatible APIs."""
     settings = get_settings()
-    credential = (spark_api_password or settings.spark_api_password) if active_provider == "spark" else (api_key or settings.siliconflow_api_key)
+    if active_provider == "spark":
+        credential, request_base_url, request_model = resolve_spark_config(
+            settings,
+            api_password=spark_api_password,
+            base_url=spark_base_url,
+            model=spark_model,
+        )
+    else:
+        credential = api_key or settings.siliconflow_api_key
+        request_base_url = base_url or settings.siliconflow_base_url
+        request_model = model or settings.siliconflow_model
     if not credential.strip():
         return
-
-    request_base_url = (spark_base_url or settings.spark_base_url) if active_provider == "spark" else (base_url or settings.siliconflow_base_url)
-    request_model = (spark_model or settings.spark_model) if active_provider == "spark" else (model or settings.siliconflow_model)
 
     speed_options = {
         "fast": {

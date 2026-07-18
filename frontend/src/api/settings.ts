@@ -15,7 +15,7 @@ export const defaultSiliconFlowConfig: SiliconFlowConfig = {
 export function loadSiliconFlowConfig(): SiliconFlowConfig {
   try {
     const stored = { ...defaultSiliconFlowConfig, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }
-    return { ...stored, api_key: '', spark_api_password: '', spark_base_url: '', spark_model: '' }
+    return { ...stored, api_key: '', spark_api_password: '', spark_base_url: '' }
   } catch {
     return { ...defaultSiliconFlowConfig }
   }
@@ -27,6 +27,6 @@ export function saveSiliconFlowConfig(config: SiliconFlowConfig) {
     api_key: '',
     spark_api_password: '',
     spark_base_url: '',
-    spark_model: '',
+    spark_model: config.spark_model,
   }))
 }

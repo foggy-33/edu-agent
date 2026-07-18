@@ -28,8 +28,8 @@ class SiliconFlowConfig(BaseModel):
     base_url: str = "https://api.siliconflow.cn/v1"
     model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
     spark_api_password: str = ""
-    spark_base_url: str = "https://spark-api-open.xf-yun.com/x2"
-    spark_model: str = "spark-x"
+    spark_base_url: str = ""
+    spark_model: str = ""
 
 
 class CollaborativeLearningRequest(SiliconFlowConfig):
