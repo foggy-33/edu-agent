@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { chatDynamicProfile, getDynamicProfile, listDynamicProfiles } from '../api/client'
+import { chatDynamicProfile, getDynamicProfile, getNextProfileQuestion, listDynamicProfiles } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
@@ -10,20 +10,7 @@ type ChatMessage = {
   content: string
 }
 
-type GuidedQuestion = {
-  dimension: string
-  prompt: string
-  options: string[]
-}
-
-const guidedQuestions: GuidedQuestion[] = [
-  { dimension: '学习目标', prompt: '先聊聊你的目标：学习这门课，你当前最希望达到什么结果？', options: ['跟上课程进度', '准备考试或考研', '完成项目实践', '建立系统知识体系'] },
-  { dimension: '知识基础', prompt: '你觉得自己目前对这门课的掌握程度更接近哪一种？', options: ['刚开始接触', '理解部分概念', '能完成基础题', '能够综合应用'] },
-  { dimension: '认知风格', prompt: '遇到新知识时，哪种方式最容易让你理解？', options: ['图表与思维导图', '老师逐步讲解', '阅读文字材料', '直接做例题和实验'] },
-  { dimension: '资源偏好', prompt: '如果要巩固刚学的内容，你更愿意选择哪种练习方式？', options: ['分层练习题', '真实案例或项目', '代码与实验操作', '总结笔记并复述'] },
-  { dimension: '学习节奏', prompt: '你通常能为这门课保持怎样的学习节奏？', options: ['每天固定学习', '每周集中学习几次', '跟随课程任务学习', '临近考试集中复习'] },
-  { dimension: '易错点', prompt: '学习遇到困难时，你最常见的情况是什么？', options: ['概念容易混淆', '会听但不会做题', '知识难以迁移应用', '缺少复盘和持续计划'] },
-]
+const INTERVIEW_TURNS = 6
 
 const defaultCourses = ['数据库系统', '数据结构', '算法设计', '操作系统', '计算机网络', '软件工程']
 const NEW_PROFILE_VALUE = '__new_profile__'
@@ -38,7 +25,7 @@ const messageStream = ref<HTMLElement | null>(null)
 const replies = ref<ChatMessage[]>([])
 const conversationStarted = ref(false)
 const guidedStep = ref(0)
-const guidedAnswers = ref<Record<string, string>>({})
+const answerDraft = ref('')
 const interviewComplete = ref(false)
 
 const courses = computed(() => Array.from(new Set([
@@ -49,7 +36,6 @@ const subtitle = computed(() => `${course.value} · 六维学习画像 · V${por
 const emit = defineEmits<{
   navigate: [page: 'account']
 }>()
-const currentGuidedQuestion = computed(() => guidedQuestions[guidedStep.value])
 
 async function scrollToLatest() {
   await nextTick()
@@ -104,10 +90,28 @@ async function startConversation() {
   error.value = ''
   replies.value = []
   guidedStep.value = 0
-  guidedAnswers.value = {}
+  answerDraft.value = ''
   interviewComplete.value = false
   await scrollToLatest()
-  await streamAssistant(guidedQuestions[0].prompt)
+  await askNextQuestion()
+}
+
+async function askNextQuestion() {
+  questionStreaming.value = true
+  try {
+    const result = await getNextProfileQuestion({
+      ...loadSiliconFlowConfig(),
+      user_id: userProfile.value.userId,
+      course: course.value,
+    })
+    questionStreaming.value = false
+    await streamAssistant(result.question || `聊聊你目前学习《${course.value}》时最想解决的问题。`)
+    if (result.warning) error.value = `提示：${result.warning}`
+  } catch (err) {
+    questionStreaming.value = false
+    error.value = err instanceof Error ? err.message : '暂时无法生成下一个问题'
+    await streamAssistant(`聊聊你目前学习《${course.value}》时最想解决的问题。`)
+  }
 }
 
 async function streamAssistant(content: string) {
@@ -129,46 +133,45 @@ async function streamAssistant(content: string) {
   await scrollToLatest()
 }
 
-async function chooseOption(option: string) {
-  const question = currentGuidedQuestion.value
-  if (!question || loading.value || questionStreaming.value) return
-  guidedAnswers.value[question.dimension] = option
-  replies.value.push({ role: 'user', content: option })
+async function sendAnswer() {
+  const answer = answerDraft.value.trim()
+  if (!answer || loading.value || questionStreaming.value || interviewComplete.value) return
+  answerDraft.value = ''
+  replies.value.push({ role: 'user', content: answer })
   await scrollToLatest()
-
-  if (guidedStep.value < guidedQuestions.length - 1) {
-    guidedStep.value += 1
-    await streamAssistant(guidedQuestions[guidedStep.value].prompt)
-    return
-  }
-
-  await generatePortrait()
-}
-
-async function generatePortrait() {
   loading.value = true
   error.value = ''
-  const answerSummary = guidedQuestions
-    .map(item => `${item.dimension}：${guidedAnswers.value[item.dimension] || '未选择'}`)
-    .join('；')
 
   try {
     const result = await chatDynamicProfile({
       ...loadSiliconFlowConfig(),
       user_id: userProfile.value.userId,
       course: course.value,
-      message: `这是一次结构化学习画像访谈结果。请根据明确选择更新画像，不要补充用户未表达的信息。${answerSummary}`,
+      message: answer,
     })
     portrait.value = result.profile
     await refreshSubjects()
     loading.value = false
-    interviewComplete.value = true
-    await streamAssistant(`六个问题已经完成，我已生成《${course.value}》学习画像。你可以前往个人中心查看六维分析和具体建议。`)
     if (result.warning) error.value = `提示：${result.warning}`
+
+    if (guidedStep.value >= INTERVIEW_TURNS - 1) {
+      interviewComplete.value = true
+      await streamAssistant(`谢谢你的回答。我已经根据这次对话更新了《${course.value}》学习画像，你可以前往个人中心查看六维分析、薄弱点和学习建议。`)
+      return
+    }
+
+    guidedStep.value += 1
+    await askNextQuestion()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '画像更新失败'
     loading.value = false
   }
+}
+
+function handleComposerKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey) return
+  event.preventDefault()
+  void sendAnswer()
 }
 
 function finishConversation() {
@@ -201,7 +204,7 @@ onMounted(async () => {
           </div>
         </article>
 
-        <article v-if="loading" class="chat-row assistant">
+        <article v-if="loading || questionStreaming" class="chat-row assistant">
           <div class="message-body">
             <div class="typing"><i></i><i></i><i></i></div>
           </div>
@@ -228,20 +231,28 @@ onMounted(async () => {
       <p v-if="error" class="composer-error">{{ error }}</p>
       <div v-if="!interviewComplete" class="guided-composer">
         <div class="guided-head">
-          <span>{{ course }} · 六维快速访谈</span>
-          <b>{{ Math.min(guidedStep + 1, guidedQuestions.length) }}/{{ guidedQuestions.length }}</b>
+          <span>{{ course }} · 自然语言画像对话</span>
+          <b>{{ Math.min(guidedStep + 1, INTERVIEW_TURNS) }}/{{ INTERVIEW_TURNS }}</b>
         </div>
-        <div class="guided-progress"><i :style="{ width: `${((guidedStep + 1) / guidedQuestions.length) * 100}%` }"></i></div>
-        <div class="guided-options">
-          <button
-            v-for="option in currentGuidedQuestion?.options || []"
-            :key="option"
-            type="button"
+        <div class="guided-progress"><i :style="{ width: `${((guidedStep + 1) / INTERVIEW_TURNS) * 100}%` }"></i></div>
+        <div class="answer-composer">
+          <textarea
+            v-model="answerDraft"
             :disabled="loading || questionStreaming"
-            @click="chooseOption(option)"
-          >{{ option }}</button>
+            rows="2"
+            placeholder="用自己的话回答，越具体越有助于形成准确画像"
+            aria-label="回答画像问题"
+            @keydown="handleComposerKeydown"
+          ></textarea>
+          <button
+            class="send-button"
+            type="button"
+            aria-label="发送回答"
+            :disabled="!answerDraft.trim() || loading || questionStreaming"
+            @click="sendAnswer"
+          >↑</button>
         </div>
-        <p v-if="loading" class="generating-hint">正在汇总六维答案并生成画像...</p>
+        <p v-if="loading" class="generating-hint">正在理解你的回答并更新画像...</p>
       </div>
       <div v-else class="completion-composer">
         <div>
@@ -250,7 +261,7 @@ onMounted(async () => {
         </div>
         <button class="finish-button" type="button" @click="finishConversation">前往个人中心查看</button>
       </div>
-      <p class="composer-hint">点击选项即可回答，全部完成后只调用一次模型生成画像。</p>
+      <p class="composer-hint">Enter 发送，Shift + Enter 换行；AI 会根据你的回答继续追问。</p>
     </section>
   </div>
 </template>
@@ -290,9 +301,10 @@ onMounted(async () => {
 .guided-head b { color: #202123; font-size: 12px; }
 .guided-progress { height: 3px; margin: 10px 0 13px; overflow: hidden; border-radius: 999px; background: #ececec; }
 .guided-progress i { display: block; height: 100%; border-radius: inherit; background: #202123; transition: width .25s ease; }
-.guided-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.guided-options button { min-height: 40px; padding: 8px 12px; border: 1px solid #dddddd; border-radius: 999px; color: #303030; background: #fafafa; font-size: 13px; transition: background .15s ease, border-color .15s ease; }
-.guided-options button:hover:not(:disabled) { border-color: #202123; background: #f1f1f1; }
+.answer-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 9px 10px 9px 14px; border: 1px solid #dedede; border-radius: 18px; background: #fafafa; transition: border-color .16s ease, box-shadow .16s ease; }
+.answer-composer:focus-within { border-color: #8b7cf6; box-shadow: 0 0 0 3px rgba(124, 108, 240, .1); }
+.answer-composer textarea { width: 100%; min-height: 44px; max-height: 140px; padding: 4px 0; overflow-y: auto; border: 0; outline: 0; resize: none; color: #202123; background: transparent; font: inherit; font-size: 14px; line-height: 1.55; }
+.answer-composer textarea::placeholder { color: #999; }
 .generating-hint { margin: 11px 0 0; color: #858585; text-align: center; font-size: 11px; }
 .completion-composer { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .completion-composer div { display: grid; gap: 3px; }
@@ -312,7 +324,7 @@ button:disabled { cursor: default; opacity: .55; }
   .message-body { max-width: 88%; }
   .starter-composer { grid-template-columns: 1fr; }
   .starter-composer { border-radius: 22px; }
-  .guided-options { grid-template-columns: 1fr; }
+  .answer-composer { border-radius: 16px; }
   .completion-composer { align-items: stretch; flex-direction: column; }
   .finish-button { padding: 0 10px; font-size: 11px; }
 }

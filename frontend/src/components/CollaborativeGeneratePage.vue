@@ -215,6 +215,22 @@ function contentForTurn(turn: ConversationTurn, key: ResultKey) {
   return turn.streamContent[key] || turn.result?.[key] || ''
 }
 
+function isOfficeTurn(turn: ConversationTurn) {
+  return turn.resourceTypes.includes('ppt') || turn.resourceTypes.includes('word')
+}
+
+function officeTurnLabel(turn: ConversationTurn) {
+  if (turn.resourceTypes.includes('ppt')) return 'PPT讲解'
+  return 'Word学习文档'
+}
+
+function officeTurnDescription(turn: ConversationTurn) {
+  const format = turn.resourceTypes.includes('ppt') ? 'PPTX演示文稿' : 'DOCX学习文档'
+  const rawTopic = (turn.question || '本次学习主题').replace(/\s+/g, ' ').trim()
+  const topic = rawTopic.length > 54 ? `${rawTopic.slice(0, 54)}…` : rawTopic
+  return `已围绕“${topic}”完成内容组织与排版，完整内容已写入${format}。`
+}
+
 function exerciseItemsForTurn(turn: ConversationTurn) {
   return turn.result?.exerciseItems || []
 }
@@ -950,13 +966,46 @@ watch(prompt, resizePromptInput)
             </template>
           </div>
 
-          <div v-if="uniqueSources(turn.result?.sources).length" class="result-sources">
+          <div v-if="!isOfficeTurn(turn) && uniqueSources(turn.result?.sources).length" class="result-sources">
             <span>参考资料</span>
             <b v-for="source in uniqueSources(turn.result?.sources)" :key="source.id">{{ source.name }}</b>
           </div>
 
+          <div v-if="isOfficeTurn(turn)" class="office-delivery-card">
+            <span class="office-delivery-icon" aria-hidden="true">
+              <ToolGlyph :name="turn.resourceTypes.includes('ppt') ? 'ppt' : 'word'" />
+            </span>
+            <div class="office-delivery-copy">
+              <small>{{ turn.processCompleted ? '文件已生成' : '正在生成文件' }}</small>
+              <h3>{{ officeTurnLabel(turn) }}</h3>
+              <p>{{ turn.processCompleted ? officeTurnDescription(turn) : '正在整理核心内容并生成最终文件，请稍候。' }}</p>
+            </div>
+            <div v-if="turn.processCompleted && turn.result" class="office-delivery-actions">
+              <button
+                v-if="turn.resourceTypes.includes('ppt')"
+                type="button"
+                class="office-primary-download"
+                :disabled="Boolean(officeDownloading)"
+                @click="downloadOffice(turn, 'presentation')"
+              >
+                <span aria-hidden="true">↓</span>
+                {{ officeDownloading === 'presentation' ? '正在生成文件…' : '下载 PPT' }}
+              </button>
+              <button
+                v-if="turn.resourceTypes.includes('word')"
+                type="button"
+                class="office-primary-download"
+                :disabled="Boolean(officeDownloading)"
+                @click="downloadOffice(turn, 'wordDocument')"
+              >
+                <span aria-hidden="true">↓</span>
+                {{ officeDownloading === 'wordDocument' ? '正在生成文件…' : '下载 Word' }}
+              </button>
+            </div>
+          </div>
+
           <div
-            v-if="!turn.resourceTypes.includes('ppt') && (tabsForTurn(turn).length > 1 || (isActiveTurn(turn) && activeTab === 'wordDocument'))"
+            v-else-if="tabsForTurn(turn).length > 1"
             class="result-tabs"
           >
             <button
@@ -968,14 +1017,6 @@ watch(prompt, resizePromptInput)
               {{ tab.label }}
             </button>
             <button
-              v-if="turn.result && isActiveTurn(turn) && activeTab === 'wordDocument'"
-              class="office-download-btn"
-              :disabled="Boolean(officeDownloading)"
-              @click="downloadOffice(turn, activeTab)"
-            >
-              {{ officeDownloading === activeTab ? '正在生成文件…' : '下载 DOCX' }}
-            </button>
-            <button
               v-if="turn.result && isActiveTurn(turn)"
               class="save-to-library-btn"
               title="保存到资料库"
@@ -984,20 +1025,9 @@ watch(prompt, resizePromptInput)
               💾 保存到资料库
             </button>
           </div>
-          <div v-if="turn.result && turn.resourceTypes.includes('ppt')" class="ppt-download-only">
-            <button
-              type="button"
-              class="ppt-primary-download"
-              :disabled="Boolean(officeDownloading)"
-              @click="downloadOffice(turn, 'presentation')"
-            >
-              <span aria-hidden="true">↓</span>
-              {{ officeDownloading === 'presentation' ? '正在生成 PPT…' : '下载 PPT' }}
-            </button>
-          </div>
           <p v-if="isActiveTurn(turn) && officeDownloadError" class="office-download-error">{{ officeDownloadError }}</p>
 
-          <div v-if="!turn.resourceTypes.includes('ppt')" class="result-content">
+          <div v-if="!isOfficeTurn(turn)" class="result-content">
             <template v-if="isActiveTurn(turn)">
               <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="contentForTurn(turn, 'mindmap')" />
               <div v-else-if="activeTab === 'exercises' && exerciseItemsForTurn(turn).length" class="practice-list">
@@ -1560,29 +1590,39 @@ button:disabled { cursor: default; opacity: .65; }
   color: #7c3aed;
 }
 
-.office-download-btn {
-  margin-left: auto;
-  border: 1px solid #ded9ff !important;
-  border-radius: 999px !important;
-  color: #5b45c6 !important;
-  background: linear-gradient(135deg, #f7f5ff, #eeebff) !important;
-  cursor: pointer;
-  transition: transform .18s ease, box-shadow .18s ease, background .18s ease !important;
+.office-delivery-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 0 6px;
+  padding: 18px;
+  border: 1px solid #e4e0ff;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #ffffff 0%, #faf9ff 58%, #f3f0ff 100%);
+  box-shadow: 0 12px 34px rgba(70, 55, 150, .08);
+  animation: officeCardIn .38s cubic-bezier(.16, 1, .3, 1) both;
 }
-
-.office-download-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  background: #e9e4ff !important;
-  box-shadow: 0 8px 20px rgba(91, 69, 198, .14);
+.office-delivery-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #dad4ff;
+  border-radius: 14px;
+  color: #5b45c6;
+  background: #fff;
 }
-
-.office-download-btn:disabled { cursor: wait; opacity: .65; }
-.office-download-btn + .save-to-library-btn { margin-left: 4px; }
-.office-download-error { margin: -7px 0 14px; color: #b42318; font-size: 12px; }
-.ppt-download-only { display: flex; justify-content: flex-start; padding: 8px 0 4px; }
-.ppt-primary-download {
+.office-delivery-icon :deep(svg) { width: 22px; height: 22px; }
+.office-delivery-copy { min-width: 0; }
+.office-delivery-copy small { color: #6d5bd0; font-size: 11px; font-weight: 700; }
+.office-delivery-copy h3 { margin: 3px 0 5px; color: #202123; font-size: 16px; }
+.office-delivery-copy p { margin: 0; color: #6f7280; font-size: 12px; line-height: 1.65; }
+.office-delivery-actions { display: flex; align-items: center; gap: 8px; }
+.office-primary-download {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 9px;
   min-width: 154px;
   padding: 12px 20px;
@@ -1596,9 +1636,19 @@ button:disabled { cursor: default; opacity: .65; }
   cursor: pointer;
   transition: transform .2s cubic-bezier(.16, 1, .3, 1), box-shadow .2s ease, background .2s ease;
 }
-.ppt-primary-download span { font-size: 17px; line-height: 1; }
-.ppt-primary-download:hover:not(:disabled) { transform: translateY(-2px); background: #4e39bb; box-shadow: 0 14px 34px rgba(91, 69, 198, .28); }
-.ppt-primary-download:disabled { cursor: wait; opacity: .62; }
+.office-primary-download span { font-size: 17px; line-height: 1; }
+.office-primary-download:hover:not(:disabled) { transform: translateY(-2px); background: #4e39bb; box-shadow: 0 14px 34px rgba(91, 69, 198, .28); }
+.office-primary-download:disabled { cursor: wait; opacity: .62; }
+.office-download-error { margin: 8px 0 14px; color: #b42318; font-size: 12px; }
+@keyframes officeCardIn {
+  from { opacity: 0; transform: translateY(8px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (max-width: 720px) {
+  .office-delivery-card { grid-template-columns: auto minmax(0, 1fr); }
+  .office-delivery-actions { grid-column: 1 / -1; }
+  .office-primary-download { width: 100%; }
+}
 
 .save-modal-overlay {
   position: fixed;
