@@ -513,6 +513,14 @@ onMounted(() => {
             >{{ generatingWeakPractice ? '正在生成…' : '生成专项练习' }}</button>
           </div>
 
+          <div v-if="generatingWeakPractice" class="weak-generation-flow" aria-live="polite">
+            <div class="gemini-orb"><i></i></div>
+            <div>
+              <strong>正在生成“{{ selectedWeakPoint }}”专项题</strong>
+              <p><span>分析薄弱点</span><span>匹配题目难度</span><span>组织答案解析</span></p>
+            </div>
+          </div>
+
           <div v-if="weaknessGroups.length" class="weakness-picker">
             <div class="weak-course-row">
               <button
@@ -858,6 +866,8 @@ onMounted(() => {
 }
 
 .quiz-shell {
+  position: relative;
+  overflow: hidden;
   width: min(1180px, 100%);
   min-height: calc(100vh - 96px);
   margin: 0 auto;
@@ -868,23 +878,34 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
   border-radius: 30px;
   background: #fff;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, .06);
+  box-shadow: 0 18px 48px rgba(52, 42, 120, .08);
 }
+.quiz-shell::before { content: ""; position: absolute; top: 0; right: 8%; left: 8%; height: 2px; background: linear-gradient(90deg, transparent, #c8c1ff, #6d5de7, #c8c1ff, transparent); opacity: .75; }
 
-.weak-practice-panel { padding: 20px; border: 1px solid #e2e2e2; border-radius: 20px; background: linear-gradient(135deg, #f7f7f7, #fff 58%); }
+.weak-practice-panel { position: relative; padding: 20px; overflow: hidden; border: 1px solid #e3dfff; border-radius: 20px; background: radial-gradient(circle at 92% 8%, rgba(109,93,231,.12), transparent 30%), linear-gradient(135deg, #f8f7ff, #fff 58%); }
 .weak-practice-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-.weak-practice-head span { color: #888; font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+.weak-practice-head span { color: #6d5de7; font-size: 10px; font-weight: 750; letter-spacing: .08em; }
 .weak-practice-head h2 { margin: 4px 0; color: #202123; font-size: 20px; }
 .weak-practice-head p { margin: 0; color: #858585; font-size: 12px; }
 .weak-practice-head .primary-button { flex: 0 0 auto; min-width: 132px; }
 .weakness-picker { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e6e6e6; }
 .weak-course-row, .weak-point-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .weak-course-row button, .weak-point-row button { padding: 7px 12px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fff; font-size: 11px; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
-.weak-course-row button:hover, .weak-point-row button:hover { border-color: #888; transform: translateY(-1px); }
-.weak-course-row button.active { color: #fff; border-color: #202123; background: #202123; }
-.weak-point-row button.active { color: #202123; border-color: #202123; background: #ededed; font-weight: 700; }
+.weak-course-row button:hover, .weak-point-row button:hover { color: #5146cf; border-color: #9f94f2; background: #f8f7ff; transform: translateY(-1px); }
+.weak-course-row button.active { color: #fff; border-color: #5146cf; background: #5146cf; box-shadow: 0 6px 16px rgba(81,70,207,.2); }
+.weak-point-row button.active { color: #433aa8; border-color: #9f94f2; background: #efedff; font-weight: 700; box-shadow: 0 5px 14px rgba(81,70,207,.1); }
 .weakness-empty { margin: 16px 0 0; color: #999; font-size: 11px; }
 .weak-practice-error { margin: 12px 0 0; padding: 9px 11px; border-radius: 10px; color: #9f3030; background: #fff0f0; font-size: 11px; }
+.weak-generation-flow { display: flex; align-items: center; gap: 13px; margin-top: 16px; padding: 13px 15px; border: 1px solid #ddd8ff; border-radius: 15px; background: rgba(255,255,255,.78); animation: generationFlowIn .32s cubic-bezier(.16,1,.3,1) both; }
+.weak-generation-flow > div:last-child { min-width: 0; flex: 1; }
+.weak-generation-flow strong { color: #332a86; font-size: 12px; }
+.weak-generation-flow p { display: flex; flex-wrap: wrap; gap: 13px; margin: 5px 0 0; color: #888; font-size: 9px; }
+.weak-generation-flow p span { position: relative; animation: generationStage 1.8s ease-in-out infinite; }
+.weak-generation-flow p span:nth-child(2) { animation-delay: .3s; }
+.weak-generation-flow p span:nth-child(3) { animation-delay: .6s; }
+.gemini-orb { position: relative; width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: conic-gradient(from 20deg, #5146cf, #b0a5ff, #f0edff, #5146cf); box-shadow: 0 0 26px rgba(109,93,231,.28); animation: geminiOrbSpin 1.6s linear infinite; }
+.gemini-orb::after { content: ""; position: absolute; inset: 6px; border-radius: inherit; background: #fff; }
+.gemini-orb i { position: absolute; z-index: 1; top: 4px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px #fff; }
 
 .quiz-header,
 .quiz-progress,
@@ -940,11 +961,12 @@ onMounted(() => {
 }
 
 .progress-segments span.active {
-  background: #d1d5db;
+  background: #c8c1ff;
+  transform: scaleY(1.25);
 }
 
 .progress-segments span.answered {
-  background: #4b5563;
+  background: linear-gradient(90deg, #5146cf, #8b7df0);
 }
 
 .quiz-progress b {
@@ -966,13 +988,16 @@ onMounted(() => {
 }
 
 .quiz-loading div {
+  position: relative;
   width: 38px;
   height: 38px;
-  border: 2px solid #e5e7eb;
-  border-top-color: #111827;
+  border: 0;
   border-radius: 50%;
-  animation: spin .8s linear infinite;
+  background: conic-gradient(from 20deg, #5146cf, #aa9fff, #eeeaff, #5146cf);
+  box-shadow: 0 0 28px rgba(109,93,231,.25);
+  animation: spin 1.15s linear infinite;
 }
+.quiz-loading div::after { content: ""; position: absolute; inset: 6px; border-radius: inherit; background: #fff; }
 
 .quiz-loading strong {
   color: #111827;
@@ -1412,13 +1437,18 @@ onMounted(() => {
   font-size: 17px;
   font-weight: 620;
   transition: border-color .2s ease, background .2s ease, transform .2s ease;
+  animation: optionIn .32s cubic-bezier(.16,1,.3,1) both;
 }
+.exercise-option:nth-child(2) { animation-delay: 45ms; }
+.exercise-option:nth-child(3) { animation-delay: 90ms; }
+.exercise-option:nth-child(4) { animation-delay: 135ms; }
 
 .exercise-option:hover:not(:disabled),
 .option-selected {
-  border-color: #111827;
-  background: #fff;
-  transform: translateY(-1px);
+  border-color: #9f94f2;
+  background: #f8f7ff;
+  box-shadow: 0 8px 24px rgba(81,70,207,.09);
+  transform: translateY(-2px);
 }
 
 .exercise-option b {
@@ -1460,7 +1490,8 @@ onMounted(() => {
 }
 
 .answer-input:focus {
-  border-color: #111827;
+  border-color: #9f94f2;
+  box-shadow: 0 0 0 4px rgba(109,93,231,.1);
 }
 
 .result-panel {
@@ -1509,8 +1540,11 @@ onMounted(() => {
 
 .primary-button {
   color: #fff;
-  background: #3746b3;
+  background: linear-gradient(110deg, #433aa8, #6d5de7, #5146cf);
+  background-size: 180% 100%;
+  box-shadow: 0 8px 20px rgba(81,70,207,.18);
 }
+.primary-button:hover:not(:disabled) { background-position: 100% 0; transform: translateY(-1px); box-shadow: 0 11px 26px rgba(81,70,207,.25); }
 
 .ghost-button:disabled,
 .primary-button:disabled {
@@ -1708,6 +1742,22 @@ button {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes geminiOrbSpin { to { transform: rotate(360deg); } }
+@keyframes generationFlowIn {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes generationStage {
+  0%, 100% { color: #aaa; opacity: .55; }
+  45%, 65% { color: #5146cf; opacity: 1; }
+}
+@keyframes optionIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gemini-orb, .weak-generation-flow, .weak-generation-flow p span, .exercise-option, .quiz-loading div { animation: none; }
 }
 
 @media (max-width: 760px) {

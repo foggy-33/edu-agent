@@ -22,6 +22,11 @@
   --tone-primary-700: #433aa8;
   --tone-primary-800: #303466;
   --tone-primary-900: #252848;
+  --accent-purple: #6d5de7;
+  --accent-purple-strong: #5146cf;
+  --accent-purple-soft: #f3f1ff;
+  --accent-purple-line: #ddd8ff;
+  --accent-purple-glow: rgb(109 93 231 / 16%);
 
   /* Keep the interface intentionally monochromatic, regardless of utility name. */
   --color-blue-50: var(--tone-primary-50);
@@ -131,7 +136,10 @@ textarea:focus-visible {
   display: flex;
   height: 100vh;
   overflow: hidden;
-  background: #f4f6fb;
+  background:
+    radial-gradient(circle at 88% 5%, rgb(109 93 231 / 8%), transparent 28%),
+    radial-gradient(circle at 22% 96%, rgb(159 148 242 / 6%), transparent 30%),
+    #f4f6fb;
 }
 
 .auth-loading {
@@ -611,9 +619,10 @@ textarea:focus-visible {
 }
 
 .nav-item-active {
-  color: #111;
-  background: #e9e9e9;
+  color: #332a86;
+  background: linear-gradient(90deg, #efedff, #f7f6ff);
   font-weight: 500;
+  box-shadow: inset 3px 0 #6d5de7;
 }
 
 .nav-icon {
@@ -843,14 +852,24 @@ textarea:focus-visible {
   width: min(1480px, 100%);
   margin: 0 auto;
   padding: clamp(20px, 2.8vw, 40px);
+  animation: appContentIn .38s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+@keyframes appContentIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-content { animation: none; }
 }
 
 .app-main.resource-view {
-  background: #fff;
+  background: radial-gradient(circle at 92% 4%, rgb(109 93 231 / 7%), transparent 24rem), #fcfcff;
 }
 
 .app-main.course-view {
-  background: #fff;
+  background: radial-gradient(circle at 92% 4%, rgb(109 93 231 / 7%), transparent 24rem), #fcfcff;
 }
 
 .app-main.resource-view .app-content {
