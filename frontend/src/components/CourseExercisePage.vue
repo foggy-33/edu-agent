@@ -7,6 +7,7 @@ import type { CollaborativeExerciseItem, Course, Question, UploadedResource } fr
 
 const props = defineProps<{
   course: Course
+  initialChapterId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -23,7 +24,7 @@ const answeredCount = ref(0)
 const correctCount = ref(0)
 const resources = ref<UploadedResource[]>([])
 const showCompletion = ref(false)
-const selectedChapterIds = ref<string[]>([])
+const selectedChapterIds = ref<string[]>(props.initialChapterId ? [String(props.initialChapterId)] : [])
 const questionTypes = ref<string[]>([])
 const quizStarted = ref(false)
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   createConversationTitle,
   getConversationHistoryItem,
@@ -94,6 +94,7 @@ const streamingTurnId = ref('')
 const modelConfig = ref(loadSiliconFlowConfig())
 const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
+const fileSearch = ref('')
 const promptInput = ref<HTMLTextAreaElement | null>(null)
 const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedType = ref<CollaborativeResourceType | 'chat'>('chat')
@@ -124,8 +125,11 @@ const processSteps = ref<AgentProcessStep[]>([])
 const processQueue = ref<AgentProcessStep[]>([])
 const processCollapsed = ref(false)
 const processCompleted = ref(false)
+const processElapsedSeconds = ref(0)
 let processTimer: ReturnType<typeof setTimeout> | null = null
-const PROCESS_STEP_DELAY_MS = 460
+let processClock: ReturnType<typeof setInterval> | null = null
+const PROCESS_STEP_DELAY_MS = 760
+const PROCESS_AUTO_COLLAPSE_MS = 1600
 
 const emptyStreamContent = (): Record<ResultKey, string> => ({
   lectureDoc: '',
@@ -149,6 +153,12 @@ const availableTabs = computed(() => [
 void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
+const filteredResources = computed(() => {
+  const keyword = fileSearch.value.trim().toLowerCase()
+  return resources.value
+    .filter(item => !keyword || item.name.toLowerCase().includes(keyword) || item.course_folder?.toLowerCase().includes(keyword))
+    .sort((left, right) => Number(selectedFileIds.value.includes(right.id)) - Number(selectedFileIds.value.includes(left.id)))
+})
 const hasStreamingOutput = computed(() => conversationTurns.value.length > 0 || Object.values(streamContent.value).some(Boolean) || thinkingSteps.value.length > 0)
 const activeSpeed = computed(() => speedOptions.find(item => item.key === responseSpeed.value) || speedOptions[1])
 const activeComposerModel = computed(() => composerModels.find(item =>
@@ -308,7 +318,35 @@ function setTurnCollapsed(turnId: string, collapsed: boolean) {
 function toggleResource(key: CollaborativeResourceType | 'chat') {
   selectedType.value = key
   selectedTypes.value = key === 'chat' ? [] : [key]
-  menuOpen.value = false
+}
+
+function visibleProcessAgents(turn: ConversationTurn) {
+  const latestByAgent = new Map<string, AgentProcessStep>()
+  turn.processSteps.forEach(step => latestByAgent.set(step.agent, step))
+  return [...latestByAgent.values()].slice(-6)
+}
+
+function agentInitial(agent: string) {
+  return agent.replace(/\s*Agent$/i, '').slice(0, 2)
+}
+
+function agentLabel(agent: string) {
+  return agent.replace(/\s*Agent$/i, '')
+}
+
+function startProcessClock() {
+  processElapsedSeconds.value = 0
+  if (processClock) clearInterval(processClock)
+  processClock = window.setInterval(() => {
+    processElapsedSeconds.value += 1
+  }, 1000)
+}
+
+function stopProcessClock() {
+  if (processClock) {
+    clearInterval(processClock)
+    processClock = null
+  }
 }
 
 function toggleToolMenu() {
@@ -429,6 +467,8 @@ function resetStreamState() {
   processQueue.value = []
   processCollapsed.value = false
   processCompleted.value = false
+  processElapsedSeconds.value = 0
+  stopProcessClock()
   if (processTimer) {
     clearTimeout(processTimer)
     processTimer = null
@@ -594,7 +634,7 @@ function collapseCompletedProcess() {
       processCollapsed.value = true
       syncActiveTurn(targetId)
     }
-  }, PROCESS_STEP_DELAY_MS)
+  }, PROCESS_AUTO_COLLAPSE_MS)
 }
 
 function pumpProcessQueue() {
@@ -638,6 +678,7 @@ function applyStreamEvent(event: string, data: any) {
   if (event === 'done') {
     result.value = data.result
     processCompleted.value = true
+    stopProcessClock()
     syncActiveTurn()
     pumpProcessQueue()
     return
@@ -696,6 +737,7 @@ async function submit() {
   result.value = null
   prompt.value = ''
   resetStreamState()
+  startProcessClock()
   activeTurnId.value = turnId
   streamingTurnId.value = turnId
   conversationTurns.value = [
@@ -739,6 +781,7 @@ async function submit() {
   } finally {
     loading.value = false
     streamingTurnId.value = ''
+    stopProcessClock()
   }
 }
 
@@ -746,6 +789,11 @@ onMounted(() => {
   loadUploadedResources()
   hydrateFromHistory(props.historyId)
   resizePromptInput()
+})
+
+onBeforeUnmount(() => {
+  stopProcessClock()
+  if (processTimer) clearTimeout(processTimer)
 })
 
 watch(() => props.historyId, hydrateFromHistory)
@@ -778,27 +826,47 @@ watch(prompt, resizePromptInput)
           <img :src="sparkOfficialLogo" alt="" aria-hidden="true" />
         </div>
         <div class="assistant-body">
-          <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '']">
+          <div v-if="turn.processSteps.length" :class="['thinking-trace', turn.processCollapsed ? 'thinking-trace-collapsed' : '', turn.processCompleted ? 'thinking-trace-completed' : '']">
             <div class="trace-head" role="button" tabindex="0" @click="setTurnCollapsed(turn.id, !turn.processCollapsed)">
-              <span>处理过程</span>
+              <span><i class="collab-live-dot"></i>多 Agent 协作</span>
               <b>
-                {{ turn.processCollapsed ? activeProcessSummary(turn) : `${turn.processSteps.filter(step => step.state === 'done').length}/${turn.processSteps.length}` }}
+                {{ turn.processCollapsed
+                  ? activeProcessSummary(turn)
+                  : turn.processCompleted
+                    ? `已完成 ${turn.processSteps.filter(step => step.state === 'done').length} 个阶段`
+                    : `${turn.processSteps.filter(step => step.state === 'done').length} 个阶段 · ${processElapsedSeconds}s` }}
               </b>
             </div>
-            <ol v-if="!turn.processCollapsed" class="agent-flow">
-              <li
-                v-for="step in turn.processSteps"
-                :key="step.id"
-                :class="['agent-step', `agent-step-${step.state}`]"
-              >
-                <i></i>
-                <div>
-                  <strong>{{ step.agent }}</strong>
-                  <p>{{ step.message }}</p>
-                  <small>{{ step.detail }}</small>
+            <template v-if="!turn.processCollapsed">
+              <div class="agent-handoff" :class="{ completed: turn.processCompleted }">
+                <div class="agent-cluster">
+                  <span
+                    v-for="step in visibleProcessAgents(turn)"
+                    :key="`${turn.id}-${step.agent}`"
+                    :class="['agent-chip', `agent-chip-${step.state}`]"
+                    :title="step.agent"
+                  >
+                    <em>{{ agentInitial(step.agent) }}</em>
+                    <small>{{ agentLabel(step.agent) }}</small>
+                  </span>
                 </div>
-              </li>
-            </ol>
+                <div v-if="!turn.processCompleted" class="handoff-wave" aria-label="Agent 正在交接任务"><i></i><i></i><i></i></div>
+              </div>
+              <ol class="agent-flow">
+                <li
+                  v-for="step in turn.processSteps"
+                  :key="step.id"
+                  :class="['agent-step', `agent-step-${step.state}`]"
+                >
+                  <i></i>
+                  <div>
+                    <strong>{{ step.agent }}</strong>
+                    <p>{{ step.message }}</p>
+                    <small>{{ step.detail }}</small>
+                  </div>
+                </li>
+              </ol>
+            </template>
           </div>
 
           <div v-if="uniqueSources(turn.result?.sources).length" class="result-sources">
@@ -957,7 +1025,13 @@ watch(prompt, resizePromptInput)
 
             <Transition name="tool-pop">
               <div v-if="menuOpen" class="tool-menu">
-                <div class="menu-title">选择功能</div>
+                <div class="tool-menu-head">
+                  <div>
+                    <strong>选择功能</strong>
+                    <span>功能与资料可以组合使用</span>
+                  </div>
+                  <small>{{ selectedFiles.length ? `已选 ${selectedFiles.length} 份资料` : '未选择资料' }}</small>
+                </div>
                 <div class="capability-grid">
                   <button
                     v-for="(item, index) in resourceOptions"
@@ -969,18 +1043,25 @@ watch(prompt, resizePromptInput)
                     @click="toggleResource(item.key)"
                   >
                     <span class="tool-icon">{{ item.icon }}</span>
-                    <span><b>{{ item.label }}</b><small>{{ item.description }}</small></span>
+                    <span><b>{{ item.label }}</b></span>
                     <i>{{ selectedType === item.key ? '✓' : '' }}</i>
                   </button>
                 </div>
 
                 <div class="menu-divider"></div>
-                <div class="menu-title">引用资料库文件</div>
-                <div v-if="resources.length" class="file-options">
+                <div class="file-tools-head">
+                  <div class="menu-title">引用资料库文件 <span>{{ filteredResources.length }}/{{ resources.length }}</span></div>
+                  <label class="file-search">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+                    <input v-model="fileSearch" type="search" placeholder="搜索文件或课程" />
+                  </label>
+                </div>
+                <TransitionGroup v-if="resources.length && filteredResources.length" name="file-row" tag="div" class="file-options">
                   <button
-                    v-for="file in resources"
+                    v-for="file in filteredResources"
                     :key="file.id"
                     type="button"
+                    :title="file.name"
                     :class="{ selected: selectedFileIds.includes(file.id) }"
                     @click="toggleFile(file.id)"
                   >
@@ -988,7 +1069,8 @@ watch(prompt, resizePromptInput)
                     <span><b>{{ file.name }}</b><small>{{ file.page_count }} 页 · 已解析</small></span>
                     <i>{{ selectedFileIds.includes(file.id) ? '✓' : '' }}</i>
                   </button>
-                </div>
+                </TransitionGroup>
+                <div v-else-if="resources.length" class="no-files">没有匹配的资料，换个关键词试试</div>
                 <div v-else class="no-files">资料库暂无 PDF，请先上传文件</div>
               </div>
             </Transition>
@@ -1145,13 +1227,31 @@ watch(prompt, resizePromptInput)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 0; }
-.thinking-trace { width: min(360px, 48vw); max-width: 100%; margin-bottom: 12px; padding: 7px 11px; border: 1px solid #eeeeee; border-radius: 14px; color: #606060; background: #fff; box-shadow: 0 3px 14px rgba(0, 0, 0, .03); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
+.thinking-trace { width: min(560px, 62vw); max-width: 100%; margin-bottom: 12px; padding: 10px 12px; overflow: hidden; border: 1px solid #e8e8e8; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 9px 30px rgba(0, 0, 0, .045); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
 .thinking-trace-collapsed { padding: 7px 11px; box-shadow: none; }
 .trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; cursor: pointer; user-select: none; }
 .thinking-trace-collapsed .trace-head { margin-bottom: 0; }
-.trace-head span { color: #8a8a8a; font-size: 11px; font-weight: 750; }
+.trace-head span { display: inline-flex; align-items: center; gap: 7px; color: #555; font-size: 11px; font-weight: 800; }
 .trace-head b { min-width: 0; overflow: hidden; color: #9a9a9a; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .thinking-trace-collapsed .trace-head { max-width: 100%; }
+.collab-live-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #202123; box-shadow: 0 0 0 0 rgba(32,33,35,.24); animation: collaborationPulse 1.5s ease-out infinite; }
+.thinking-trace-completed .collab-live-dot { background: #888; animation: none; }
+.agent-handoff { position: relative; display: flex; align-items: center; min-height: 62px; margin: 4px 0 9px; padding: 9px 11px; overflow: hidden; border-radius: 13px; background: linear-gradient(105deg, #f6f6f6, #fff 42%, #f4f4f4); }
+.agent-handoff::before { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 28%, rgba(255,255,255,.94) 48%, transparent 68%); transform: translateX(-100%); animation: collaborationSweep 2.8s ease-in-out infinite; }
+.agent-handoff.completed::before { display: none; }
+.agent-cluster { position: relative; z-index: 1; display: flex; align-items: center; min-width: 0; }
+.agent-chip { position: relative; display: grid; justify-items: center; gap: 3px; width: 60px; color: #888; opacity: .7; transition: color .25s ease, opacity .25s ease, transform .35s cubic-bezier(.16,1,.3,1); }
+.agent-chip + .agent-chip::before { content: ""; position: absolute; top: 16px; right: calc(50% + 16px); width: 28px; height: 1px; background: repeating-linear-gradient(90deg, #aaa 0 4px, transparent 4px 7px); animation: agentLinkFlow .8s linear infinite; }
+.agent-chip em { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #d6d6d6; border-radius: 10px; color: #555; background: #fff; font-size: 10px; font-style: normal; font-weight: 850; box-shadow: 0 3px 10px rgba(0,0,0,.04); }
+.agent-chip small { width: 58px; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.agent-chip-running { color: #202123; opacity: 1; transform: translateY(-2px); }
+.agent-chip-running em { color: #fff; border-color: #202123; background: #202123; animation: activeAgentFloat 1.5s ease-in-out infinite; }
+.agent-chip-done { opacity: 1; }
+.handoff-wave { position: relative; z-index: 1; display: flex; align-items: center; gap: 3px; margin-left: auto; padding: 0 5px 12px 12px; }
+.handoff-wave i { width: 4px; border-radius: 99px; background: #303030; animation: handoffBars .9s ease-in-out infinite; }
+.handoff-wave i:nth-child(1) { height: 9px; animation-delay: -.18s; }
+.handoff-wave i:nth-child(2) { height: 17px; animation-delay: -.09s; }
+.handoff-wave i:nth-child(3) { height: 12px; }
 .agent-flow { display: grid; gap: 5px; max-height: 170px; margin: 0; padding: 0 2px 0 0; overflow-y: auto; list-style: none; }
 .agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 6px 8px; border-radius: 10px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
 .agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
@@ -1206,16 +1306,34 @@ watch(prompt, resizePromptInput)
 .add-button:hover { background: #e6e6e6; }
 .add-button.open { color: #fff; background: #202123; box-shadow: 0 7px 20px rgba(0, 0, 0, .2); }
 .add-button.open svg { transform: rotate(45deg); }
-.tool-menu { position: absolute; left: 0; bottom: 46px; width: 430px; padding: 10px; border: 1px solid #dadada; border-radius: 18px; background: rgba(255, 255, 255, .98); box-shadow: 0 24px 70px rgba(0, 0, 0, .18); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); }
-.menu-title { padding: 8px 10px 6px; color: #888; font-size: 11px; font-weight: 700; }
-.file-options { display: grid; max-height: 190px; overflow-y: auto; }
-.no-files { padding: 10px; color: #969696; font-size: 11px; }
-.menu-divider { height: 1px; margin: 9px 6px 3px; background: #ececec; }
-.capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
-.tool-menu button { display: grid; grid-template-columns: 32px 1fr 20px; align-items: center; gap: 9px; width: 100%; padding: 10px; border: 0; border-radius: 10px; color: #282828; text-align: left; background: transparent; }
+.tool-menu { position: absolute; left: 0; bottom: 48px; width: min(720px, calc(100vw - 40px)); max-height: min(430px, 58vh); padding: 16px; overflow: hidden; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); will-change: transform, opacity, filter; }
+.tool-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.tool-menu-head > div { display: grid; gap: 2px; }
+.tool-menu-head strong { color: #222; font-size: 15px; }
+.tool-menu-head span, .tool-menu-head small { color: #929292; font-size: 10px; }
+.tool-menu-head small { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; background: #f2f2f2; }
+.menu-title { color: #777; font-size: 11px; font-weight: 700; }
+.menu-title span { color: #aaa; font-weight: 500; }
+.file-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 11px 2px 9px; }
+.file-search { width: min(260px, 48%); height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #dedede; border-radius: 999px; background: #f8f8f8; transition: border-color .2s ease, background .2s ease, box-shadow .2s ease; }
+.file-search:focus-within { border-color: #aaa; background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
+.file-search svg { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: #888; stroke-width: 1.8; stroke-linecap: round; }
+.file-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: #333; background: transparent; font-size: 11px; }
+.file-search input::-webkit-search-cancel-button { cursor: pointer; }
+.file-options { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; max-height: 172px; padding-right: 3px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.file-options button > span:nth-child(2) { min-width: 0; }
+.file-options button b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.no-files { display: grid; place-items: center; min-height: 76px; color: #969696; font-size: 11px; }
+.menu-divider { height: 1px; margin: 13px 2px 0; background: #ececec; }
+.capability-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.tool-menu button { display: grid; grid-template-columns: 32px 1fr 20px; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 0; border-radius: 11px; color: #282828; text-align: left; background: transparent; transition: background .18s ease, border-color .18s ease, transform .18s cubic-bezier(.16,1,.3,1); }
 .tool-menu button:hover, .tool-menu button.selected { background: #f2f2f2; }
-.capability-option { opacity: 0; animation: capabilityItemIn .42s cubic-bezier(.16, 1, .3, 1) forwards; }
+.tool-menu button:active { transform: scale(.975); }
+.tool-menu .capability-option { grid-template-columns: 25px auto 16px; width: auto; min-width: 92px; flex: 1 1 104px; padding: 8px 10px; border: 1px solid #e3e3e3; border-radius: 999px; opacity: 0; animation: capabilityItemIn .36s cubic-bezier(.16, 1, .3, 1) forwards; }
+.tool-menu .capability-option.selected { color: #fff; border-color: #202123; background: #202123; }
+.tool-menu .capability-option.selected .tool-icon, .tool-menu .capability-option.selected i { color: #fff; border-color: rgba(255,255,255,.28); }
 .tool-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #dedede; border-radius: 9px; font-size: 13px; }
+.capability-option .tool-icon { width: 25px; height: 25px; border-radius: 50%; font-size: 11px; }
 .tool-icon.pdf { color: #555; background: #f5f5f5; font-size: 9px; font-weight: 850; }
 .tool-menu button > span:nth-child(2) { display: grid; gap: 2px; }
 .tool-menu b { font-size: 13px; }
@@ -1223,6 +1341,9 @@ watch(prompt, resizePromptInput)
 .tool-menu i { color: #202123; text-align: center; font-style: normal; }
 .tool-pop-enter-active { animation: toolMenuIn .32s cubic-bezier(.16, 1, .3, 1); }
 .tool-pop-leave-active { animation: toolMenuOut .16s ease both; }
+.file-row-enter-active, .file-row-leave-active, .file-row-move { transition: opacity .2s ease, transform .24s cubic-bezier(.16,1,.3,1); }
+.file-row-enter-from, .file-row-leave-to { opacity: 0; transform: translateY(6px) scale(.98); }
+.file-row-leave-active { position: absolute; }
 .model-picker { position: relative; flex: 0 0 auto; }
 .model-button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 36px; min-width: 76px; padding: 0 12px; border: 0; border-radius: 999px; color: #777; background: #f1f1f1; font-size: 15px; font-weight: 650; white-space: nowrap; }
 .model-button:hover { color: #333; background: #e9e9e9; }
@@ -1276,13 +1397,37 @@ button:disabled { cursor: default; opacity: .65; }
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+@keyframes collaborationPulse {
+  70% { box-shadow: 0 0 0 7px rgba(32,33,35,0); }
+  100% { box-shadow: 0 0 0 0 rgba(32,33,35,0); }
+}
+@keyframes collaborationSweep {
+  0%, 18% { transform: translateX(-110%); }
+  70%, 100% { transform: translateX(110%); }
+}
+@keyframes activeAgentFloat {
+  0%, 100% { transform: translateY(0); box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  50% { transform: translateY(-3px); box-shadow: 0 8px 18px rgba(0,0,0,.2); }
+}
+@keyframes agentLinkFlow { to { background-position: 7px 0; } }
+@keyframes handoffBars {
+  0%, 100% { transform: scaleY(.55); opacity: .45; }
+  50% { transform: scaleY(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collab-live-dot, .agent-handoff::before, .agent-chip + .agent-chip::before, .agent-chip-running em, .handoff-wave i { animation: none; }
+}
 @media (max-width: 620px) {
   .generate-page { min-height: calc(100vh - 64px); }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .thinking-trace { width: min(320px, 88vw); }
-  .tool-menu { width: min(360px, calc(100vw - 44px)); }
-  .capability-grid { grid-template-columns: 1fr; max-height: 300px; overflow-y: auto; }
+  .tool-menu { width: calc(100vw - 32px); max-height: min(470px, 66vh); padding: 12px; }
+  .tool-menu-head span { display: none; }
+  .tool-menu .capability-option { min-width: 88px; flex-basis: calc(50% - 4px); }
+  .file-tools-head { align-items: stretch; flex-direction: column; gap: 8px; }
+  .file-search { width: 100%; }
+  .file-options { grid-template-columns: 1fr; max-height: 154px; }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
   .combined-menu { right: 0; }

@@ -32,6 +32,7 @@ const loggingOut = ref(false)
 const showOnboarding = ref(false)
 const userInitial = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const selectedCourse = ref<Course | null>(null)
+const selectedExerciseChapterId = ref<string | null>(null)
 const initialConversationHistory = loadConversationHistory()
 const conversationHistory = ref<ConversationHistoryItem[]>(initialConversationHistory)
 const selectedHistoryId = ref<string | null>(initialConversationHistory[0]?.id || null)
@@ -76,7 +77,18 @@ function navigate(page: Page, course?: Course) {
   if (page !== 'home') {
     selectedHistoryId.value = null
   }
+  if (page !== 'exercise') {
+    selectedExerciseChapterId.value = null
+  }
   currentPage.value = page
+}
+
+function navigateFromCourseDetail(
+  page: 'courses' | 'exercise' | 'analyze' | 'mistakes',
+  chapterId?: string,
+) {
+  selectedExerciseChapterId.value = page === 'exercise' ? chapterId || null : null
+  navigate(page)
 }
 
 function startNewConversation() {
@@ -272,11 +284,12 @@ onUnmounted(() => {
         <CourseDetailPage
           v-else-if="currentPage === 'detail' && selectedCourse"
           :course="selectedCourse"
-          @navigate="navigate"
+          @navigate="navigateFromCourseDetail"
         />
         <CourseExercisePage
           v-else-if="currentPage === 'exercise' && selectedCourse"
           :course="selectedCourse"
+          :initial-chapter-id="selectedExerciseChapterId"
           @navigate="navigate"
         />
         <MistakeBookPage

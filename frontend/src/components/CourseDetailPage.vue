@@ -10,7 +10,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  navigate: [page: 'courses' | 'exercise' | 'analyze' | 'mistakes']
+  navigate: [page: 'courses' | 'exercise' | 'analyze' | 'mistakes', chapterId?: string]
 }>()
 
 const chapters = computed(() => props.course.chapters || [])
@@ -183,7 +183,7 @@ function chapterStatusLabel(chapter: CourseChapter) {
         <div class="flex items-start justify-between gap-4 mb-6">
           <div>
             <h2 class="text-xl font-bold text-gray-900">课程章节</h2>
-            <p class="text-xs text-gray-400 mt-1">章节内可直接预览 PDF 并添加页面批注</p>
+            <p class="text-xs text-gray-400 mt-1">点击章节可阅读资料，也可按章节生成 AI 练习</p>
           </div>
           <span v-if="materials.length" class="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-600">{{ materials.length }} 份资料</span>
         </div>
@@ -214,7 +214,16 @@ function chapterStatusLabel(chapter: CourseChapter) {
                 </span>
               </div>
             </div>
-            <span v-if="chapterMaterial(chapter)" class="w-9 h-9 shrink-0 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-500">→</span>
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                class="h-9 px-4 rounded-full bg-gray-900 text-white text-xs font-medium hover:bg-black transition-colors"
+                @click.stop="emit('navigate', 'exercise', String(chapter.id))"
+              >
+                AI 练习
+              </button>
+              <span v-if="chapterMaterial(chapter)" class="w-9 h-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-500">→</span>
+            </div>
           </article>
 
           <article
@@ -237,20 +246,6 @@ function chapterStatusLabel(chapter: CourseChapter) {
       </section>
 
       <aside class="space-y-6">
-        <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h2 class="text-xl font-bold text-gray-900 mb-4">AI 练习</h2>
-          <div class="bg-gray-50 rounded-xl p-5">
-            <div class="font-bold text-lg text-gray-900">按《{{ course.name }}》实时生成</div>
-            <p class="text-sm text-gray-500 mt-2">点击后会调用当前硅基流动模型生成对应课程的分层题目，生成失败时使用课程基础题兜底。</p>
-            <button
-              @click="emit('navigate', 'exercise')"
-              class="w-full mt-5 py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-black transition-all"
-            >
-              开始练习
-            </button>
-          </div>
-        </section>
-
         <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <h2 class="text-xl font-bold text-gray-900 mb-4">错题本</h2>
           <div class="bg-red-50 rounded-xl p-5">
