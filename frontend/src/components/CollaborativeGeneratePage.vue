@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   createConversationTitle,
   getConversationHistoryItem,
@@ -16,6 +16,31 @@ import sparkOfficialLogo from '../assets/spark-official.ico'
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'presentation' | 'wordDocument' | 'review'
 type ProcessState = 'running' | 'done'
 type ResponseSpeed = 'fast' | 'balanced' | 'deep'
+
+const toolIconPaths = {
+  chat: ['M7 17.2 4.3 19l.9-3.3A7.2 7.2 0 1 1 7 17.2Z'],
+  lecture: ['M4.5 5.2h5.2c1.4 0 2.3.8 2.3 2.1v11c0-1.3-.9-2.1-2.3-2.1H4.5V5.2Zm15 0h-5.2c-1.4 0-2.3.8-2.3 2.1v11c0-1.3.9-2.1 2.3-2.1h5.2V5.2Z'],
+  mindmap: ['M12 4v4m0 0H7m5 0h5M7 8v4m10-4v4M5 12h4v4H5v-4Zm10 0h4v4h-4v-4Zm-5 6h4v3h-4v-3Zm2-2v2'],
+  exercise: ['M6 3.8h12a2 2 0 0 1 2 2v12.4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5.8a2 2 0 0 1 2-2Zm2 8.1 2.4 2.4 5.3-5.5'],
+  reading: ['M3.8 5.2h5.5c1.6 0 2.7.9 2.7 2.3v11.2c0-1.4-1.1-2.3-2.7-2.3H3.8V5.2Zm16.4 0h-5.5c-1.6 0-2.7.9-2.7 2.3v11.2c0-1.4 1.1-2.3 2.7-2.3h5.5V5.2Z'],
+  code: ['m8.6 5-5 7 5 7m6.8-14 5 7-5 7M13.7 3.8l-3.4 16.4'],
+  path: ['M5 5.2v4.3c0 1.6 1.2 2.7 2.8 2.7h5.8c1.6 0 2.8 1.1 2.8 2.7v3.9m0 0-2.6-2.6m2.6 2.6 2.6-2.6M5 5.2l-2 2m2-2 2 2'],
+  ppt: ['M4 4.8h16v10.4H4V4.8Zm8 10.4v4.2m-3.5 0h7M7.2 8h9.6M7.2 11h6.4'],
+  word: ['M6 3.8h8l4 4v12.4H6V3.8Zm8 0v4h4M8.8 11h6.4m-6.4 3h6.4m-6.4 3h4.2'],
+} as const
+
+type ToolIconName = keyof typeof toolIconPaths
+
+const ToolGlyph = defineComponent({
+  props: { name: { type: String, required: true } },
+  setup(props) {
+    return () => h(
+      'svg',
+      { viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' },
+      (toolIconPaths[props.name as ToolIconName] || toolIconPaths.chat).map(path => h('path', { d: path }))
+    )
+  },
+})
 
 interface AgentProcessStep {
   id: string
@@ -59,17 +84,17 @@ const resourceOptions: {
   resultKey: ResultKey | null
   label: string
   description: string
-  icon: string
+  icon: ToolIconName
 }[] = [
-  { key: 'chat', resultKey: null, label: '普通对话', description: '普通问答对话', icon: '◯' },
-  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: '▣' },
-  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: '◇' },
-  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: '✓' },
-  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '○' },
-  { key: 'code', resultKey: 'codeCase', label: '代码实操', description: '生成可运行代码案例与讲解', icon: '⟨⟩' },
-  { key: 'path', resultKey: 'learningPath', label: '学习路线', description: '生成阶段划分和个性化学习路径', icon: '↗' },
-  { key: 'ppt', resultKey: 'presentation', label: 'PPT讲解', description: '生成可下载的演示文稿', icon: '▤' },
-  { key: 'word', resultKey: 'wordDocument', label: 'Word 文档', description: '生成可下载的学习文档', icon: '▥' },
+  { key: 'chat', resultKey: null, label: '普通对话', description: '普通问答对话', icon: 'chat' },
+  { key: 'lecture', resultKey: 'lectureDoc', label: '课程讲解', description: '生成概念、原理和示例讲解', icon: 'lecture' },
+  { key: 'mindmap', resultKey: 'mindmap', label: '思维导图', description: '生成结构化知识导图', icon: 'mindmap' },
+  { key: 'exercise', resultKey: 'exercises', label: '练习题', description: '生成分层题目和答案解析', icon: 'exercise' },
+  { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: 'reading' },
+  { key: 'code', resultKey: 'codeCase', label: '代码实操', description: '生成可运行代码案例与讲解', icon: 'code' },
+  { key: 'path', resultKey: 'learningPath', label: '学习路线', description: '生成阶段划分和个性化学习路径', icon: 'path' },
+  { key: 'ppt', resultKey: 'presentation', label: 'PPT讲解', description: '生成可下载的演示文稿', icon: 'ppt' },
+  { key: 'word', resultKey: 'wordDocument', label: 'Word 文档', description: '生成可下载的学习文档', icon: 'word' },
 ]
 
 const speedOptions: Array<{ key: ResponseSpeed; label: string; description: string }> = [
@@ -931,7 +956,7 @@ watch(prompt, resizePromptInput)
           </div>
 
           <div
-            v-if="tabsForTurn(turn).length > 1 || (isActiveTurn(turn) && (activeTab === 'presentation' || activeTab === 'wordDocument'))"
+            v-if="!turn.resourceTypes.includes('ppt') && (tabsForTurn(turn).length > 1 || (isActiveTurn(turn) && activeTab === 'wordDocument'))"
             class="result-tabs"
           >
             <button
@@ -943,12 +968,12 @@ watch(prompt, resizePromptInput)
               {{ tab.label }}
             </button>
             <button
-              v-if="turn.result && isActiveTurn(turn) && (activeTab === 'presentation' || activeTab === 'wordDocument')"
+              v-if="turn.result && isActiveTurn(turn) && activeTab === 'wordDocument'"
               class="office-download-btn"
               :disabled="Boolean(officeDownloading)"
               @click="downloadOffice(turn, activeTab)"
             >
-              {{ officeDownloading === activeTab ? '正在生成文件…' : activeTab === 'presentation' ? '下载 PPTX' : '下载 DOCX' }}
+              {{ officeDownloading === activeTab ? '正在生成文件…' : '下载 DOCX' }}
             </button>
             <button
               v-if="turn.result && isActiveTurn(turn)"
@@ -959,9 +984,20 @@ watch(prompt, resizePromptInput)
               💾 保存到资料库
             </button>
           </div>
+          <div v-if="turn.result && turn.resourceTypes.includes('ppt')" class="ppt-download-only">
+            <button
+              type="button"
+              class="ppt-primary-download"
+              :disabled="Boolean(officeDownloading)"
+              @click="downloadOffice(turn, 'presentation')"
+            >
+              <span aria-hidden="true">↓</span>
+              {{ officeDownloading === 'presentation' ? '正在生成 PPT…' : '下载 PPT' }}
+            </button>
+          </div>
           <p v-if="isActiveTurn(turn) && officeDownloadError" class="office-download-error">{{ officeDownloadError }}</p>
 
-          <div class="result-content">
+          <div v-if="!turn.resourceTypes.includes('ppt')" class="result-content">
             <template v-if="isActiveTurn(turn)">
               <MermaidRenderer v-if="activeTab === 'mindmap'" :chart="contentForTurn(turn, 'mindmap')" />
               <div v-else-if="activeTab === 'exercises' && exerciseItemsForTurn(turn).length" class="practice-list">
@@ -1059,7 +1095,7 @@ watch(prompt, resizePromptInput)
             :disabled="loading"
             @click="toggleResource('chat')"
           >
-            <span>{{ resourceOptions.find(item => item.key === selectedType)?.icon }}</span>
+            <span><ToolGlyph :name="resourceOptions.find(item => item.key === selectedType)?.icon || 'chat'" /></span>
             {{ resourceOptions.find(item => item.key === selectedType)?.label }}
             <i>×</i>
           </button>
@@ -1110,7 +1146,7 @@ watch(prompt, resizePromptInput)
                     :style="{ animationDelay: `${index * 38 + 40}ms` }"
                     @click="toggleResource(item.key)"
                   >
-                    <span class="tool-icon">{{ item.icon }}</span>
+                    <span class="tool-icon"><ToolGlyph :name="item.icon" /></span>
                     <span><b>{{ item.label }}</b></span>
                     <i>{{ selectedType === item.key ? '✓' : '' }}</i>
                   </button>
@@ -1364,7 +1400,8 @@ watch(prompt, resizePromptInput)
 .selected-tools button { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fafafa; font-size: 12px; }
 .selected-tools button i { color: #929292; font-style: normal; font-size: 14px; }
 .selected-tools button.selected-capability { border-color: #d5d5d5; color: #202123; background: #f3f3f3; }
-.selected-tools button.selected-capability > span { display: grid; place-items: center; width: 17px; height: 17px; color: #202123; font-size: 11px; }
+.selected-tools button.selected-capability > span { display: grid; place-items: center; width: 18px; height: 18px; color: #202123; }
+.selected-tools button.selected-capability svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .selected-tools button.selected-file { max-width: 260px; border-color: #dedede; color: #555; background: #fafafa; }
 .selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
 .composer-actions { display: flex; align-items: center; gap: 8px; }
@@ -1374,7 +1411,7 @@ watch(prompt, resizePromptInput)
 .add-button:hover { background: #e6e6e6; }
 .add-button.open { color: #fff; background: #202123; box-shadow: 0 7px 20px rgba(0, 0, 0, .2); }
 .add-button.open svg { transform: rotate(45deg); }
-.tool-menu { position: absolute; left: 0; bottom: 48px; width: min(720px, calc(100vw - 40px)); max-height: min(430px, 58vh); padding: 16px; overflow: hidden; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); will-change: transform, opacity, filter; }
+.tool-menu { position: absolute; left: 0; bottom: 48px; width: min(720px, calc(100vw - 40px)); max-height: min(520px, 68vh); padding: 16px; overflow: hidden; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); will-change: transform, opacity, filter; }
 .tool-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .tool-menu-head > div { display: grid; gap: 2px; }
 .tool-menu-head strong { color: #222; font-size: 15px; }
@@ -1393,18 +1430,19 @@ watch(prompt, resizePromptInput)
 .file-options button b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .no-files { display: grid; place-items: center; min-height: 76px; color: #969696; font-size: 11px; }
 .menu-divider { height: 1px; margin: 13px 2px 0; background: #ececec; }
-.capability-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .tool-menu button { display: grid; grid-template-columns: 32px 1fr 20px; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 0; border-radius: 11px; color: #282828; text-align: left; background: transparent; transition: background .18s ease, border-color .18s ease, transform .18s cubic-bezier(.16,1,.3,1); }
 .tool-menu button:hover, .tool-menu button.selected { background: #f2f2f2; }
 .tool-menu button:active { transform: scale(.975); }
-.tool-menu .capability-option { grid-template-columns: 25px auto 16px; width: auto; min-width: 92px; flex: 1 1 104px; padding: 8px 10px; border: 1px solid #e3e3e3; border-radius: 999px; opacity: 0; animation: capabilityItemIn .36s cubic-bezier(.16, 1, .3, 1) forwards; }
+.tool-menu .capability-option { grid-template-columns: 30px minmax(0, 1fr) 16px; width: 100%; min-width: 0; height: 54px; padding: 8px 12px; border: 1px solid #e3e3e3; border-radius: 999px; opacity: 0; animation: capabilityItemIn .36s cubic-bezier(.16, 1, .3, 1) forwards; }
 .tool-menu .capability-option.selected { color: #fff; border-color: #202123; background: #202123; }
 .tool-menu .capability-option.selected .tool-icon, .tool-menu .capability-option.selected i { color: #fff; border-color: rgba(255,255,255,.28); }
 .tool-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #dedede; border-radius: 9px; font-size: 13px; }
-.capability-option .tool-icon { width: 25px; height: 25px; border-radius: 50%; font-size: 11px; }
+.capability-option .tool-icon { width: 30px; height: 30px; border-radius: 50%; color: #373737; }
+.capability-option .tool-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .tool-icon.pdf { color: #555; background: #f5f5f5; font-size: 9px; font-weight: 850; }
 .tool-menu button > span:nth-child(2) { display: grid; gap: 2px; }
-.tool-menu b { font-size: 13px; }
+.tool-menu b { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .tool-menu small { color: #8a8a8a; font-size: 10px; }
 .tool-menu i { color: #202123; text-align: center; font-style: normal; }
 .tool-pop-enter-active { animation: toolMenuIn .32s cubic-bezier(.16, 1, .3, 1); }
@@ -1490,9 +1528,10 @@ button:disabled { cursor: default; opacity: .65; }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .thinking-trace { width: min(320px, 88vw); }
-  .tool-menu { width: calc(100vw - 32px); max-height: min(470px, 66vh); padding: 12px; }
+  .tool-menu { width: calc(100vw - 32px); max-height: min(520px, 72vh); padding: 12px; }
   .tool-menu-head span { display: none; }
-  .tool-menu .capability-option { min-width: 88px; flex-basis: calc(50% - 4px); }
+  .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tool-menu .capability-option { min-width: 0; height: 52px; }
   .file-tools-head { align-items: stretch; flex-direction: column; gap: 8px; }
   .file-search { width: 100%; }
   .file-options { grid-template-columns: 1fr; max-height: 154px; }
@@ -1540,6 +1579,26 @@ button:disabled { cursor: default; opacity: .65; }
 .office-download-btn:disabled { cursor: wait; opacity: .65; }
 .office-download-btn + .save-to-library-btn { margin-left: 4px; }
 .office-download-error { margin: -7px 0 14px; color: #b42318; font-size: 12px; }
+.ppt-download-only { display: flex; justify-content: flex-start; padding: 8px 0 4px; }
+.ppt-primary-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 154px;
+  padding: 12px 20px;
+  border: 1px solid #5b45c6;
+  border-radius: 999px;
+  color: #fff;
+  background: #5b45c6;
+  box-shadow: 0 10px 28px rgba(91, 69, 198, .2);
+  font-size: 14px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: transform .2s cubic-bezier(.16, 1, .3, 1), box-shadow .2s ease, background .2s ease;
+}
+.ppt-primary-download span { font-size: 17px; line-height: 1; }
+.ppt-primary-download:hover:not(:disabled) { transform: translateY(-2px); background: #4e39bb; box-shadow: 0 14px 34px rgba(91, 69, 198, .28); }
+.ppt-primary-download:disabled { cursor: wait; opacity: .62; }
 
 .save-modal-overlay {
   position: fixed;

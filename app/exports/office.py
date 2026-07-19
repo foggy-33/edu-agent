@@ -66,85 +66,187 @@ def _chunks(items: list[str], size: int = 6) -> Iterable[list[str]]:
         yield items[index:index + size]
 
 
+def _ppt_text(
+    slide,
+    text: str,
+    left: float,
+    top: float,
+    width: float,
+    height: float,
+    *,
+    size: int,
+    color: tuple[int, int, int] = (32, 33, 35),
+    bold: bool = False,
+    align=PP_ALIGN.LEFT,
+    anchor=MSO_ANCHOR.TOP,
+):
+    box = slide.shapes.add_textbox(PptInches(left), PptInches(top), PptInches(width), PptInches(height))
+    frame = box.text_frame
+    frame.clear()
+    frame.word_wrap = True
+    frame.margin_left = 0
+    frame.margin_right = 0
+    frame.margin_top = 0
+    frame.margin_bottom = 0
+    frame.vertical_anchor = anchor
+    paragraph = frame.paragraphs[0]
+    paragraph.alignment = align
+    run = paragraph.add_run()
+    run.text = text
+    run.font.name = "Microsoft YaHei"
+    run.font.size = PptPt(size)
+    run.font.bold = bold
+    run.font.color.rgb = PptRGBColor(*color)
+    return box
+
+
+def _ppt_rule(slide, left: float, top: float, width: float, color: tuple[int, int, int] = (184, 188, 196)) -> None:
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        PptInches(left),
+        PptInches(top),
+        PptInches(width),
+        PptInches(0.018),
+    )
+    line.fill.solid()
+    line.fill.fore_color.rgb = PptRGBColor(*color)
+    line.line.fill.background()
+
+
+def _ppt_vertical_rule(slide, left: float, top: float, height: float, color: tuple[int, int, int] = (184, 188, 196)) -> None:
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE,
+        PptInches(left),
+        PptInches(top),
+        PptInches(0.018),
+        PptInches(height),
+    )
+    line.fill.solid()
+    line.fill.fore_color.rgb = PptRGBColor(*color)
+    line.line.fill.background()
+
+
+def _ppt_chrome(slide, page_number: int, section_label: str) -> None:
+    _ppt_text(slide, "智学 AI  /  PPT 讲解", 0.58, 0.32, 4.2, 0.28, size=10, color=(109, 93, 231), bold=True)
+    _ppt_text(slide, f"{page_number:02d}", 11.95, 0.31, 0.75, 0.28, size=10, color=(112, 116, 126), align=PP_ALIGN.RIGHT)
+    _ppt_rule(slide, 0.58, 0.82, 12.15)
+    _ppt_text(slide, section_label[:48], 0.58, 7.02, 8.6, 0.22, size=8, color=(142, 145, 154))
+
+
+def _ppt_bullet_column(slide, items: list[str], left: float, top: float, width: float, height: float, size: int = 19) -> None:
+    box = slide.shapes.add_textbox(PptInches(left), PptInches(top), PptInches(width), PptInches(height))
+    frame = box.text_frame
+    frame.clear()
+    frame.word_wrap = True
+    frame.margin_left = 0
+    frame.margin_right = 0
+    frame.margin_top = 0
+    frame.margin_bottom = 0
+    for index, item in enumerate(items):
+        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+        paragraph.text = f"—  {item[:150]}"
+        paragraph.font.name = "Microsoft YaHei"
+        paragraph.font.size = PptPt(size)
+        paragraph.font.color.rgb = PptRGBColor(52, 54, 61)
+        paragraph.space_after = PptPt(15)
+        paragraph.line_spacing = 1.08
+
+
 def build_pptx(title: str, subtitle: str, content: str) -> BytesIO:
     deck = Presentation()
     deck.slide_width = PptInches(13.333)
     deck.slide_height = PptInches(7.5)
     blank = deck.slide_layouts[6]
+    sections = _presentation_sections(content, title)
 
     cover = deck.slides.add_slide(blank)
     cover.background.fill.solid()
-    cover.background.fill.fore_color.rgb = PptRGBColor(248, 247, 255)
-    accent = cover.shapes.add_shape(MSO_SHAPE.RECTANGLE, PptInches(0.72), PptInches(1.22), PptInches(0.12), PptInches(4.1))
-    accent.fill.solid()
-    accent.fill.fore_color.rgb = PptRGBColor(109, 93, 231)
-    accent.line.fill.background()
-    title_box = cover.shapes.add_textbox(PptInches(1.12), PptInches(1.45), PptInches(10.9), PptInches(1.65))
-    title_frame = title_box.text_frame
-    title_frame.clear()
-    title_frame.word_wrap = True
-    title_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    title_run = title_frame.paragraphs[0].add_run()
-    title_run.text = title[:80]
-    title_run.font.name = "Microsoft YaHei"
-    title_run.font.size = PptPt(50)
-    title_run.font.bold = True
-    title_run.font.color.rgb = PptRGBColor(32, 33, 35)
-    sub_box = cover.shapes.add_textbox(PptInches(1.15), PptInches(3.35), PptInches(10.4), PptInches(1.2))
-    sub_frame = sub_box.text_frame
-    sub_frame.clear()
-    sub_run = sub_frame.paragraphs[0].add_run()
-    sub_run.text = subtitle[:140]
-    sub_run.font.name = "Microsoft YaHei"
-    sub_run.font.size = PptPt(22)
-    sub_run.font.color.rgb = PptRGBColor(107, 114, 128)
+    cover.background.fill.fore_color.rgb = PptRGBColor(255, 255, 255)
+    _ppt_text(cover, "智学 AI  ·  课程讲解", 0.62, 0.48, 4.5, 0.36, size=13, color=(109, 93, 231), bold=True)
+    _ppt_text(
+        cover,
+        title[:72],
+        0.62,
+        1.48,
+        11.7,
+        2.2,
+        size=48 if len(title) <= 22 else 40,
+        bold=True,
+        anchor=MSO_ANCHOR.MIDDLE,
+    )
+    _ppt_rule(cover, 0.62, 4.24, 2.05, (109, 93, 231))
+    _ppt_text(cover, subtitle[:140], 0.62, 4.62, 8.6, 0.72, size=20, color=(103, 107, 116))
+    _ppt_text(cover, "理解  ·  连接  ·  应用", 0.62, 6.72, 4.8, 0.28, size=11, color=(130, 133, 142))
+    _ppt_text(cover, "01", 11.45, 5.72, 1.25, 0.8, size=36, color=(225, 222, 249), bold=True, align=PP_ALIGN.RIGHT)
 
-    page_number = 1
-    for section_title, items in _presentation_sections(content, title):
+    page_number = 2
+    overview = deck.slides.add_slide(blank)
+    overview.background.fill.solid()
+    overview.background.fill.fore_color.rgb = PptRGBColor(255, 255, 255)
+    _ppt_chrome(overview, page_number, title)
+    _ppt_text(overview, "这次讲解将解决什么", 0.62, 1.18, 8.8, 0.7, size=35, bold=True)
+    _ppt_text(overview, "沿着问题逐步建立理解，最后落实到应用。", 0.62, 1.95, 7.4, 0.42, size=16, color=(103, 107, 116))
+    route_titles = [section_title for section_title, _ in sections][:10]
+    split_at = (len(route_titles) + 1) // 2
+    for column, column_items in enumerate((route_titles[:split_at], route_titles[split_at:])):
+        left = 0.68 + column * 6.05
+        for index, item in enumerate(column_items):
+            top = 2.72 + index * 0.72
+            number = index + 1 + (split_at if column else 0)
+            _ppt_text(overview, f"{number:02d}", left, top, 0.48, 0.3, size=11, color=(109, 93, 231), bold=True)
+            _ppt_text(overview, item[:34], left + 0.62, top - 0.03, 5.12, 0.42, size=17, bold=True)
+            _ppt_rule(overview, left + 0.62, top + 0.47, 4.92, (232, 232, 236))
+
+    content_slide_index = 0
+    for section_title, items in sections:
         for part_index, part in enumerate(_chunks(items)):
             page_number += 1
+            content_slide_index += 1
             slide = deck.slides.add_slide(blank)
             slide.background.fill.solid()
             slide.background.fill.fore_color.rgb = PptRGBColor(255, 255, 255)
-            header = slide.shapes.add_textbox(PptInches(0.78), PptInches(0.55), PptInches(11.6), PptInches(0.72))
-            header_frame = header.text_frame
-            header_frame.clear()
-            header_run = header_frame.paragraphs[0].add_run()
             suffix = "（续）" if part_index else ""
-            header_run.text = f"{section_title}{suffix}"[:70]
-            header_run.font.name = "Microsoft YaHei"
-            header_run.font.size = PptPt(36)
-            header_run.font.bold = True
-            header_run.font.color.rgb = PptRGBColor(32, 33, 35)
-            rule = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, PptInches(0.8), PptInches(1.42), PptInches(1.15), PptInches(0.07))
-            rule.fill.solid()
-            rule.fill.fore_color.rgb = PptRGBColor(109, 93, 231)
-            rule.line.fill.background()
+            display_title = f"{section_title}{suffix}"[:54]
+            _ppt_chrome(slide, page_number, title)
+            _ppt_text(slide, display_title, 0.62, 1.12, 11.6, 0.78, size=34 if len(display_title) <= 24 else 29, bold=True)
 
-            body = slide.shapes.add_textbox(PptInches(1.02), PptInches(1.72), PptInches(11.25), PptInches(4.85))
-            frame = body.text_frame
-            frame.clear()
-            frame.word_wrap = True
-            frame.margin_left = PptInches(0.08)
-            frame.margin_right = PptInches(0.08)
-            for index, item in enumerate(part):
-                paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
-                paragraph.text = item[:180]
-                paragraph.level = 0
-                paragraph.font.name = "Microsoft YaHei"
-                paragraph.font.size = PptPt(21)
-                paragraph.font.color.rgb = PptRGBColor(55, 58, 65)
-                paragraph.space_after = PptPt(14)
-                paragraph.line_spacing = 1.1
-            footer = slide.shapes.add_textbox(PptInches(0.82), PptInches(6.91), PptInches(11.65), PptInches(0.28))
-            footer_frame = footer.text_frame
-            footer_frame.clear()
-            footer_frame.paragraphs[0].alignment = PP_ALIGN.RIGHT
-            footer_run = footer_frame.paragraphs[0].add_run()
-            footer_run.text = f"{subtitle[:45]}  ·  {page_number}"
-            footer_run.font.name = "Microsoft YaHei"
-            footer_run.font.size = PptPt(10)
-            footer_run.font.color.rgb = PptRGBColor(148, 151, 160)
+            layout = content_slide_index % 4
+            if layout == 1 and len(part) >= 2:
+                _ppt_text(slide, part[0][:150], 0.68, 2.22, 5.35, 2.7, size=28, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+                _ppt_vertical_rule(slide, 6.31, 2.24, 3.72, (109, 93, 231))
+                _ppt_bullet_column(slide, part[1:], 6.72, 2.22, 5.85, 3.7, 18)
+            elif layout == 2 and len(part) >= 4:
+                midpoint = (len(part) + 1) // 2
+                _ppt_text(slide, "先理解", 0.68, 2.22, 5.5, 0.36, size=14, color=(109, 93, 231), bold=True)
+                _ppt_bullet_column(slide, part[:midpoint], 0.68, 2.82, 5.45, 3.25, 18)
+                _ppt_text(slide, "再应用", 6.78, 2.22, 5.5, 0.36, size=14, color=(109, 93, 231), bold=True)
+                _ppt_bullet_column(slide, part[midpoint:], 6.78, 2.82, 5.45, 3.25, 18)
+            elif layout == 3 and len(part) >= 3:
+                for index, item in enumerate(part[:3]):
+                    left = 0.68 + index * 4.08
+                    _ppt_text(slide, f"0{index + 1}", left, 2.34, 0.7, 0.35, size=13, color=(109, 93, 231), bold=True)
+                    _ppt_rule(slide, left, 2.85, 3.6, (215, 212, 238))
+                    _ppt_text(slide, item[:125], left, 3.18, 3.58, 2.25, size=20, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+                if len(part) > 3:
+                    _ppt_text(slide, "补充：" + "；".join(part[3:])[:150], 0.68, 5.76, 11.8, 0.52, size=14, color=(100, 104, 113))
+            else:
+                first = part[0] if part else section_title
+                _ppt_text(slide, first[:165], 0.68, 2.22, 11.4, 1.62, size=30, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+                _ppt_rule(slide, 0.68, 4.18, 11.75, (109, 93, 231))
+                _ppt_bullet_column(slide, part[1:] or ["用自己的语言复述这一点，并尝试连接到一个具体问题。"], 0.68, 4.62, 11.45, 1.55, 18)
+
+    page_number += 1
+    close = deck.slides.add_slide(blank)
+    close.background.fill.solid()
+    close.background.fill.fore_color.rgb = PptRGBColor(248, 247, 255)
+    last_items = sections[-1][1][:3] if sections else []
+    _ppt_text(close, "智学 AI  ·  讲解总结", 0.62, 0.48, 4.5, 0.34, size=12, color=(109, 93, 231), bold=True)
+    _ppt_text(close, "现在，把理解变成行动", 0.62, 1.58, 10.8, 1.2, size=43, bold=True, anchor=MSO_ANCHOR.MIDDLE)
+    _ppt_text(close, "回到题目或实践场景，完成一次独立解释与应用。", 0.62, 3.02, 9.6, 0.5, size=19, color=(96, 100, 109))
+    for index, item in enumerate(last_items or ["复述核心概念", "完成一道变式题", "记录并订正易错点"]):
+        _ppt_text(close, f"{index + 1}", 0.68 + index * 4.04, 4.42, 0.35, 0.36, size=13, color=(109, 93, 231), bold=True)
+        _ppt_text(close, item[:72], 1.12 + index * 4.04, 4.36, 3.25, 1.15, size=17, bold=True)
+    _ppt_text(close, f"{page_number:02d}", 11.45, 6.34, 1.25, 0.7, size=32, color=(215, 211, 242), bold=True, align=PP_ALIGN.RIGHT)
 
     output = BytesIO()
     deck.save(output)

@@ -14,6 +14,7 @@ const userSuccess = ref('')
 
 const userSaving = ref(false)
 const avatarUploading = ref(false)
+const avatarLoadFailed = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 
@@ -37,6 +38,7 @@ async function handleAvatar(event: Event) {
   }
   const previousAvatar = userProfile.value.avatar
   const previewUrl = URL.createObjectURL(file)
+  avatarLoadFailed.value = false
   userProfile.value.avatar = previewUrl
   avatarUploading.value = true
   userSuccess.value = ''
@@ -46,12 +48,14 @@ async function handleAvatar(event: Event) {
     userProfile.value.userId = result.username
     userProfile.value.name = result.display_name
     userProfile.value.avatar = result.avatar
+    avatarLoadFailed.value = false
     userProfile.value.phone = result.phone
     userProfile.value.email = result.email
     saveUserProfile(userProfile.value)
     userSuccess.value = '头像已更新'
   } catch (err: any) {
     userProfile.value.avatar = previousAvatar
+    avatarLoadFailed.value = false
     userError.value = err.message || '头像上传失败，请稍后重试'
   } finally {
     avatarUploading.value = false
@@ -107,7 +111,7 @@ async function saveProfile() {
         <div class="profile-basic">
           <div class="avatar-wrap">
             <div class="avatar">
-              <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
+              <img v-if="userProfile.avatar && !avatarLoadFailed" :src="userProfile.avatar" alt="" @error="avatarLoadFailed = true" />
               <span v-else>{{ initials }}</span>
             </div>
             <button class="avatar-btn" type="button" :disabled="avatarUploading" @click="chooseAvatar">{{ avatarUploading ? '上传中…' : '更换头像' }}</button>

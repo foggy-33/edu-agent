@@ -1,4 +1,9 @@
+import base64
+from io import BytesIO
+
+from docx import Document
 from fastapi.testclient import TestClient
+from pptx import Presentation
 
 from app.main import app
 
@@ -34,6 +39,39 @@ def test_register_login_me_and_logout() -> None:
     logout = client.post("/api/auth/logout", headers=headers)
     assert logout.status_code == 204
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_uploaded_avatar_can_be_loaded_from_returned_url() -> None:
+    username = "pytest_avatar_user"
+    registered = client.post(
+        "/api/auth/register",
+        json={"username": username, "display_name": "头像测试", "password": "test-pass-123"},
+    )
+    if registered.status_code == 400:
+        login = client.post("/api/auth/login", json={"username": username, "password": "test-pass-123"})
+        assert login.status_code == 200
+        auth = login.json()
+    else:
+        assert registered.status_code == 201
+        auth = registered.json()
+
+    # Valid 1x1 PNG. The upload response URL must be readable through /api/avatars/.
+    image = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    response = client.post(
+        "/api/auth/avatar",
+        headers={"Authorization": f"Bearer {auth['token']}"},
+        files={"file": ("avatar.png", image, "image/png")},
+    )
+    assert response.status_code == 200
+    avatar_url = response.json()["user"]["avatar"]
+    assert avatar_url.startswith("/api/avatars/")
+
+    loaded = client.get(avatar_url)
+    assert loaded.status_code == 200
+    assert loaded.headers["content-type"] == "image/png"
+    assert loaded.content == image
 
 
 def test_analyze() -> None:
@@ -87,6 +125,15 @@ def test_export_real_office_files() -> None:
         assert f".{office_format}" in response.headers["content-disposition"]
         assert response.content.startswith(b"PK")
         assert len(response.content) > 1000
+        if office_format == "pptx":
+            deck = Presentation(BytesIO(response.content))
+            assert len(deck.slides) >= 5
+            visible_text = "\n".join(shape.text for slide in deck.slides for shape in slide.shapes if hasattr(shape, "text_frame"))
+            assert "数据库系统复习" in visible_text
+            assert "这次讲解将解决什么" in visible_text
+        else:
+            document = Document(BytesIO(response.content))
+            assert any("数据库系统复习" in paragraph.text for paragraph in document.paragraphs)
 
 
 def test_collaborative_learning_generate() -> None:

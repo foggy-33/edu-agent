@@ -698,8 +698,9 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     state,
                     "presentation",
                     "生成用于课堂展示的 Markdown 演示文稿大纲。第一行使用一级标题作为总标题；随后安排 5-10 张幻灯片，"
-                    "每张使用二级标题和 3-6 条简洁要点。形成学习递进叙事，覆盖学习目标、核心概念、原理、案例、易错点与总结；"
-                    "每张只表达一个主要观点，不要输出制作说明、演讲时长或 Markdown 表格。",
+                    "每张使用表达结论或启发的二级标题，而不是只写‘概念’‘案例’等栏目名，并配 3-6 条简洁要点。"
+                    "形成问题—理解—方法—应用—总结的学习递进叙事，覆盖学习目标、核心概念、原理、案例与易错点；"
+                    "每张只推进一个主要观点，句子适合课堂投影，不要输出制作说明、演讲时长或 Markdown 表格。",
                     "",
                 )
                 state["agentTrace"] = _trace(state, "PPT讲解 Agent", "演示文稿内容与叙事结构生成完成")
