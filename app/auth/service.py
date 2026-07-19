@@ -123,6 +123,47 @@ class AuthService:
         filepath.write_bytes(base64.b64decode(encoded))
         return f"/api/avatars/{filename}"
 
+    def update_avatar_file(self, username: str, content: bytes, content_type: str) -> dict[str, Any]:
+        normalized = username.strip().lower()
+        allowed_types = {
+            "image/jpeg": ("jpg", lambda data: data.startswith(b"\xff\xd8\xff")),
+            "image/png": ("png", lambda data: data.startswith(b"\x89PNG\r\n\x1a\n")),
+            "image/webp": ("webp", lambda data: len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP"),
+        }
+        media_type = content_type.split(";", 1)[0].strip().lower()
+        if media_type not in allowed_types:
+            raise AuthError("仅支持 JPG、PNG 和 WebP 头像")
+        if not content or len(content) > 10 * 1024 * 1024:
+            raise AuthError("头像文件不能为空且不能超过 10 MB")
+        extension, signature_matches = allowed_types[media_type]
+        if not signature_matches(content):
+            raise AuthError("头像文件内容与图片格式不匹配")
+
+        avatar_dir = Path(get_settings().avatar_dir)
+        avatar_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(content).hexdigest()[:16]
+        filename = f"{normalized}-{digest}.{extension}"
+        filepath = avatar_dir / filename
+
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(normalized)
+            if not user:
+                raise AuthError("用户不存在")
+            previous_avatar = str(user.get("avatar", ""))
+            if not filepath.exists():
+                temporary = avatar_dir / f".{filename}.tmp"
+                temporary.write_bytes(content)
+                temporary.replace(filepath)
+            user["avatar"] = f"/api/avatars/{filename}"
+            self._write(data)
+
+        previous_name = previous_avatar.removeprefix("/api/avatars/").split("?", 1)[0]
+        previous_path = avatar_dir / Path(previous_name).name
+        if previous_name and previous_path != filepath and previous_path.parent == avatar_dir and previous_path.exists():
+            previous_path.unlink(missing_ok=True)
+        return self._public_user(user)
+
     def get_profile(self, username: str) -> dict[str, Any]:
         normalized = username.strip().lower()
         with self._lock:

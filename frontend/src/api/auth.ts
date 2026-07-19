@@ -44,10 +44,11 @@ const TOKEN_KEY = 'studyflow_auth_token'
 
 async function authRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY)
+  const isFormData = options?.body instanceof FormData
   const response = await fetch(`/api/auth/${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options?.headers || {})
     }
@@ -57,6 +58,16 @@ async function authRequest<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(data?.detail || '认证请求失败')
   }
   return response.status === 204 ? (undefined as T) : response.json()
+}
+
+export async function uploadUserAvatar(file: File): Promise<AuthUser> {
+  const body = new FormData()
+  body.append('file', file)
+  const result = await authRequest<{ user: AuthUser }>('avatar', {
+    method: 'POST',
+    body,
+  })
+  return result.user
 }
 
 export async function register(username: string, displayName: string, password: string): Promise<AuthUser> {

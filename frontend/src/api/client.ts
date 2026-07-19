@@ -131,6 +131,13 @@ export async function testSpark(config: SiliconFlowConfig): Promise<{ status: st
   })
 }
 
+export async function testOpenAICompatible(config: SiliconFlowConfig): Promise<{ status: string; model: string; message: string }> {
+  return httpRequest(`${API_BASE}/settings/openai/test`, {
+    method: 'POST',
+    body: JSON.stringify(config)
+  })
+}
+
 export async function getDynamicProfile(userId: string, course?: string): Promise<{ profile: DynamicProfile }> {
   const params = course ? `?course=${encodeURIComponent(course)}` : ''
   return httpRequest(`${API_BASE}/profiles/${encodeURIComponent(userId)}${params}`)

@@ -58,6 +58,7 @@ class DynamicProfileService:
         spark_api_password: str = "",
         spark_base_url: str = "",
         spark_model: str = "",
+        openai_model: str = "",
     ) -> dict[str, Any]:
         current = self.get_profile(user_id, course)
         provider = "rule-fallback"
@@ -74,6 +75,7 @@ class DynamicProfileService:
                 spark_api_password=spark_api_password,
                 spark_base_url=spark_base_url,
                 spark_model=spark_model,
+                openai_model=openai_model,
             )
             provider = active_provider
         except ValueError as exc:
@@ -105,6 +107,7 @@ class DynamicProfileService:
         spark_api_password: str = "",
         spark_base_url: str = "",
         spark_model: str = "",
+        openai_model: str = "",
     ) -> dict[str, Any]:
         current = self.get_profile(user_id, course)
         missing = [name for name in PROFILE_DIMENSIONS if name not in current.get("dimensions", {})]
@@ -127,6 +130,7 @@ class DynamicProfileService:
                 spark_api_password=spark_api_password,
                 spark_base_url=spark_base_url,
                 spark_model=spark_model,
+                openai_model=openai_model,
                 system_prompt="你是善于主动提问的学科学习画像访谈助手。",
                 temperature=0.45,
                 max_tokens=160,
@@ -165,6 +169,18 @@ class DynamicProfileService:
             temperature=0,
         )
         return {"status": "ok", "model": spark_model or self.llm.settings.spark_model, "message": content.strip()}
+
+    def test_openai_connection(self, *, openai_model: str = "", **_: Any) -> dict[str, Any]:
+        content = self.llm.openai_generate(
+            "只回复：连接成功",
+            openai_model=openai_model,
+            max_tokens=32,
+        )
+        return {
+            "status": "ok",
+            "model": openai_model or self.llm.settings.openai_model,
+            "message": content.strip(),
+        }
 
     def initialize_from_onboarding(self, user_id: str, onboarding_data: dict[str, Any]) -> None:
         grade_level = onboarding_data.get("grade_level", "")
@@ -253,6 +269,7 @@ class DynamicProfileService:
         spark_api_password: str,
         spark_base_url: str,
         spark_model: str,
+        openai_model: str,
     ) -> tuple[dict[str, Any], str]:
         prompt = (
             "通过自然语言对话持续构建学生的单学科学习画像。只提取本轮有明确证据的维度，不要猜测；"
@@ -271,6 +288,7 @@ class DynamicProfileService:
             spark_api_password=spark_api_password,
             spark_base_url=spark_base_url,
             spark_model=spark_model,
+            openai_model=openai_model,
             system_prompt="你是学生画像分析专家，只输出合法 JSON。",
             response_format={"type": "json_object"},
             temperature=0.2,

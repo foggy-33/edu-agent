@@ -153,13 +153,14 @@ export interface CollaborativeLearningRequest {
   goal: string
   resourceTypes: CollaborativeResourceType[]
   fileIds: string[]
-  active_provider: 'siliconflow' | 'spark'
+  active_provider: 'siliconflow' | 'spark' | 'openai'
   api_key: string
   base_url: string
   model: string
   spark_api_password: string
   spark_base_url: string
   spark_model: string
+  openai_model: string
   response_speed?: 'fast' | 'balanced' | 'deep'
 }
 

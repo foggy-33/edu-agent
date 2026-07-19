@@ -35,14 +35,14 @@ interface ConversationTurn {
   processSteps: AgentProcessStep[]
   processCollapsed: boolean
   processCompleted: boolean
-  provider: 'siliconflow' | 'spark'
+  provider: 'siliconflow' | 'spark' | 'openai'
   responseSpeed: ResponseSpeed
 }
 
 interface ComposerModelOption {
   label: string
   model: string
-  provider?: 'siliconflow' | 'spark'
+  provider?: 'siliconflow' | 'spark' | 'openai'
 }
 
 const props = defineProps<{
@@ -81,6 +81,7 @@ const composerModels: ComposerModelOption[] = [
   { label: 'DeepSeek-V4-Flash', model: 'deepseek-ai/DeepSeek-V4-Flash' },
   { label: 'DeepSeek-V3.2 Pro', model: 'Pro/deepseek-ai/DeepSeek-V3.2' },
   { label: 'GLM-5.2', model: 'zai-org/GLM-5.2' },
+  { label: 'GPT-5.6 Sol', model: 'gpt-5.6-sol', provider: 'openai' },
   { label: '讯飞星火 X2', model: 'spark-x', provider: 'spark' },
   { label: '讯飞星火 Lite', model: 'lite', provider: 'spark' },
 ]
@@ -164,8 +165,10 @@ const activeSpeed = computed(() => speedOptions.find(item => item.key === respon
 const activeComposerModel = computed(() => composerModels.find(item =>
   modelConfig.value.active_provider === 'spark'
     ? item.provider === 'spark' && item.model === (modelConfig.value.spark_model || 'spark-x')
+    : modelConfig.value.active_provider === 'openai'
+      ? item.provider === 'openai' && item.model === (modelConfig.value.openai_model || 'gpt-5.6-sol')
     : !item.provider && item.model === modelConfig.value.model))
-const activeModelLabel = computed(() => activeComposerModel.value?.label || modelConfig.value.model.split('/').pop() || '自定义模型')
+const activeModelLabel = computed(() => activeComposerModel.value?.label || (modelConfig.value.active_provider === 'openai' ? modelConfig.value.openai_model : modelConfig.value.model).split('/').pop() || '自定义模型')
 
 function tabsForTurn(turn: ConversationTurn) {
   return [
@@ -366,6 +369,8 @@ function toggleFile(fileId: string) {
 function selectComposerModel(option: ComposerModelOption) {
   modelConfig.value = option.provider === 'spark'
     ? { ...modelConfig.value, active_provider: 'spark', spark_api_password: '', spark_base_url: '', spark_model: option.model }
+    : option.provider === 'openai'
+      ? { ...modelConfig.value, active_provider: 'openai', openai_model: option.model }
     : { ...modelConfig.value, active_provider: 'siliconflow', model: option.model }
   saveSiliconFlowConfig(modelConfig.value)
   modelMenuOpen.value = false
@@ -1124,7 +1129,7 @@ watch(prompt, resizePromptInput)
                   @click="selectComposerModel(model)"
                 >
                   <span>{{ model.label }}</span>
-                  <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' && (modelConfig.spark_model || 'spark-x') === model.model : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
+                  <b v-if="model.provider === 'spark' ? modelConfig.active_provider === 'spark' && (modelConfig.spark_model || 'spark-x') === model.model : model.provider === 'openai' ? modelConfig.active_provider === 'openai' && (modelConfig.openai_model || 'gpt-5.6-sol') === model.model : modelConfig.active_provider === 'siliconflow' && modelConfig.model === model.model">✓</b>
                 </button>
               </div>
             </div>

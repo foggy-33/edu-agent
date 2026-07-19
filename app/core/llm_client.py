@@ -23,6 +23,8 @@ class LLMClient:
             return self.mock_generate(prompt=prompt, task=task, **kwargs)
         if self.mode == "spark":
             return self.spark_generate(prompt=prompt, task=task, **kwargs)
+        if self.mode == "openai":
+            return self.openai_generate(prompt=prompt, task=task, **kwargs)
         return self.mock_generate(prompt=prompt, task=task, **kwargs)
 
     def mock_generate(self, prompt: str, task: str = "general", **kwargs: Any) -> str:
@@ -124,7 +126,59 @@ class LLMClient:
     ) -> str:
         if active_provider == "spark":
             return self.spark_generate(prompt, **kwargs)
+        if active_provider == "openai":
+            return self.openai_generate(prompt, **kwargs)
         return self.siliconflow_generate(prompt, **kwargs)
+
+    def openai_generate(
+        self,
+        prompt: str,
+        task: str = "general",
+        *,
+        openai_model: str = "",
+        system_prompt: str = "你是一个严谨的智能学习助手。",
+        max_tokens: int = 1800,
+        messages: list[dict[str, str]] | None = None,
+        **_: Any,
+    ) -> str:
+        key = self.settings.openai_api_key
+        if not key:
+            raise ValueError("未配置第三方模型 API Key，请设置服务器 OPENAI_API_KEY")
+
+        request_messages = messages or [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+        payload: dict[str, Any] = {
+            "model": openai_model or self.settings.openai_model,
+            "messages": request_messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        base_url = self.settings.openai_base_url.rstrip("/")
+        url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+        try:
+            with httpx.Client(timeout=120.0) as client:
+                response = client.post(
+                    url,
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json=payload,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500]
+            raise ValueError(f"第三方模型接口请求失败 ({exc.response.status_code}): {detail}") from exc
+        except httpx.HTTPError as exc:
+            raise ValueError(f"无法连接第三方模型接口: {exc}") from exc
+
+        data = response.json()
+        try:
+            result = str(data["choices"][0]["message"]["content"]).strip()
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"第三方模型接口返回格式异常: {json.dumps(data, ensure_ascii=False)[:500]}") from exc
+        if not result:
+            raise ValueError("第三方模型接口返回内容为空")
+        return result
 
     def siliconflow_generate(
         self,

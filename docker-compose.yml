@@ -22,6 +22,9 @@ services:
       SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
       SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn/v1}
       SILICONFLOW_MODEL: ${SILICONFLOW_MODEL:-Pro/deepseek-ai/DeepSeek-V3.2}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://ai.space.cx/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
       CHROMA_PERSIST_DIR: /app/chroma_db
       KNOWLEDGE_BASE_DIR: /app/knowledge_base
       RAG_AUTO_INGEST: ${RAG_AUTO_INGEST:-true}
@@ -31,6 +34,7 @@ services:
       COURSE_SOURCE_DIR: /app/sourse
       COURSE_ANNOTATION_DIR: /app/data/resources/course_annotations
       USER_DATA_FILE: /app/data/auth/users.json
+      AVATAR_DIR: /app/data/auth/avatars
     volumes:
       - chroma_data:/app/chroma_db
       - profile_data:/app/data/profiles

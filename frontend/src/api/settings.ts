@@ -9,7 +9,8 @@ export const defaultSiliconFlowConfig: SiliconFlowConfig = {
   model: 'deepseek-ai/DeepSeek-V4-Pro',
   spark_api_password: '',
   spark_base_url: '',
-  spark_model: ''
+  spark_model: '',
+  openai_model: 'gpt-5.6-sol'
 }
 
 export function loadSiliconFlowConfig(): SiliconFlowConfig {

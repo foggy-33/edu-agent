@@ -215,6 +215,7 @@ def _stream_generated_text(state: LearningState, key: str, task: str, _fallback:
         spark_api_password=state.get("spark_api_password", ""),
         spark_base_url=state.get("spark_base_url", "https://spark-api-open.xf-yun.com/x2"),
         spark_model=state.get("spark_model", "spark-x"),
+        openai_model=state.get("openai_model", "gpt-5.6-sol"),
         response_speed=state.get("response_speed", "balanced"),
     ):
         if chunk["type"] == "reasoning":
@@ -468,6 +469,30 @@ def update_user_profile(
         return {"user": result, "message": "资料更新成功"}
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.post("/auth/avatar")
+async def upload_user_avatar(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    try:
+        content = await file.read(10 * 1024 * 1024 + 1)
+        result = auth_service.update_avatar_file(
+            user["username"],
+            content,
+            file.content_type or "application/octet-stream",
+        )
+        return {"user": result, "message": "头像上传成功"}
+    except AuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        await file.close()
 
 
 @router.post("/analyze")
@@ -799,7 +824,10 @@ def get_avatar(filename: str) -> FileResponse:
     from pathlib import Path
     from app.core.config import get_settings
     avatar_dir = Path(get_settings().avatar_dir)
-    filepath = avatar_dir / filename
+    safe_filename = Path(filename).name
+    if safe_filename != filename:
+        raise HTTPException(status_code=400, detail="头像文件名无效")
+    filepath = avatar_dir / safe_filename
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="头像不存在")
     ext = filepath.suffix.lower()
@@ -1391,6 +1419,14 @@ def test_spark(request: SiliconFlowConfig) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/settings/openai/test")
+def test_openai(request: SiliconFlowConfig) -> dict:
+    try:
+        return profile_service.test_openai_connection(**request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ========== 错题本 API ==========
 
 from app.mistakes.store import MistakeStore
@@ -1475,6 +1511,7 @@ def analyze_mistake_weak_topics(request: MistakeWeaknessRequest) -> dict:
             spark_api_password=request.spark_api_password,
             spark_base_url=request.spark_base_url,
             spark_model=request.spark_model,
+            openai_model=request.openai_model,
             system_prompt="你是教育测量与错因诊断专家，只输出要求的 JSON。",
             temperature=0.15,
             max_tokens=1200,

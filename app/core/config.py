@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
     siliconflow_model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://ai.space.cx/v1"
+    openai_model: str = "gpt-5.6-sol"
     chroma_persist_dir: str = "./chroma_db"
     knowledge_base_dir: str = "./knowledge_base"
     rag_auto_ingest: bool = True

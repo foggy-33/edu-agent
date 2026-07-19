@@ -23,13 +23,14 @@ class LoginRequest(BaseModel):
 
 
 class SiliconFlowConfig(BaseModel):
-    active_provider: Literal["siliconflow", "spark"] = "siliconflow"
+    active_provider: Literal["siliconflow", "spark", "openai"] = "siliconflow"
     api_key: str = ""
     base_url: str = "https://api.siliconflow.cn/v1"
     model: str = "Pro/deepseek-ai/DeepSeek-V3.2"
     spark_api_password: str = ""
     spark_base_url: str = ""
     spark_model: str = ""
+    openai_model: str = "gpt-5.6-sol"
 
 
 class CollaborativeLearningRequest(SiliconFlowConfig):

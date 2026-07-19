@@ -23,7 +23,7 @@ export interface ConversationHistoryTurn {
   result: CollaborativeLearningResponse
   thinkingSteps: string[]
   responseSpeed?: 'fast' | 'balanced' | 'deep'
-  provider?: 'siliconflow' | 'spark'
+  provider?: 'siliconflow' | 'spark' | 'openai'
 }
 
 export function loadConversationHistory(): ConversationHistoryItem[] {

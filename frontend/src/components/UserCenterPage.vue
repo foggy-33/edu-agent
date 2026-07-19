@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { loadUserProfile, saveUserProfile } from '../api/userProfile'
-import { updateUserProfile } from '../api/auth'
+import { updateUserProfile, uploadUserAvatar } from '../api/auth'
 
 const emit = defineEmits<{
   logout: []
@@ -13,6 +13,7 @@ const userError = ref('')
 const userSuccess = ref('')
 
 const userSaving = ref(false)
+const avatarUploading = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 
@@ -20,23 +21,43 @@ function chooseAvatar() {
   fileInput.value?.click()
 }
 
-function handleAvatar(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+async function handleAvatar(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
   if (!file) return
-  if (!file.type.startsWith('image/')) {
-    userError.value = '请选择图片文件'
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    userError.value = '请选择 JPG、PNG 或 WebP 图片'
+    input.value = ''
     return
   }
   if (file.size > 10 * 1024 * 1024) {
     userError.value = '头像图片不能超过 10 MB'
+    input.value = ''
     return
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    userProfile.value.avatar = String(reader.result || '')
-    userError.value = ''
+  const previousAvatar = userProfile.value.avatar
+  const previewUrl = URL.createObjectURL(file)
+  userProfile.value.avatar = previewUrl
+  avatarUploading.value = true
+  userSuccess.value = ''
+  userError.value = ''
+  try {
+    const result = await uploadUserAvatar(file)
+    userProfile.value.userId = result.username
+    userProfile.value.name = result.display_name
+    userProfile.value.avatar = result.avatar
+    userProfile.value.phone = result.phone
+    userProfile.value.email = result.email
+    saveUserProfile(userProfile.value)
+    userSuccess.value = '头像已更新'
+  } catch (err: any) {
+    userProfile.value.avatar = previousAvatar
+    userError.value = err.message || '头像上传失败，请稍后重试'
+  } finally {
+    avatarUploading.value = false
+    URL.revokeObjectURL(previewUrl)
+    input.value = ''
   }
-  reader.readAsDataURL(file)
 }
 
 async function saveProfile() {
@@ -51,7 +72,6 @@ async function saveProfile() {
   try {
     const result = await updateUserProfile({
       display_name: userProfile.value.name,
-      avatar: userProfile.value.avatar,
       phone: userProfile.value.phone,
       email: userProfile.value.email,
     })
@@ -90,7 +110,7 @@ async function saveProfile() {
               <img v-if="userProfile.avatar" :src="userProfile.avatar" alt="用户头像" />
               <span v-else>{{ initials }}</span>
             </div>
-            <button class="avatar-btn" type="button" @click="chooseAvatar">更换头像</button>
+            <button class="avatar-btn" type="button" :disabled="avatarUploading" @click="chooseAvatar">{{ avatarUploading ? '上传中…' : '更换头像' }}</button>
             <input ref="fileInput" type="file" accept="image/*" hidden @change="handleAvatar" />
             <div class="avatar-hint">支持 JPG、PNG、WebP，不超过 10 MB</div>
           </div>
@@ -116,7 +136,7 @@ async function saveProfile() {
         </div>
 
         <div class="panel-actions profile-actions">
-          <button class="btn-primary" type="button" @click="saveProfile" :disabled="userSaving">
+          <button class="btn-primary" type="button" @click="saveProfile" :disabled="userSaving || avatarUploading">
             <span v-if="userSaving">保存中...</span>
             <span v-else>保存资料</span>
           </button>

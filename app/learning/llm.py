@@ -18,6 +18,7 @@ def call_llm(
     spark_api_password: str = "",
     spark_base_url: str = "",
     spark_model: str = "",
+    openai_model: str = "",
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> str:
     """Use the browser-provided OpenAI-compatible config, or return mock sentinel."""
@@ -29,12 +30,16 @@ def call_llm(
             base_url=spark_base_url,
             model=spark_model,
         )
+    elif active_provider == "openai":
+        credential = settings.openai_api_key
+        request_base_url = settings.openai_base_url
+        request_model = openai_model or settings.openai_model
     else:
         credential = api_key or settings.siliconflow_api_key
         request_base_url = base_url or settings.siliconflow_base_url
         request_model = model or settings.siliconflow_model
     if not credential.strip():
-        provider_name = "讯飞星火" if active_provider == "spark" else "硅基流动"
+        provider_name = "讯飞星火" if active_provider == "spark" else "第三方 GPT 接口" if active_provider == "openai" else "硅基流动"
         raise ValueError(f"{provider_name}未配置 API 密钥，请检查服务器 .env 并重建后端容器")
 
     payload: dict[str, Any] = {
@@ -74,6 +79,7 @@ def stream_llm(
     spark_api_password: str = "",
     spark_base_url: str = "",
     spark_model: str = "",
+    openai_model: str = "",
     response_speed: str = "balanced",
     system_prompt: str = "你是严谨的中文教育资源生成助手。",
 ) -> Iterator[dict[str, str]]:
@@ -86,12 +92,16 @@ def stream_llm(
             base_url=spark_base_url,
             model=spark_model,
         )
+    elif active_provider == "openai":
+        credential = settings.openai_api_key
+        request_base_url = settings.openai_base_url
+        request_model = openai_model or settings.openai_model
     else:
         credential = api_key or settings.siliconflow_api_key
         request_base_url = base_url or settings.siliconflow_base_url
         request_model = model or settings.siliconflow_model
     if not credential.strip():
-        provider_name = "讯飞星火" if active_provider == "spark" else "硅基流动"
+        provider_name = "讯飞星火" if active_provider == "spark" else "第三方 GPT 接口" if active_provider == "openai" else "硅基流动"
         raise ValueError(f"{provider_name}未配置 API 密钥，请检查服务器 .env 并重建后端容器")
 
     speed_options = {

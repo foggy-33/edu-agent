@@ -18,6 +18,7 @@ def _llm_config(state: LearningState) -> dict[str, str]:
         "spark_api_password": state.get("spark_api_password", ""),
         "spark_base_url": state.get("spark_base_url", "https://spark-api-open.xf-yun.com/x2"),
         "spark_model": state.get("spark_model", "spark-x"),
+        "openai_model": state.get("openai_model", "gpt-5.6-sol"),
     }
 
 

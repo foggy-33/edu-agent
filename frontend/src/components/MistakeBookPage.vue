@@ -111,8 +111,6 @@ const courses = computed(() => {
   return Array.from(set).filter(Boolean)
 })
 
-const activeWeakPoints = computed(() => weaknessGroups.value.find(item => item.course === selectedWeakCourse.value)?.points || [])
-
 async function loadWeaknessGroups() {
   const user = loadUserProfile()
   weaknessAnalyzing.value = true
@@ -123,7 +121,15 @@ async function loadWeaknessGroups() {
       course: '',
       ...loadSiliconFlowConfig(),
     })
-    weaknessGroups.value = result.courses.filter(group => group.course !== '未分类画像' && group.points.length)
+    const grouped = new Map<string, string[]>()
+    result.courses.forEach(group => {
+      const course = group.course.trim()
+      if (!course || course === '未分类画像' || !group.points.length) return
+      const points = grouped.get(course) || []
+      grouped.set(course, [...new Set([...points, ...group.points.map(point => point.trim()).filter(Boolean)])])
+    })
+    weaknessGroups.value = Array.from(grouped, ([course, points]) => ({ course, points }))
+      .sort((left, right) => left.course.localeCompare(right.course, 'zh-CN'))
     if (weaknessGroups.value.length && !weaknessGroups.value.some(group => group.course === selectedWeakCourse.value)) {
       selectedWeakCourse.value = weaknessGroups.value[0].course
       selectedWeakPoint.value = weaknessGroups.value[0].points[0] || ''
@@ -144,6 +150,11 @@ async function loadWeaknessGroups() {
 function selectWeakCourse(course: string) {
   selectedWeakCourse.value = course
   selectedWeakPoint.value = weaknessGroups.value.find(item => item.course === course)?.points[0] || ''
+}
+
+function selectWeakPoint(course: string, point: string) {
+  selectedWeakCourse.value = course
+  selectedWeakPoint.value = point
 }
 
 async function generateWeakPointPractice() {
@@ -526,24 +537,26 @@ onMounted(() => {
 
           <div v-if="weaknessAnalyzing" class="weakness-analysis-state"><i></i><span>AI 正在分析错题中的知识薄弱点…</span></div>
           <div v-else-if="weaknessGroups.length" class="weakness-picker">
-            <div class="weak-course-row">
-              <button
-                v-for="group in weaknessGroups"
-                :key="group.course"
-                type="button"
-                :class="{ active: selectedWeakCourse === group.course }"
-                @click="selectWeakCourse(group.course)"
-              >{{ group.course }}</button>
-            </div>
-            <div class="weak-point-row">
-              <button
-                v-for="point in activeWeakPoints"
-                :key="point"
-                type="button"
-                :class="{ active: selectedWeakPoint === point }"
-                @click="selectedWeakPoint = point"
-              >{{ point }}</button>
-            </div>
+            <section
+              v-for="group in weaknessGroups"
+              :key="group.course"
+              class="weak-subject-group"
+              :class="{ active: selectedWeakCourse === group.course }"
+            >
+              <button type="button" class="weak-subject-heading" @click="selectWeakCourse(group.course)">
+                <span>{{ group.course }}</span>
+                <small>{{ group.points.length }} 个薄弱点</small>
+              </button>
+              <div class="weak-point-row">
+                <button
+                  v-for="point in group.points"
+                  :key="`${group.course}-${point}`"
+                  type="button"
+                  :class="{ active: selectedWeakCourse === group.course && selectedWeakPoint === point }"
+                  @click="selectWeakPoint(group.course, point)"
+                >{{ point }}</button>
+              </div>
+            </section>
           </div>
           <div v-else class="weakness-empty">
             <span>{{ weaknessAnalysisError || '当前没有未掌握错题，暂时无法生成薄弱点练习。' }}</span>
@@ -895,11 +908,16 @@ onMounted(() => {
 .weak-practice-head h2 { margin: 4px 0; color: #202123; font-size: 20px; }
 .weak-practice-head p { margin: 0; color: #858585; font-size: 12px; }
 .weak-practice-head .primary-button { flex: 0 0 auto; min-width: 132px; }
-.weakness-picker { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e6e6e6; }
-.weak-course-row, .weak-point-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.weak-course-row button, .weak-point-row button { padding: 7px 12px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fff; font-size: 11px; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
-.weak-course-row button:hover, .weak-point-row button:hover { color: #5146cf; border-color: #9f94f2; background: #f8f7ff; transform: translateY(-1px); }
-.weak-course-row button.active { color: #fff; border-color: #5146cf; background: #5146cf; box-shadow: 0 6px 16px rgba(81,70,207,.2); }
+.weakness-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e6e6e6; }
+.weak-subject-group { min-width: 0; padding: 13px; border: 1px solid #e4e4e7; border-radius: 15px; background: rgba(255,255,255,.72); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background .2s ease; }
+.weak-subject-group:hover { border-color: #d4cffb; transform: translateY(-1px); }
+.weak-subject-group.active { border-color: #a79df2; background: rgba(250,249,255,.94); box-shadow: 0 8px 24px rgba(81,70,207,.09); }
+.weak-subject-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; padding: 0 1px 10px; border: 0; color: #202123; background: transparent; text-align: left; }
+.weak-subject-heading span { overflow: hidden; font-size: 13px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.weak-subject-heading small { flex: 0 0 auto; color: #999; font-size: 9px; font-weight: 500; }
+.weak-point-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.weak-point-row button { padding: 7px 12px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fff; font-size: 11px; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
+.weak-point-row button:hover { color: #5146cf; border-color: #9f94f2; background: #f8f7ff; transform: translateY(-1px); }
 .weak-point-row button.active { color: #433aa8; border-color: #9f94f2; background: #efedff; font-weight: 700; box-shadow: 0 5px 14px rgba(81,70,207,.1); }
 .weakness-empty { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 16px 0 0; color: #888; font-size: 11px; }
 .weakness-empty button { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #d9d3ff; border-radius: 999px; color: #5146cf; background: #fff; font-size: 10px; }
@@ -1784,5 +1802,6 @@ button {
   .exercise-option { min-height: 58px; padding: 15px 16px; font-size: 15px; }
   .weak-practice-head { align-items: stretch; flex-direction: column; }
   .weak-practice-head .primary-button { width: 100%; }
+  .weakness-picker { grid-template-columns: 1fr; }
 }
 </style>
