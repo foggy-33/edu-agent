@@ -124,6 +124,24 @@ export async function testSiliconFlow(config: SiliconFlowConfig): Promise<{ stat
   })
 }
 
+export async function exportOfficeFile(payload: {
+  title: string
+  subtitle: string
+  content: string
+  format: 'pptx' | 'docx'
+}): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/exports/office`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => null)
+    throw new Error(data?.detail || 'Office 文件生成失败')
+  }
+  return response.blob()
+}
+
 export async function testSpark(config: SiliconFlowConfig): Promise<{ status: string; model: string; message: string }> {
   return httpRequest(`${API_BASE}/settings/spark/test`, {
     method: 'POST',

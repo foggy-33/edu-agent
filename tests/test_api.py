@@ -67,6 +67,28 @@ def test_generate() -> None:
     assert "CREATE TABLE" in data["resources"]["practice_case"]
 
 
+def test_export_real_office_files() -> None:
+    content = "# 数据库系统\n\n## 核心概念\n- 关系模型\n- 主键与外键\n\n## 复习建议\n1. 整理概念\n2. 完成练习"
+    for office_format, expected_type in (
+        ("pptx", "presentationml.presentation"),
+        ("docx", "wordprocessingml.document"),
+    ):
+        response = client.post(
+            "/api/exports/office",
+            json={
+                "title": "数据库系统复习",
+                "subtitle": "智学 AI 生成",
+                "content": content,
+                "format": office_format,
+            },
+        )
+        assert response.status_code == 200
+        assert expected_type in response.headers["content-type"]
+        assert f".{office_format}" in response.headers["content-disposition"]
+        assert response.content.startswith(b"PK")
+        assert len(response.content) > 1000
+
+
 def test_collaborative_learning_generate() -> None:
     response = client.post(
         "/api/learning/generate",

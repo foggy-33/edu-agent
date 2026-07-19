@@ -253,6 +253,8 @@ def planner_agent(state: LearningState) -> dict[str, Any]:
         "mindmap": "知识点思维导图",
         "exercise": "分层练习题",
         "reading": "拓展阅读材料",
+        "ppt": "可下载的演示文稿",
+        "word": "可下载的 Word 文档",
     }
     plan = [{"resourceType": item, "task": labels[item]} for item in state["resourceTypes"] if item in labels]
     return {"taskPlan": plan, "agentTrace": _trace(state, "任务规划 Agent", f"已规划 {len(plan)} 类资源生成任务")}
@@ -322,6 +324,47 @@ def reading_agent(state: LearningState) -> dict[str, Any]:
         ),
     )
     return {"reading": value, "agentTrace": _trace(state, "拓展阅读 Agent", "知识延伸与学习路径生成完成")}
+
+
+def presentation_agent(state: LearningState) -> dict[str, Any]:
+    if "ppt" not in state["resourceTypes"]:
+        return {}
+    value = _generate(
+        state,
+        "生成用于课堂展示的 Markdown 演示文稿大纲。第一行使用一级标题作为总标题；随后安排 5-10 张幻灯片，"
+        "每张使用二级标题和 3-6 条简洁要点。形成学习递进叙事，覆盖学习目标、核心概念、原理、案例、易错点与总结；"
+        "每张只表达一个主要观点，不要输出制作说明、演讲时长或 Markdown 表格。",
+        lambda: (
+            f"# {state['course']}：{state['chapter']}\n\n"
+            "## 学习目标\n- 明确本节核心问题\n- 建立概念之间的联系\n- 能够解释典型案例\n\n"
+            f"## 核心概念\n- 聚焦“{state['weakness']}”\n- 区分关键术语与适用条件\n- 建立判断与应用步骤\n\n"
+            "## 原理与方法\n- 明确输入条件\n- 按步骤分析状态变化\n- 比较不同方案的结果\n\n"
+            "## 典型案例\n- 从具体问题识别考点\n- 展示完整推理链路\n- 用结果反查易错环节\n\n"
+            "## 易错点与总结\n- 不混淆概念名称与执行规则\n- 注意边界条件与题目限制\n- 通过变式练习完成迁移\n"
+        ),
+    )
+    return {"presentation": value, "agentTrace": _trace(state, "PPT讲解 Agent", "演示文稿内容与叙事结构生成完成")}
+
+
+def word_agent(state: LearningState) -> dict[str, Any]:
+    if "word" not in state["resourceTypes"]:
+        return {}
+    value = _generate(
+        state,
+        "生成可直接排版为 Word 的完整 Markdown 学习文档。使用清晰的二级、三级标题与真实列表，"
+        "覆盖摘要、学习目标、核心概念、原理说明、典型案例、易错点、练习建议和总结。内容应连贯、专业、适合打印阅读；"
+        "不要输出制作过程、HTML 或虚构参考文献。",
+        lambda: (
+            f"# {state['course']}：{state['chapter']}学习文档\n\n"
+            f"## 摘要\n本文围绕“{state['weakness']}”梳理核心知识，并面向“{state['goal']}”给出学习与复习建议。\n\n"
+            "## 学习目标\n- 理解核心概念及适用条件\n- 掌握分析问题的标准步骤\n- 能够独立完成典型题目\n\n"
+            "## 核心概念与原理\n先明确问题输入与约束，再跟踪关键状态变化，最后比较不同方法的效果与代价。\n\n"
+            "## 典型案例\n选择一个代表性问题，依次完成条件识别、方法选择、步骤推导和结果校验。\n\n"
+            "## 易错点\n- 忽略边界条件\n- 只记结论而不理解过程\n- 缺少结果校验\n\n"
+            "## 复习建议\n1. 整理概念对比表。\n2. 完成一次手工推演。\n3. 使用变式题检验迁移能力。\n"
+        ),
+    )
+    return {"wordDocument": value, "agentTrace": _trace(state, "Word 文档 Agent", "Word 学习文档内容生成完成")}
 
 
 def code_agent(state: LearningState) -> dict[str, Any]:
@@ -459,6 +502,8 @@ def review_agent(state: LearningState) -> dict[str, Any]:
         "reading": "reading",
         "code": "codeCase",
         "path": "learningPath",
+        "ppt": "presentation",
+        "word": "wordDocument",
     }
     selected_fields = [field_map[item] for item in state["resourceTypes"] if item in field_map]
     complete = sum(bool(state.get(field)) for field in selected_fields)

@@ -31,5 +31,7 @@ class LearningState(TypedDict, total=False):
     reading: str
     codeCase: str
     learningPath: str
+    presentation: str
+    wordDocument: str
     review: str
     agentTrace: list[dict[str, Any]]

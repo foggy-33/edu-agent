@@ -2,6 +2,7 @@
 import re
 from collections import Counter
 from typing import Any, Iterator
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -13,6 +14,7 @@ from app.api.schemas import (
     LearningRequest,
     LoginRequest,
     MistakeWeaknessRequest,
+    OfficeExportRequest,
     OnboardingProfileRequest,
     ProfileChatRequest,
     ProfileInterviewRequest,
@@ -47,6 +49,7 @@ from app.learning.state import LearningState
 from app.learning.workflow import generate_learning_resources
 from app.profiles.service import DynamicProfileService
 from app.resources.service import ResourceError, ResourceService
+from app.exports.office import build_docx, build_pptx
 
 router = APIRouter()
 profile_service = DynamicProfileService()
@@ -390,6 +393,8 @@ def _learning_result(state: LearningState) -> dict[str, Any]:
         "reading": state.get("reading", ""),
         "codeCase": state.get("codeCase", ""),
         "learningPath": state.get("learningPath", ""),
+        "presentation": state.get("presentation", ""),
+        "wordDocument": state.get("wordDocument", ""),
         "review": state.get("review", ""),
         "sources": state.get("sources", []),
         "agentTrace": state.get("agentTrace", []),
@@ -513,6 +518,24 @@ def generate_collaborative_learning_resources(request: CollaborativeLearningRequ
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/exports/office")
+def export_office_file(request: OfficeExportRequest) -> StreamingResponse:
+    safe_stem = re.sub(r'[\\/:*?"<>|]+', "-", request.title).strip(" .-") or "AI学习资料"
+    if request.format == "pptx":
+        stream = build_pptx(request.title, request.subtitle, request.content)
+        media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    else:
+        stream = build_docx(request.title, request.subtitle, request.content)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    filename = f"{safe_stem}.{request.format}"
+    disposition = f"attachment; filename=ai-learning.{request.format}; filename*=UTF-8''{quote(filename)}"
+    return StreamingResponse(
+        stream,
+        media_type=media_type,
+        headers={"Content-Disposition": disposition, "Cache-Control": "no-store"},
+    )
 
 
 @router.post("/learning/generate/stream")
@@ -661,6 +684,52 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "message": "知识延伸与学习路径生成完成",
                     "agent": "拓展阅读 Agent",
                     "detail": "拓展阅读已写入 reading",
+                    "state": "done",
+                })
+
+            if "ppt" in request.resourceTypes:
+                yield _sse("status", {
+                    "message": "生成 PPT 讲解内容",
+                    "agent": "PPT讲解 Agent",
+                    "detail": "组织课堂展示叙事、幻灯片标题与精炼要点，完成后可下载为 PPTX",
+                    "state": "running",
+                })
+                state["presentation"] = yield from _stream_generated_text(
+                    state,
+                    "presentation",
+                    "生成用于课堂展示的 Markdown 演示文稿大纲。第一行使用一级标题作为总标题；随后安排 5-10 张幻灯片，"
+                    "每张使用二级标题和 3-6 条简洁要点。形成学习递进叙事，覆盖学习目标、核心概念、原理、案例、易错点与总结；"
+                    "每张只表达一个主要观点，不要输出制作说明、演讲时长或 Markdown 表格。",
+                    "",
+                )
+                state["agentTrace"] = _trace(state, "PPT讲解 Agent", "演示文稿内容与叙事结构生成完成")
+                yield _sse("status", {
+                    "message": "PPT 讲解内容生成完成",
+                    "agent": "PPT讲解 Agent",
+                    "detail": "演示文稿大纲已完成，可导出标准 PPTX 文件",
+                    "state": "done",
+                })
+
+            if "word" in request.resourceTypes:
+                yield _sse("status", {
+                    "message": "生成 Word 学习文档",
+                    "agent": "Word 文档 Agent",
+                    "detail": "组织摘要、正文层级、案例、易错点与复习建议，完成后可下载为 DOCX",
+                    "state": "running",
+                })
+                state["wordDocument"] = yield from _stream_generated_text(
+                    state,
+                    "wordDocument",
+                    "生成可直接排版为 Word 的完整 Markdown 学习文档。使用清晰的二级、三级标题与真实列表，"
+                    "覆盖摘要、学习目标、核心概念、原理说明、典型案例、易错点、练习建议和总结。内容应连贯、专业、适合打印阅读；"
+                    "不要输出制作过程、HTML 或虚构参考文献。",
+                    "",
+                )
+                state["agentTrace"] = _trace(state, "Word 文档 Agent", "Word 学习文档内容生成完成")
+                yield _sse("status", {
+                    "message": "Word 学习文档生成完成",
+                    "agent": "Word 文档 Agent",
+                    "detail": "文档正文已完成，可导出标准 DOCX 文件",
                     "state": "done",
                 })
 

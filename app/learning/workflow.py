@@ -11,9 +11,11 @@ from app.learning.agents import (
     mindmap_agent,
     path_agent,
     planner_agent,
+    presentation_agent,
     profile_agent,
     reading_agent,
     review_agent,
+    word_agent,
 )
 from app.learning.state import LearningState
 
@@ -24,6 +26,8 @@ NODES: list[tuple[str, Callable[[LearningState], dict[str, Any]]]] = [
     ("mindmap", mindmap_agent),
     ("exercise", exercise_agent),
     ("reading", reading_agent),
+    ("presentation", presentation_agent),
+    ("word", word_agent),
     ("code", code_agent),
     ("path", path_agent),
     ("review", review_agent),
@@ -65,6 +69,8 @@ def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
             "reading": "",
             "codeCase": "",
             "learningPath": "",
+            "presentation": "",
+            "wordDocument": "",
             "review": "",
             "sources": state.get("sources", []),
             "agentTrace": state.get("agentTrace", []),
@@ -79,6 +85,8 @@ def generate_learning_resources(payload: dict[str, Any]) -> dict[str, Any]:
         "reading": state.get("reading", ""),
         "codeCase": state.get("codeCase", ""),
         "learningPath": state.get("learningPath", ""),
+        "presentation": state.get("presentation", ""),
+        "wordDocument": state.get("wordDocument", ""),
         "review": state.get("review", ""),
         "sources": state.get("sources", []),
         "agentTrace": state.get("agentTrace", []),

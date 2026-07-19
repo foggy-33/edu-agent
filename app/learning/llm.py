@@ -180,9 +180,26 @@ def stream_llm(
                     if data == "[DONE]":
                         break
                     try:
-                        delta = json.loads(data)["choices"][0].get("delta", {})
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
-                        raise ValueError(f"大模型流式响应解析失败: {exc}") from exc
+                        event = json.loads(data)
+                    except json.JSONDecodeError:
+                        # Some compatible gateways emit heartbeat or textual closing packets.
+                        # They are transport metadata rather than model output.
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    error = event.get("error")
+                    if error:
+                        detail = error.get("message") if isinstance(error, dict) else str(error)
+                        raise ValueError(f"大模型流式调用失败: {detail}")
+                    choices = event.get("choices")
+                    # OpenAI-compatible gateways commonly send a final usage packet with
+                    # `choices: []`. It must not be parsed as a content chunk.
+                    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") or choice.get("message") or {}
+                    if not isinstance(delta, dict):
+                        continue
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning") or delta.get("thinking") or ""
                     content = delta.get("content") or ""
                     if isinstance(reasoning, list):

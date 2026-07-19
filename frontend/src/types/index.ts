@@ -142,7 +142,7 @@ export interface CoursePdfAnnotation {
   created_at: string
 }
 
-export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'path'
+export type CollaborativeResourceType = 'lecture' | 'mindmap' | 'exercise' | 'reading' | 'code' | 'path' | 'ppt' | 'word'
 
 export interface CollaborativeLearningRequest {
   user_id: string
@@ -195,6 +195,8 @@ export interface CollaborativeLearningResponse {
   reading: string
   codeCase: string
   learningPath: string
+  presentation: string
+  wordDocument: string
   review: string
   sources: Pick<UploadedResource, 'id' | 'name' | 'page_count'>[]
   agentTrace: AgentTraceItem[]

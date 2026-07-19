@@ -5,7 +5,7 @@ import {
   getConversationHistoryItem,
   saveConversationHistoryItem,
 } from '../api/conversationHistory'
-import { addMistake, listCategories, listResources, saveGeneratedResource } from '../api/client'
+import { addMistake, exportOfficeFile, listCategories, listResources, saveGeneratedResource } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
@@ -13,7 +13,7 @@ import MarkdownRenderer from './MarkdownRenderer.vue'
 import MermaidRenderer from './MermaidRenderer.vue'
 import sparkOfficialLogo from '../assets/spark-official.ico'
 
-type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'review'
+type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'presentation' | 'wordDocument' | 'review'
 type ProcessState = 'running' | 'done'
 type ResponseSpeed = 'fast' | 'balanced' | 'deep'
 
@@ -68,6 +68,8 @@ const resourceOptions: {
   { key: 'reading', resultKey: 'reading', label: '拓展阅读', description: '生成延伸知识和学习路径', icon: '○' },
   { key: 'code', resultKey: 'codeCase', label: '代码实操', description: '生成可运行代码案例与讲解', icon: '⟨⟩' },
   { key: 'path', resultKey: 'learningPath', label: '学习路线', description: '生成阶段划分和个性化学习路径', icon: '↗' },
+  { key: 'ppt', resultKey: 'presentation', label: 'PPT讲解', description: '生成可下载的演示文稿', icon: '▤' },
+  { key: 'word', resultKey: 'wordDocument', label: 'Word 文档', description: '生成可下载的学习文档', icon: '▥' },
 ]
 
 const speedOptions: Array<{ key: ResponseSpeed; label: string; description: string }> = [
@@ -119,6 +121,8 @@ const streamContent = ref<Record<ResultKey, string>>({
   reading: '',
   codeCase: '',
   learningPath: '',
+  presentation: '',
+  wordDocument: '',
   review: '',
 })
 const thinkingSteps = ref<string[]>([])
@@ -139,6 +143,8 @@ const emptyStreamContent = (): Record<ResultKey, string> => ({
   reading: '',
   codeCase: '',
   learningPath: '',
+  presentation: '',
+  wordDocument: '',
   review: '',
 })
 
@@ -211,6 +217,8 @@ const saveCategories = ref<Array<{ name: string; count: number }>>([])
 const savingResource = ref(false)
 const saveSuccess = ref(false)
 const saveError = ref('')
+const officeDownloading = ref<ResultKey | ''>('')
+const officeDownloadError = ref('')
 
 const resultTypeLabelMap: Record<string, { label: string; type: string }> = {
   lectureDoc: { label: '讲义', type: 'lecture' },
@@ -219,11 +227,50 @@ const resultTypeLabelMap: Record<string, { label: string; type: string }> = {
   reading: { label: '阅读材料', type: 'reading' },
   codeCase: { label: '代码案例', type: 'markdown' },
   learningPath: { label: '学习路径', type: 'path' },
+  presentation: { label: 'PPT讲解', type: 'markdown' },
+  wordDocument: { label: 'Word 文档', type: 'markdown' },
   review: { label: '复习总结', type: 'markdown' },
 }
 
 const activeTabLabel = computed(() => resultTypeLabelMap[activeTab.value]?.label || activeTab.value)
 const activeTabType = computed(() => resultTypeLabelMap[activeTab.value]?.type || 'markdown')
+
+async function downloadOffice(turn: ConversationTurn, key: ResultKey) {
+  if (key !== 'presentation' && key !== 'wordDocument') return
+  const content = contentForTurn(turn, key)
+  if (!content.trim()) {
+    officeDownloadError.value = '当前内容为空，无法生成文件'
+    return
+  }
+
+  officeDownloading.value = key
+  officeDownloadError.value = ''
+  const format = key === 'presentation' ? 'pptx' : 'docx'
+  const typeLabel = key === 'presentation' ? '演示文稿' : '学习文档'
+  const rawTitle = `${turn.question || 'AI 学习资料'}-${typeLabel}`
+  const safeTitle = rawTitle.replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 80) || 'AI 学习资料'
+
+  try {
+    const blob = await exportOfficeFile({
+      title: safeTitle,
+      subtitle: '智学 AI · 根据学习任务生成',
+      content,
+      format,
+    })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${safeTitle}.${format}`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (reason) {
+    officeDownloadError.value = reason instanceof Error ? reason.message : '文件生成失败，请稍后重试'
+  } finally {
+    officeDownloading.value = ''
+  }
+}
 
 async function openSaveDialog(turn: ConversationTurn) {
   saveTargetTurn.value = turn
@@ -538,6 +585,8 @@ function hydrateFromHistory(id: string | null | undefined) {
     reading: lastTurn.result.reading || '',
     codeCase: lastTurn.result.codeCase || '',
     learningPath: lastTurn.result.learningPath || '',
+    presentation: lastTurn.result.presentation || '',
+    wordDocument: lastTurn.result.wordDocument || '',
     review: lastTurn.result.review || '',
   }
   thinkingSteps.value = [...lastTurn.thinkingSteps]
@@ -558,6 +607,8 @@ function hydrateFromHistory(id: string | null | undefined) {
       reading: turn.result.reading || '',
       codeCase: turn.result.codeCase || '',
       learningPath: turn.result.learningPath || '',
+      presentation: turn.result.presentation || '',
+      wordDocument: turn.result.wordDocument || '',
       review: turn.result.review || '',
     },
     thinkingSteps: [...turn.thinkingSteps],
@@ -879,7 +930,10 @@ watch(prompt, resizePromptInput)
             <b v-for="source in uniqueSources(turn.result?.sources)" :key="source.id">{{ source.name }}</b>
           </div>
 
-          <div v-if="tabsForTurn(turn).length > 1" class="result-tabs">
+          <div
+            v-if="tabsForTurn(turn).length > 1 || (isActiveTurn(turn) && (activeTab === 'presentation' || activeTab === 'wordDocument'))"
+            class="result-tabs"
+          >
             <button
               v-for="tab in tabsForTurn(turn)"
               :key="tab.key"
@@ -887,6 +941,14 @@ watch(prompt, resizePromptInput)
               @click="activeTurnId = turn.id; activeTab = tab.key"
             >
               {{ tab.label }}
+            </button>
+            <button
+              v-if="turn.result && isActiveTurn(turn) && (activeTab === 'presentation' || activeTab === 'wordDocument')"
+              class="office-download-btn"
+              :disabled="Boolean(officeDownloading)"
+              @click="downloadOffice(turn, activeTab)"
+            >
+              {{ officeDownloading === activeTab ? '正在生成文件…' : activeTab === 'presentation' ? '下载 PPTX' : '下载 DOCX' }}
             </button>
             <button
               v-if="turn.result && isActiveTurn(turn)"
@@ -897,6 +959,7 @@ watch(prompt, resizePromptInput)
               💾 保存到资料库
             </button>
           </div>
+          <p v-if="isActiveTurn(turn) && officeDownloadError" class="office-download-error">{{ officeDownloadError }}</p>
 
           <div class="result-content">
             <template v-if="isActiveTurn(turn)">
@@ -1457,6 +1520,26 @@ button:disabled { cursor: default; opacity: .65; }
   background: #f5f3ff;
   color: #7c3aed;
 }
+
+.office-download-btn {
+  margin-left: auto;
+  border: 1px solid #ded9ff !important;
+  border-radius: 999px !important;
+  color: #5b45c6 !important;
+  background: linear-gradient(135deg, #f7f5ff, #eeebff) !important;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease !important;
+}
+
+.office-download-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #e9e4ff !important;
+  box-shadow: 0 8px 20px rgba(91, 69, 198, .14);
+}
+
+.office-download-btn:disabled { cursor: wait; opacity: .65; }
+.office-download-btn + .save-to-library-btn { margin-left: 4px; }
+.office-download-error { margin: -7px 0 14px; color: #b42318; font-size: 12px; }
 
 .save-modal-overlay {
   position: fixed;

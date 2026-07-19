@@ -40,9 +40,16 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     chapter: str
     weakness: str
     goal: str
-    resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "path"]]
+    resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "path", "ppt", "word"]]
     fileIds: list[str] = Field(default_factory=list)
     response_speed: Literal["fast", "balanced", "deep"] = "balanced"
+
+
+class OfficeExportRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=120)
+    subtitle: str = Field(default="AI 生成学习资料", max_length=180)
+    content: str = Field(..., min_length=1, max_length=120000)
+    format: Literal["pptx", "docx"]
 
 
 class CoursePdfAnnotationRequest(BaseModel):
