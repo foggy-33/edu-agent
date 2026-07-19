@@ -68,6 +68,11 @@ class ProfileStore:
 
     @staticmethod
     def _summary(profile: dict[str, Any]) -> dict[str, Any]:
+        weak_points = profile.get("llm_context", {}).get("weak_points")
+        if not weak_points:
+            weak_points = profile.get("dimensions", {}).get("易错点", {}).get("value", [])
+        if isinstance(weak_points, str):
+            weak_points = [weak_points]
         return {
             "course": profile.get("course", "未分类画像"),
             "version": profile.get("version", 0),
@@ -75,6 +80,7 @@ class ProfileStore:
             "updated_at": profile.get("updated_at"),
             "summary": profile.get("llm_context", {}).get("summary", ""),
             "radar_metrics": profile.get("radar_metrics", {}),
+            "weak_points": weak_points or [],
         }
 
     def _read(self, path: Path) -> dict[str, Any]:

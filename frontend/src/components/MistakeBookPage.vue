@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { loadUserProfile } from '../api/userProfile'
-import { listAllMistakes, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
+import { addMistake, generateLearningResources, getMistakeStats, getWeakTopics, listAllMistakes, listDynamicProfiles, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
+import { loadSiliconFlowConfig } from '../api/settings'
 import type { Question } from '../types'
 import type { MistakeRecord } from '../api/client'
 
@@ -26,6 +27,12 @@ const showCourseList = ref(true)
 const allMistakes = ref<MistakeRecord[]>([])
 const currentTab = ref<'unmastered' | 'mastered'>('unmastered')
 const selectedCourseName = ref('')
+const weaknessGroups = ref<Array<{ course: string; points: string[] }>>([])
+const selectedWeakCourse = ref('')
+const selectedWeakPoint = ref('')
+const generatingWeakPractice = ref(false)
+const weakPracticeError = ref('')
+const weakPracticeActive = ref(false)
 
 const filterCourse = ref<string>('')
 const filterMastered = ref<string>('all')
@@ -101,6 +108,88 @@ const courses = computed(() => {
   })
   return Array.from(set).filter(Boolean)
 })
+
+const activeWeakPoints = computed(() => weaknessGroups.value.find(item => item.course === selectedWeakCourse.value)?.points || [])
+
+async function loadWeaknessGroups() {
+  const user = loadUserProfile()
+  try {
+    const [{ profiles }, { stats }] = await Promise.all([
+      listDynamicProfiles(user.userId),
+      getMistakeStats(user.userId).catch(() => ({ stats: [] })),
+    ])
+    const coursesWithEvidence = [...new Set([
+      ...profiles.map(profile => profile.course),
+      ...stats.map(item => item.course_name),
+    ])]
+    const groups = await Promise.all(coursesWithEvidence.map(async course => {
+      const profilePoints = profiles.find(profile => profile.course === course)?.weak_points || []
+      const mistakeTopics = await getWeakTopics(user.userId, course).then(result => result.topics).catch(() => [])
+      const points = [...new Set([...profilePoints, ...mistakeTopics].map(point => point.trim()).filter(Boolean))]
+      return { course, points }
+    }))
+    weaknessGroups.value = groups.filter(group => group.course !== '未分类画像' && group.points.length)
+    if (!selectedWeakCourse.value && weaknessGroups.value.length) {
+      selectedWeakCourse.value = weaknessGroups.value[0].course
+      selectedWeakPoint.value = weaknessGroups.value[0].points[0] || ''
+    }
+  } catch {
+    weaknessGroups.value = []
+  }
+}
+
+function selectWeakCourse(course: string) {
+  selectedWeakCourse.value = course
+  selectedWeakPoint.value = weaknessGroups.value.find(item => item.course === course)?.points[0] || ''
+}
+
+async function generateWeakPointPractice() {
+  if (!selectedWeakCourse.value || !selectedWeakPoint.value) return
+  generatingWeakPractice.value = true
+  weakPracticeError.value = ''
+  try {
+    const user = loadUserProfile()
+    const config = loadSiliconFlowConfig()
+    const response = await generateLearningResources({
+      user_id: user.userId,
+      major: user.major || '未指定',
+      course: selectedWeakCourse.value,
+      chapter: selectedWeakPoint.value,
+      weakness: selectedWeakPoint.value,
+      goal: `针对“${selectedWeakPoint.value}”进行查漏补缺并掌握典型题型`,
+      resourceTypes: ['exercise'],
+      fileIds: [],
+      response_speed: 'balanced',
+      ...config,
+    })
+    if (!response.exerciseItems?.length) throw new Error('模型没有返回可作答题目')
+    mistakes.value = response.exerciseItems.map((item, index) => ({
+      id: `weak-${Date.now()}-${index}`,
+      type: item.type,
+      chapter: selectedWeakPoint.value,
+      question: item.question,
+      options: item.options,
+      answer: item.answer,
+      analysis: item.explanation,
+      level: item.level,
+    }))
+    selectedCourseName.value = selectedWeakCourse.value
+    weakPracticeActive.value = true
+    showCourseList.value = false
+    showCompletion.value = false
+    currentIndex.value = 0
+    totalAnswered.value = 0
+    correctAnswered.value = 0
+    masteredCount.value = 0
+    answerRecords.value = []
+    selectedAnswers.value = {}
+    showResult.value = false
+  } catch (reason) {
+    weakPracticeError.value = reason instanceof Error ? reason.message : '薄弱点专项题生成失败'
+  } finally {
+    generatingWeakPractice.value = false
+  }
+}
 
 async function loadMistakesList() {
   loading.value = true
@@ -178,6 +267,7 @@ function confirmPractice() {
   }
   
   showPracticeSettings.value = false
+  weakPracticeActive.value = false
   showCourseList.value = false
   showCompletion.value = false
   totalAnswered.value = 0
@@ -205,6 +295,7 @@ function shuffleArray<T>(array: T[]): T[] {
 
 function backToCourseList() {
   showCourseList.value = true
+  weakPracticeActive.value = false
   selectedCourseName.value = ''
   mistakes.value = []
   loadMistakesList()
@@ -265,9 +356,28 @@ async function submitAnswer() {
     isCorrect: isCorrect
   })
 
+  if (weakPracticeActive.value && !isCorrect) {
+    const user = loadUserProfile()
+    await addMistake({
+      user_id: user.userId,
+      course: selectedWeakCourse.value,
+      question_id: String(q.id),
+      question: q.question,
+      type: q.type,
+      chapter: selectedWeakPoint.value,
+      level: q.level || '中等',
+      options: q.options || null,
+      answer: userAnswer,
+      correct_answer: String(q.answer ?? ''),
+      analysis: q.analysis || '',
+      topic: selectedWeakPoint.value,
+    }).catch(() => undefined)
+  }
+
   if (isCorrect) {
     correctAnswered.value++
     masteredCount.value++
+    if (weakPracticeActive.value) return
     const userProfile = loadUserProfile()
     const questionId = q.question_id !== undefined ? String(q.question_id) : String(q.id)
     if (props.course.name === '全部错题') {
@@ -307,6 +417,7 @@ function prevQuestion() {
 
 function resetAndContinue() {
   showCompletion.value = false
+  weakPracticeActive.value = false
   totalAnswered.value = 0
   correctAnswered.value = 0
   masteredCount.value = 0
@@ -362,6 +473,7 @@ function getOptionClass(optionLabel: string) {
 }
 
 onMounted(() => {
+  loadWeaknessGroups()
   if (props.course.name === '全部错题') {
     loadMistakesList()
   } else {
@@ -376,7 +488,7 @@ onMounted(() => {
       <header class="quiz-header">
         <div>
           <h1>{{ showCourseList ? '错题本' : (selectedCourseName || course.name) + ' - 错题练习' }}</h1>
-          <p>{{ showCourseList ? '选择课程开始错题练习' : (currentTab === 'unmastered' ? '待复习' : '已掌握') + '：' + mistakes.length + ' 题' }}</p>
+          <p>{{ showCourseList ? '选择课程开始错题练习' : weakPracticeActive ? `薄弱点专项：${selectedWeakPoint} · ${mistakes.length} 题` : (currentTab === 'unmastered' ? '待复习' : '已掌握') + '：' + mistakes.length + ' 题' }}</p>
         </div>
         <div class="quiz-header-actions">
           <button v-if="!showCourseList" type="button" title="返回课程列表" @click="backToCourseList">↺</button>
@@ -386,6 +498,45 @@ onMounted(() => {
       </header>
 
       <template v-if="showCourseList">
+        <section class="weak-practice-panel">
+          <div class="weak-practice-head">
+            <div>
+              <span>薄弱点练习</span>
+              <h2>按学科薄弱点出题</h2>
+              <p>结合学科画像与错题记录，生成一组针对性练习。</p>
+            </div>
+            <button
+              type="button"
+              class="primary-button"
+              :disabled="!selectedWeakPoint || generatingWeakPractice"
+              @click="generateWeakPointPractice"
+            >{{ generatingWeakPractice ? '正在生成…' : '生成专项练习' }}</button>
+          </div>
+
+          <div v-if="weaknessGroups.length" class="weakness-picker">
+            <div class="weak-course-row">
+              <button
+                v-for="group in weaknessGroups"
+                :key="group.course"
+                type="button"
+                :class="{ active: selectedWeakCourse === group.course }"
+                @click="selectWeakCourse(group.course)"
+              >{{ group.course }}</button>
+            </div>
+            <div class="weak-point-row">
+              <button
+                v-for="point in activeWeakPoints"
+                :key="point"
+                type="button"
+                :class="{ active: selectedWeakPoint === point }"
+                @click="selectedWeakPoint = point"
+              >{{ point }}</button>
+            </div>
+          </div>
+          <p v-else class="weakness-empty">完成学科画像对话或积累错题后，这里会自动出现可选薄弱点。</p>
+          <p v-if="weakPracticeError" class="weak-practice-error">{{ weakPracticeError }}</p>
+        </section>
+
         <div v-if="loading" class="quiz-loading">
           <div></div>
           <strong>加载错题列表中...</strong>
@@ -719,6 +870,21 @@ onMounted(() => {
   background: #fff;
   box-shadow: 0 18px 48px rgba(15, 23, 42, .06);
 }
+
+.weak-practice-panel { padding: 20px; border: 1px solid #e2e2e2; border-radius: 20px; background: linear-gradient(135deg, #f7f7f7, #fff 58%); }
+.weak-practice-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.weak-practice-head span { color: #888; font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+.weak-practice-head h2 { margin: 4px 0; color: #202123; font-size: 20px; }
+.weak-practice-head p { margin: 0; color: #858585; font-size: 12px; }
+.weak-practice-head .primary-button { flex: 0 0 auto; min-width: 132px; }
+.weakness-picker { display: grid; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e6e6e6; }
+.weak-course-row, .weak-point-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.weak-course-row button, .weak-point-row button { padding: 7px 12px; border: 1px solid #dedede; border-radius: 999px; color: #555; background: #fff; font-size: 11px; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
+.weak-course-row button:hover, .weak-point-row button:hover { border-color: #888; transform: translateY(-1px); }
+.weak-course-row button.active { color: #fff; border-color: #202123; background: #202123; }
+.weak-point-row button.active { color: #202123; border-color: #202123; background: #ededed; font-weight: 700; }
+.weakness-empty { margin: 16px 0 0; color: #999; font-size: 11px; }
+.weak-practice-error { margin: 12px 0 0; padding: 9px 11px; border-radius: 10px; color: #9f3030; background: #fff0f0; font-size: 11px; }
 
 .quiz-header,
 .quiz-progress,
@@ -1551,5 +1717,7 @@ button {
   .quiz-card { width: 100%; }
   .question-stack > p { font-size: 16px; }
   .exercise-option { min-height: 58px; padding: 15px 16px; font-size: 15px; }
+  .weak-practice-head { align-items: stretch; flex-direction: column; }
+  .weak-practice-head .primary-button { width: 100%; }
 }
 </style>

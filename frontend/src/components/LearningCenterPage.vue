@@ -63,6 +63,13 @@ const radarMetrics = computed<[string, number][]>(() => {
 const radarSummaries = computed(() => portrait.value?.radar_summaries || Object.fromEntries(
   radarMetrics.value.map(([name]) => [name, '继续完成画像对话后，这里会形成针对该维度的学习总结。'])
 ))
+const subjectWeakPoints = computed(() => {
+  const points = portrait.value?.llm_context.weak_points
+    || activeSubject.value?.weak_points
+    || courseStats.value?.weak_topics
+    || []
+  return [...new Set(points.map((point: string) => point.trim()).filter(Boolean))].slice(0, 8)
+})
 const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => {
   const total = radarMetrics.value.length
   const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
@@ -521,6 +528,17 @@ onMounted(async () => {
             {{ item.course }}
           </button>
           <button v-if="!subjectProfiles.length" type="button" class="active">{{ selectedCourse }}</button>
+        </div>
+
+        <div class="subject-weaknesses">
+          <div>
+            <strong>当前薄弱点</strong>
+            <small>画像访谈与错题记录综合识别</small>
+          </div>
+          <div v-if="subjectWeakPoints.length" class="weakness-tags">
+            <span v-for="point in subjectWeakPoints" :key="point">{{ point }}</span>
+          </div>
+          <p v-else>暂未识别明确薄弱点，完成画像对话或课程练习后会自动更新。</p>
         </div>
 
         <div class="portrait-radar-wrap">
@@ -1002,6 +1020,14 @@ onMounted(async () => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.subject-weaknesses { margin: 4px 0 12px; padding: 14px 16px; border: 1px solid #e5e5e5; border-radius: 14px; background: #fafafa; }
+.subject-weaknesses > div:first-child { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.subject-weaknesses strong { color: #202123; font-size: 13px; }
+.subject-weaknesses small, .subject-weaknesses p { color: #929292; font-size: 10px; }
+.subject-weaknesses p { margin: 9px 0 0; }
+.weakness-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.weakness-tags span { padding: 6px 10px; border: 1px solid #dddddd; border-radius: 999px; color: #404040; background: #fff; font-size: 11px; }
 
 .portrait-radar-wrap {
   display: flex;
