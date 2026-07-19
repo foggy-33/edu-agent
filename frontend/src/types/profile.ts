@@ -50,7 +50,7 @@ export interface SubjectProfileSummary {
   updated_at: string | null
   summary: string
   radar_metrics: Record<string, number>
-  weak_points: string[]
+  weak_points?: string[]
 }
 
 export interface ProfileChatResponse {

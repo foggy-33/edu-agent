@@ -63,12 +63,17 @@ const radarMetrics = computed<[string, number][]>(() => {
 const radarSummaries = computed(() => portrait.value?.radar_summaries || Object.fromEntries(
   radarMetrics.value.map(([name]) => [name, '继续完成画像对话后，这里会形成针对该维度的学习总结。'])
 ))
-const subjectWeakPoints = computed(() => {
-  const points = portrait.value?.llm_context.weak_points
+const subjectWeakPoints = computed<string[]>(() => {
+  const points: unknown = portrait.value?.llm_context.weak_points
     || activeSubject.value?.weak_points
     || courseStats.value?.weak_topics
     || []
-  return [...new Set(points.map((point: string) => point.trim()).filter(Boolean))].slice(0, 8)
+  if (!Array.isArray(points)) return []
+  const normalized = points
+    .filter((point): point is string => typeof point === 'string')
+    .map(point => point.trim())
+    .filter(Boolean)
+  return [...new Set<string>(normalized)].slice(0, 8)
 })
 const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => {
   const total = radarMetrics.value.length
