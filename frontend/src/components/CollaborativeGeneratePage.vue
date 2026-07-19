@@ -124,6 +124,9 @@ const userProfile = ref(loadUserProfile())
 const resources = ref<UploadedResource[]>([])
 const fileSearch = ref('')
 const promptInput = ref<HTMLTextAreaElement | null>(null)
+const addButton = ref<HTMLButtonElement | null>(null)
+const toolMenuPlacement = ref<'up' | 'down'>('up')
+const toolMenuMaxHeight = ref(420)
 const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedType = ref<CollaborativeResourceType | 'chat'>('chat')
 const selectedFileIds = ref<string[]>([])
@@ -445,8 +448,25 @@ function toggleToolMenu() {
   if (menuOpen.value) {
     speedMenuOpen.value = false
     modelMenuOpen.value = false
+    void nextTick(updateToolMenuLayout)
   }
 }
+
+function updateToolMenuLayout() {
+  if (!menuOpen.value || !addButton.value) return
+  const rect = addButton.value.getBoundingClientRect()
+  const viewportGap = 14
+  const menuGap = 12
+  const availableAbove = Math.max(0, rect.top - viewportGap - menuGap)
+  const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportGap - menuGap)
+  const openDown = availableAbove < 340 && availableBelow > availableAbove
+  toolMenuPlacement.value = openDown ? 'down' : 'up'
+  toolMenuMaxHeight.value = Math.max(180, Math.min(520, openDown ? availableBelow : availableAbove))
+}
+
+const toolMenuStyle = computed(() => ({
+  '--tool-menu-max-height': `${toolMenuMaxHeight.value}px`,
+}))
 
 function toggleFile(fileId: string) {
   selectedFileIds.value = selectedFileIds.value.includes(fileId)
@@ -886,11 +906,13 @@ onMounted(() => {
   loadUploadedResources()
   hydrateFromHistory(props.historyId)
   resizePromptInput()
+  window.addEventListener('resize', updateToolMenuLayout)
 })
 
 onBeforeUnmount(() => {
   stopProcessClock()
   if (processTimer) clearTimeout(processTimer)
+  window.removeEventListener('resize', updateToolMenuLayout)
 })
 
 watch(() => props.historyId, hydrateFromHistory)
@@ -1144,6 +1166,7 @@ watch(prompt, resizePromptInput)
         <div class="composer-actions">
           <div class="tool-picker">
             <button
+              ref="addButton"
               class="add-button"
               :class="{ open: menuOpen }"
               type="button"
@@ -1158,7 +1181,11 @@ watch(prompt, resizePromptInput)
             </button>
 
             <Transition name="tool-pop">
-              <div v-if="menuOpen" class="tool-menu">
+              <div
+                v-if="menuOpen"
+                :class="['tool-menu', { 'tool-menu-down': toolMenuPlacement === 'down' }]"
+                :style="toolMenuStyle"
+              >
                 <div class="tool-menu-head">
                   <div>
                     <strong>选择功能</strong>
@@ -1441,7 +1468,8 @@ watch(prompt, resizePromptInput)
 .add-button:hover { background: #e6e6e6; }
 .add-button.open { color: #fff; background: #202123; box-shadow: 0 7px 20px rgba(0, 0, 0, .2); }
 .add-button.open svg { transform: rotate(45deg); }
-.tool-menu { position: absolute; left: 0; bottom: 48px; width: min(720px, calc(100vw - 40px)); max-height: min(520px, 68vh); padding: 16px; overflow: hidden; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); will-change: transform, opacity, filter; }
+.tool-menu { position: absolute; left: 0; bottom: 48px; display: flex; flex-direction: column; width: min(720px, calc(100vw - 40px)); max-height: min(520px, var(--tool-menu-max-height, 420px)); padding: 16px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); scrollbar-width: thin; will-change: transform, opacity, filter; }
+.tool-menu-down { top: 48px; bottom: auto; transform-origin: left top; }
 .tool-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .tool-menu-head > div { display: grid; gap: 2px; }
 .tool-menu-head strong { color: #222; font-size: 15px; }
@@ -1455,7 +1483,7 @@ watch(prompt, resizePromptInput)
 .file-search svg { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: #888; stroke-width: 1.8; stroke-linecap: round; }
 .file-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: #333; background: transparent; font-size: 11px; }
 .file-search input::-webkit-search-cancel-button { cursor: pointer; }
-.file-options { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; max-height: 172px; padding-right: 3px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.file-options { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; flex: 1 1 150px; min-height: 68px; max-height: 150px; padding-right: 3px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .file-options button > span:nth-child(2) { min-width: 0; }
 .file-options button b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .no-files { display: grid; place-items: center; min-height: 76px; color: #969696; font-size: 11px; }
@@ -1558,13 +1586,13 @@ button:disabled { cursor: default; opacity: .65; }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .thinking-trace { width: min(320px, 88vw); }
-  .tool-menu { width: calc(100vw - 32px); max-height: min(520px, 72vh); padding: 12px; }
+  .tool-menu { width: calc(100vw - 32px); max-height: min(520px, var(--tool-menu-max-height, 72vh)); padding: 12px; }
   .tool-menu-head span { display: none; }
   .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tool-menu .capability-option { min-width: 0; height: 52px; }
   .file-tools-head { align-items: stretch; flex-direction: column; gap: 8px; }
   .file-search { width: 100%; }
-  .file-options { grid-template-columns: 1fr; max-height: 154px; }
+  .file-options { grid-template-columns: 1fr; max-height: 138px; }
   .model-button { min-width: 62px; padding: 0 9px; font-size: 13px; }
   .model-menu { right: -48px; }
   .combined-menu { right: 0; }
