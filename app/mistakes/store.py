@@ -100,7 +100,8 @@ class MistakeStore:
             try:
                 mistakes = json.loads(course_file.read_text(encoding="utf-8"))
                 for m in mistakes:
-                    if m.get("mastered") == mastered:
+                    # 兼容旧错题记录：缺少 mastered 字段时应视为“未掌握”。
+                    if bool(m.get("mastered", False)) == mastered:
                         m["course_name"] = course_file.stem
                         all_mistakes.append(m)
             except:

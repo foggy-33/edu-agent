@@ -344,3 +344,13 @@ export async function markMistakeMasteredAny(userId: string, questionId: string)
 export async function getWeakTopics(userId: string, course: string): Promise<{ topics: string[] }> {
   return httpRequest<{ topics: string[] }>(`${API_BASE}/mistakes/weak-topics?user_id=${encodeURIComponent(userId)}&course=${encodeURIComponent(course)}`)
 }
+
+export async function analyzeMistakeWeakTopics(payload: SiliconFlowConfig & {
+  user_id: string
+  course?: string
+}): Promise<{ courses: Array<{ course: string; points: string[] }>; provider: string }> {
+  return httpRequest(`${API_BASE}/mistakes/analyze-weak-topics`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}

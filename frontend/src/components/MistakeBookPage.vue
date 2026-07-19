@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { loadUserProfile } from '../api/userProfile'
-import { addMistake, generateLearningResources, getMistakeStats, getWeakTopics, listAllMistakes, listDynamicProfiles, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
+import { addMistake, analyzeMistakeWeakTopics, generateLearningResources, listAllMistakes, listMistakes, markMistakeMastered, markMistakeMasteredAny } from '../api/client'
 import { loadSiliconFlowConfig } from '../api/settings'
 import type { Question } from '../types'
 import type { MistakeRecord } from '../api/client'
@@ -33,6 +33,8 @@ const selectedWeakPoint = ref('')
 const generatingWeakPractice = ref(false)
 const weakPracticeError = ref('')
 const weakPracticeActive = ref(false)
+const weaknessAnalyzing = ref(false)
+const weaknessAnalysisError = ref('')
 
 const filterCourse = ref<string>('')
 const filterMastered = ref<string>('all')
@@ -113,28 +115,29 @@ const activeWeakPoints = computed(() => weaknessGroups.value.find(item => item.c
 
 async function loadWeaknessGroups() {
   const user = loadUserProfile()
+  weaknessAnalyzing.value = true
+  weaknessAnalysisError.value = ''
   try {
-    const [{ profiles }, { stats }] = await Promise.all([
-      listDynamicProfiles(user.userId),
-      getMistakeStats(user.userId).catch(() => ({ stats: [] })),
-    ])
-    const coursesWithEvidence = [...new Set([
-      ...profiles.map(profile => profile.course),
-      ...stats.map(item => item.course_name),
-    ])]
-    const groups = await Promise.all(coursesWithEvidence.map(async course => {
-      const profilePoints = profiles.find(profile => profile.course === course)?.weak_points || []
-      const mistakeTopics = await getWeakTopics(user.userId, course).then(result => result.topics).catch(() => [])
-      const points = [...new Set([...profilePoints, ...mistakeTopics].map(point => point.trim()).filter(Boolean))]
-      return { course, points }
-    }))
-    weaknessGroups.value = groups.filter(group => group.course !== '未分类画像' && group.points.length)
-    if (!selectedWeakCourse.value && weaknessGroups.value.length) {
+    const result = await analyzeMistakeWeakTopics({
+      user_id: user.userId,
+      course: '',
+      ...loadSiliconFlowConfig(),
+    })
+    weaknessGroups.value = result.courses.filter(group => group.course !== '未分类画像' && group.points.length)
+    if (weaknessGroups.value.length && !weaknessGroups.value.some(group => group.course === selectedWeakCourse.value)) {
       selectedWeakCourse.value = weaknessGroups.value[0].course
       selectedWeakPoint.value = weaknessGroups.value[0].points[0] || ''
+    } else if (!weaknessGroups.value.length) {
+      selectedWeakCourse.value = ''
+      selectedWeakPoint.value = ''
     }
-  } catch {
+  } catch (reason) {
     weaknessGroups.value = []
+    selectedWeakCourse.value = ''
+    selectedWeakPoint.value = ''
+    weaknessAnalysisError.value = reason instanceof Error ? reason.message : '薄弱点分析失败'
+  } finally {
+    weaknessAnalyzing.value = false
   }
 }
 
@@ -503,7 +506,7 @@ onMounted(() => {
             <div>
               <span>薄弱点练习</span>
               <h2>按学科薄弱点出题</h2>
-              <p>结合学科画像与错题记录，生成一组针对性练习。</p>
+              <p>AI 分析错题本中的错误答案与解析，生成针对性练习。</p>
             </div>
             <button
               type="button"
@@ -521,7 +524,8 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-if="weaknessGroups.length" class="weakness-picker">
+          <div v-if="weaknessAnalyzing" class="weakness-analysis-state"><i></i><span>AI 正在分析错题中的知识薄弱点…</span></div>
+          <div v-else-if="weaknessGroups.length" class="weakness-picker">
             <div class="weak-course-row">
               <button
                 v-for="group in weaknessGroups"
@@ -541,7 +545,10 @@ onMounted(() => {
               >{{ point }}</button>
             </div>
           </div>
-          <p v-else class="weakness-empty">完成学科画像对话或积累错题后，这里会自动出现可选薄弱点。</p>
+          <div v-else class="weakness-empty">
+            <span>{{ weaknessAnalysisError || '当前没有未掌握错题，暂时无法生成薄弱点练习。' }}</span>
+            <button type="button" :disabled="weaknessAnalyzing" @click="loadWeaknessGroups">重新分析</button>
+          </div>
           <p v-if="weakPracticeError" class="weak-practice-error">{{ weakPracticeError }}</p>
         </section>
 
@@ -894,7 +901,11 @@ onMounted(() => {
 .weak-course-row button:hover, .weak-point-row button:hover { color: #5146cf; border-color: #9f94f2; background: #f8f7ff; transform: translateY(-1px); }
 .weak-course-row button.active { color: #fff; border-color: #5146cf; background: #5146cf; box-shadow: 0 6px 16px rgba(81,70,207,.2); }
 .weak-point-row button.active { color: #433aa8; border-color: #9f94f2; background: #efedff; font-weight: 700; box-shadow: 0 5px 14px rgba(81,70,207,.1); }
-.weakness-empty { margin: 16px 0 0; color: #999; font-size: 11px; }
+.weakness-empty { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 16px 0 0; color: #888; font-size: 11px; }
+.weakness-empty button { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #d9d3ff; border-radius: 999px; color: #5146cf; background: #fff; font-size: 10px; }
+.weakness-empty button:hover:not(:disabled) { border-color: #9f94f2; background: #f8f7ff; }
+.weakness-analysis-state { display: flex; align-items: center; gap: 9px; margin-top: 16px; color: #6d5de7; font-size: 11px; }
+.weakness-analysis-state i { width: 8px; height: 8px; border-radius: 50%; background: #6d5de7; animation: weaknessPulse 1.25s ease-out infinite; }
 .weak-practice-error { margin: 12px 0 0; padding: 9px 11px; border-radius: 10px; color: #9f3030; background: #fff0f0; font-size: 11px; }
 .weak-generation-flow { display: flex; align-items: center; gap: 13px; margin-top: 16px; padding: 13px 15px; border: 1px solid #ddd8ff; border-radius: 15px; background: rgba(255,255,255,.78); animation: generationFlowIn .32s cubic-bezier(.16,1,.3,1) both; }
 .weak-generation-flow > div:last-child { min-width: 0; flex: 1; }
@@ -1752,12 +1763,16 @@ button {
   0%, 100% { color: #aaa; opacity: .55; }
   45%, 65% { color: #5146cf; opacity: 1; }
 }
+@keyframes weaknessPulse {
+  70% { box-shadow: 0 0 0 7px rgba(109,93,231,0); }
+  100% { box-shadow: 0 0 0 0 rgba(109,93,231,0); }
+}
 @keyframes optionIn {
   from { opacity: 0; transform: translateY(7px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gemini-orb, .weak-generation-flow, .weak-generation-flow p span, .exercise-option, .quiz-loading div { animation: none; }
+  .gemini-orb, .weak-generation-flow, .weak-generation-flow p span, .weakness-analysis-state i, .exercise-option, .quiz-loading div { animation: none; }
 }
 
 @media (max-width: 760px) {

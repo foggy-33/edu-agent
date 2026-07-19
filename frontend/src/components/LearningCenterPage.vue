@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, nextTick } from 'vue'
-import { getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz, getLearningStats } from '../api/client'
+import { analyzeMistakeWeakTopics, getDynamicProfile, listDynamicProfiles, smartEvaluate, startQuiz, answerQuiz, finishQuiz, getLearningStats } from '../api/client'
+import { loadSiliconFlowConfig } from '../api/settings'
 import { loadUserProfile } from '../api/userProfile'
 import type { DynamicProfile, SubjectProfileSummary } from '../types/profile'
 import mermaid from 'mermaid'
@@ -44,6 +45,8 @@ const selectedCourse = ref('数据库系统')
 const portrait = ref<DynamicProfile | null>(null)
 const overallStats = ref<any>(null)
 const courseStats = ref<any>(null)
+const aiWeakPoints = ref<string[]>([])
+const weaknessAnalyzing = ref(false)
 
 const initials = computed(() => userProfile.value.name.trim().slice(0, 1).toUpperCase() || 'U')
 const activeSubject = computed(() => subjectProfiles.value.find(item => item.course === selectedCourse.value))
@@ -64,10 +67,7 @@ const radarSummaries = computed(() => portrait.value?.radar_summaries || Object.
   radarMetrics.value.map(([name]) => [name, '继续完成画像对话后，这里会形成针对该维度的学习总结。'])
 ))
 const subjectWeakPoints = computed<string[]>(() => {
-  const points: unknown = portrait.value?.llm_context.weak_points
-    || activeSubject.value?.weak_points
-    || courseStats.value?.weak_topics
-    || []
+  const points: unknown = aiWeakPoints.value
   if (!Array.isArray(points)) return []
   const normalized = points
     .filter((point): point is string => typeof point === 'string')
@@ -75,6 +75,23 @@ const subjectWeakPoints = computed<string[]>(() => {
     .filter(Boolean)
   return [...new Set<string>(normalized)].slice(0, 8)
 })
+
+async function loadAiWeakPoints(course: string) {
+  weaknessAnalyzing.value = true
+  aiWeakPoints.value = []
+  try {
+    const result = await analyzeMistakeWeakTopics({
+      user_id: userProfile.value.userId,
+      course,
+      ...loadSiliconFlowConfig(),
+    })
+    aiWeakPoints.value = result.courses.find(group => group.course === course)?.points || []
+  } catch {
+    aiWeakPoints.value = []
+  } finally {
+    weaknessAnalyzing.value = false
+  }
+}
 const radarPoints = computed(() => radarMetrics.value.map(([, value], index) => {
   const total = radarMetrics.value.length
   const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total
@@ -116,9 +133,11 @@ const evalCourse = ref('数据库系统')
 const evalMode = ref<'smart' | 'quiz'>('smart')
 const evalLoading = ref(false)
 const evalResult = ref<any>(null)
+const evalError = ref('')
 
 const evalQuizQuestions = ref<any[]>([])
 const evalQuizCurrentIndex = ref(0)
+const evalQuizTotal = ref(0)
 const evalQuizAnswers = ref<Record<string, string>>({})
 const evalQuizFinished = ref(false)
 
@@ -159,30 +178,12 @@ const evaluationStats = computed(() => {
   }
 })
 
-const mockSmartResult = {
-  user_id: 'demo_user_001',
-  course: '数据库系统',
-  profile_summary: {
-    knowledge_level: '中级',
-    learning_style: '视觉型',
-    learning_goal: '考试准备',
-  },
-  score_summary: { total: 4, correct: 75, wrong: 25, accuracy: 75 },
-  weak_points: ['函数依赖', '范式判断'],
-  completed_topics: ['关系模型', 'SQL基础'],
-  in_progress_topics: ['事务', '索引'],
-  analysis: '基于您的学习画像分析：\n- 您的知识水平目前处于中级阶段\n- 学习风格为视觉型，建议多使用图表和思维导图\n- 已掌握的知识点：关系模型、SQL基础\n- 需要加强的知识点：函数依赖、范式判断\n\n综合评估：您的整体表现良好，建议重点复习薄弱环节。',
-  next_steps: [
-    { title: '重点复习：函数依赖、范式判断', duration: '45分钟', type: 'review' },
-    { title: '完成相关章节的练习题', duration: '30分钟', type: 'practice' },
-    { title: '观看教学视频加深理解', duration: '20分钟', type: 'video' },
-    { title: '进行一次模拟测试检验学习效果', duration: '60分钟', type: 'test' },
-  ],
-}
-
 async function handleSmartEvaluate() {
   evalLoading.value = true
   evalResult.value = null
+  evalError.value = ''
+  evalQuizQuestions.value = []
+  evalQuizFinished.value = false
 
   try {
     const response = await smartEvaluate({
@@ -190,8 +191,8 @@ async function handleSmartEvaluate() {
       course: evalCourse.value,
     })
     evalResult.value = response
-  } catch {
-    evalResult.value = mockSmartResult
+  } catch (reason) {
+    evalError.value = reason instanceof Error ? reason.message : '智能评估失败，请稍后重试'
   } finally {
     evalLoading.value = false
   }
@@ -204,16 +205,21 @@ async function handleStartQuiz() {
   evalQuizAnswers.value = {}
   evalQuizFinished.value = false
   evalResult.value = null
+  evalError.value = ''
+  evalQuizTotal.value = 0
 
   try {
     const response = await startQuiz({
       user_id: userProfile.value.userId,
       course: evalCourse.value,
     })
+    if (!response.question) throw new Error('当前课程没有可用测试题')
     evalQuizQuestions.value = [response.question]
+    evalQuizTotal.value = response.total_questions || 1
     evalQuizCurrentIndex.value = response.current_index
-  } catch {
+  } catch (reason) {
     evalQuizQuestions.value = []
+    evalError.value = reason instanceof Error ? reason.message : '测试题加载失败'
   } finally {
     evalLoading.value = false
   }
@@ -224,6 +230,7 @@ async function handleQuizAnswer() {
   if (!currentQuestion) return
 
   evalLoading.value = true
+  evalError.value = ''
 
   try {
     const response = await answerQuiz({
@@ -240,7 +247,8 @@ async function handleQuizAnswer() {
       evalQuizFinished.value = true
       await handleFinishQuiz()
     }
-  } catch {
+  } catch (reason) {
+    evalError.value = reason instanceof Error ? reason.message : '答案提交失败'
   } finally {
     evalLoading.value = false
   }
@@ -258,7 +266,8 @@ async function handleFinishQuiz() {
 
     await loadCourseStats(evalCourse.value)
     await loadOverallStats()
-  } catch {
+  } catch (reason) {
+    evalError.value = reason instanceof Error ? reason.message : '评估结果生成失败'
   } finally {
     evalLoading.value = false
   }
@@ -272,6 +281,7 @@ async function loadPortrait(course = selectedCourse.value) {
     const result = await getDynamicProfile(userProfile.value.userId, course)
     portrait.value = result.profile
     await loadCourseStats(course)
+    void loadAiWeakPoints(course)
   } catch (err) {
     portrait.value = null
     profileError.value = err instanceof Error ? err.message : '画像加载失败'
@@ -476,6 +486,17 @@ function closeLearningModal() {
   showLearningModal.value = false
 }
 
+function selectEvalMode(mode: 'smart' | 'quiz') {
+  evalMode.value = mode
+  evalResult.value = null
+  evalError.value = ''
+  evalQuizQuestions.value = []
+  evalQuizCurrentIndex.value = 0
+  evalQuizTotal.value = 0
+  evalQuizAnswers.value = {}
+  evalQuizFinished.value = false
+}
+
 onMounted(async () => {
   await loadProfileOverview()
   await loadRecommendations()
@@ -538,12 +559,13 @@ onMounted(async () => {
         <div class="subject-weaknesses">
           <div>
             <strong>当前薄弱点</strong>
-            <small>画像访谈与错题记录综合识别</small>
+            <small>AI 根据错题本自动诊断</small>
           </div>
-          <div v-if="subjectWeakPoints.length" class="weakness-tags">
+          <p v-if="weaknessAnalyzing" class="weakness-analyzing"><i></i>正在分析错题、错误答案与解析…</p>
+          <div v-else-if="subjectWeakPoints.length" class="weakness-tags">
             <span v-for="point in subjectWeakPoints" :key="point">{{ point }}</span>
           </div>
-          <p v-else>暂未识别明确薄弱点，完成画像对话或课程练习后会自动更新。</p>
+          <p v-else>错题本中暂无可分析的错题，答错练习题后会自动形成薄弱点。</p>
         </div>
 
         <div class="portrait-radar-wrap">
@@ -658,12 +680,12 @@ onMounted(async () => {
           <button
             type="button"
             :class="{ active: evalMode === 'smart' }"
-            @click="evalMode = 'smart'"
+            @click="selectEvalMode('smart')"
           >智能评估</button>
           <button
             type="button"
             :class="{ active: evalMode === 'quiz' }"
-            @click="evalMode = 'quiz'"
+            @click="selectEvalMode('quiz')"
           >快速测试</button>
         </div>
       </header>
@@ -671,7 +693,7 @@ onMounted(async () => {
       <div class="evaluate-body">
         <div class="evaluate-form">
           <label>选择课程</label>
-          <select v-model="evalCourse">
+          <select v-model="evalCourse" @change="selectEvalMode(evalMode)">
             <option value="数据库系统">数据库系统</option>
             <option value="操作系统">操作系统</option>
             <option value="数据结构">数据结构</option>
@@ -687,10 +709,12 @@ onMounted(async () => {
           </button>
         </div>
 
+        <p v-if="evalError" class="evaluate-error">{{ evalError }}</p>
+
         <div v-if="evalResult" class="evaluate-result">
           <div class="result-header">
             <h3>评估结果</h3>
-            <span class="result-score">{{ evalResult.score_summary?.accuracy || evalResult.accuracy || 0 }}分</span>
+            <span class="result-score">{{ evalResult.score_summary?.accuracy == null ? '待评估' : `${evalResult.score_summary.accuracy}分` }}</span>
           </div>
           <p class="result-analysis">{{ evalResult.analysis }}</p>
           <div v-if="evalResult.weak_points?.length" class="weak-points">
@@ -715,28 +739,28 @@ onMounted(async () => {
 
         <div v-if="evalQuizQuestions.length && !evalQuizFinished" class="quiz-section">
           <div class="quiz-progress">
-            <span>{{ evalQuizCurrentIndex + 1 }} / {{ evalQuizQuestions.length }}</span>
+            <span>{{ evalQuizCurrentIndex + 1 }} / {{ evalQuizTotal }}</span>
             <div class="quiz-progress-bar">
-              <div class="quiz-progress-fill" :style="{ width: `${((evalQuizCurrentIndex + 1) / evalQuizQuestions.length) * 100}%` }"></div>
+              <div class="quiz-progress-fill" :style="{ width: `${((evalQuizCurrentIndex + 1) / Math.max(evalQuizTotal, 1)) * 100}%` }"></div>
             </div>
           </div>
           <div class="quiz-question">
             <h4>{{ evalQuizQuestions[evalQuizCurrentIndex].question }}</h4>
             <div class="quiz-options">
               <label
-                v-for="option in evalQuizQuestions[evalQuizCurrentIndex].options"
+                v-for="(option, optionIndex) in (evalQuizQuestions[evalQuizCurrentIndex].options || [])"
                 :key="option"
               >
                 <input
                   type="radio"
-                  :value="option.split('.')[0]"
+                  :value="String.fromCharCode(65 + optionIndex)"
                   v-model="evalQuizAnswers[evalQuizQuestions[evalQuizCurrentIndex].question_id]"
                 />
-                {{ option }}
+                {{ String.fromCharCode(65 + optionIndex) }}. {{ option }}
               </label>
             </div>
             <input
-              v-if="!evalQuizQuestions[evalQuizCurrentIndex].options.length"
+              v-if="!evalQuizQuestions[evalQuizCurrentIndex].options?.length"
               type="text"
               v-model="evalQuizAnswers[evalQuizQuestions[evalQuizCurrentIndex].question_id]"
               placeholder="请输入答案"
@@ -752,7 +776,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div v-if="evalQuizFinished" class="quiz-finished">
+        <div v-if="evalQuizFinished && !evalResult" class="quiz-finished">
           <h4>测试完成！</h4>
           <button type="button" @click="handleSmartEvaluate">查看评估结果</button>
         </div>
@@ -1031,8 +1055,14 @@ onMounted(async () => {
 .subject-weaknesses strong { color: #202123; font-size: 13px; }
 .subject-weaknesses small, .subject-weaknesses p { color: #929292; font-size: 10px; }
 .subject-weaknesses p { margin: 9px 0 0; }
+.subject-weaknesses .weakness-analyzing { display: flex; align-items: center; gap: 8px; color: #6d5de7; }
+.weakness-analyzing i { width: 7px; height: 7px; border-radius: 50%; background: #6d5de7; animation: weaknessAnalyzing 1.25s ease-out infinite; }
 .weakness-tags { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
 .weakness-tags span { padding: 6px 10px; border: 1px solid #dddddd; border-radius: 999px; color: #404040; background: #fff; font-size: 11px; }
+@keyframes weaknessAnalyzing {
+  70% { box-shadow: 0 0 0 7px rgba(109,93,231,0); }
+  100% { box-shadow: 0 0 0 0 rgba(109,93,231,0); }
+}
 
 .portrait-radar-wrap {
   display: flex;
@@ -1298,6 +1328,7 @@ onMounted(async () => {
   margin-right: 7px;
   vertical-align: -4px;
 }
+.evaluate-error { margin: 0; padding: 11px 13px; border: 1px solid #f0caca; border-radius: 12px; color: #9f3030; background: #fff5f5; font-size: 11px; }
 
 .step-type svg,
 .recommendation-icon svg,

@@ -85,6 +85,11 @@ class SmartEvaluateRequest(BaseModel):
     course: str = "数据库系统"
 
 
+class MistakeWeaknessRequest(SiliconFlowConfig):
+    user_id: str = "demo_user_001"
+    course: str = ""
+
+
 class QuizQuestion(BaseModel):
     question_id: str
     question: str

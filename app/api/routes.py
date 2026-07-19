@@ -12,6 +12,7 @@ from app.api.schemas import (
     EvaluateRequest,
     LearningRequest,
     LoginRequest,
+    MistakeWeaknessRequest,
     OnboardingProfileRequest,
     ProfileChatRequest,
     ProfileInterviewRequest,
@@ -1139,56 +1140,63 @@ def next_profile_interview_question(request: ProfileInterviewRequest) -> dict:
 
 @router.post("/evaluate/smart")
 def smart_evaluate(request: SmartEvaluateRequest) -> dict:
+    from app.learning.stats_service import LearningStatsService
+
     profile = profile_service.get_profile(request.user_id, request.course)
-    if not profile:
-        raise HTTPException(status_code=404, detail="学生画像不存在，请先进行学习分析")
-    
-    recent_evaluations = profile.get("recent_evaluations", [])
-    learning_progress = profile.get("learning_progress", {})
-    
+    stats = LearningStatsService().get_course_stats(request.user_id, request.course)
     dimensions = profile.get("dimensions", {})
-    weak_points = dimensions.get("易错点", {}).get("value", [])
-    if not weak_points:
-        weak_points = ["函数依赖", "范式判断"]
-    
-    avg_score = 0
-    if recent_evaluations:
-        avg_score = round(sum(e.get("score", 0) for e in recent_evaluations) / len(recent_evaluations))
-    
-    completed_topics = [k for k, v in learning_progress.items() if v > 70]
-    in_progress_topics = [k for k, v in learning_progress.items() if 30 <= v <= 70]
-    weak_topics = [k for k, v in learning_progress.items() if v < 30]
-    
+    weak_points = list(dict.fromkeys(stats.get("weak_topics", [])))
+    weak_details = stats.get("weak_points_detail", [])
+    completed_topics = [item.get("topic") for item in weak_details if item.get("master_rate", 0) >= 80]
+    in_progress_topics = [item.get("topic") for item in weak_details if 40 <= item.get("master_rate", 0) < 80]
+    total = int(stats.get("total_mistakes", 0))
+    mastered = int(stats.get("mastered_mistakes", 0))
+    unmastered = int(stats.get("unmastered_mistakes", 0))
+    accuracy = int(stats.get("correct_rate", 0)) if total else None
+    knowledge_level = dimensions.get("知识基础", {}).get("value", "待评估")
+    learning_style = dimensions.get("认知风格", {}).get("value", "待分析")
+    learning_goal = dimensions.get("学习目标", {}).get("value", "未设定")
+
+    if total:
+        analysis = (
+            f"已综合分析《{request.course}》的 {total} 道错题：已掌握 {mastered} 道，"
+            f"仍有 {unmastered} 道待巩固，当前错题掌握率为 {accuracy}%。"
+            + (f"建议优先复习：{'、'.join(weak_points[:3])}。" if weak_points else "当前没有明显集中的薄弱知识点。")
+        )
+    else:
+        analysis = (
+            f"《{request.course}》目前还没有可用于智能评估的错题记录。"
+            "请先完成快速测试或课程练习，系统会结合真实作答结果生成评估。"
+        )
+
+    next_steps = []
+    if weak_points:
+        next_steps.append({"title": f"专项复习：{'、'.join(weak_points[:2])}", "duration": "30分钟", "type": "review"})
+        next_steps.append({"title": "完成薄弱点针对性练习", "duration": "20分钟", "type": "practice"})
+    else:
+        next_steps.append({"title": "完成一次快速测试建立评估数据", "duration": "10分钟", "type": "test"})
+    next_steps.append({"title": "复盘错题并补充错误原因", "duration": "15分钟", "type": "review"})
+
     return {
         "user_id": request.user_id,
         "course": request.course,
+        "status": "ready" if total else "insufficient_data",
         "profile_summary": {
-            "knowledge_level": dimensions.get("知识基础", {}).get("value", "初级"),
-            "learning_style": dimensions.get("认知风格", {}).get("value", "视觉型"),
-            "learning_goal": dimensions.get("学习目标", {}).get("value", "考试准备"),
+            "knowledge_level": knowledge_level,
+            "learning_style": learning_style,
+            "learning_goal": learning_goal,
         },
         "score_summary": {
-            "total": len(recent_evaluations) + 1,
-            "correct": avg_score,
-            "wrong": 100 - avg_score,
-            "accuracy": avg_score,
+            "total": total,
+            "correct": mastered,
+            "wrong": unmastered,
+            "accuracy": accuracy,
         },
-        "weak_points": weak_points + weak_topics,
-        "completed_topics": completed_topics,
-        "in_progress_topics": in_progress_topics,
-        "analysis": f"""基于您的学习画像分析：
-- 您的知识水平目前处于{profile.get('knowledge_level', '初级')}阶段
-- 学习风格为{profile.get('learning_style', '视觉型')}，建议多使用图表和思维导图
-- 已掌握的知识点：{', '.join(completed_topics) if completed_topics else '暂无'}
-- 需要加强的知识点：{', '.join(weak_points + weak_topics)}
-
-综合评估：您的整体表现{'优秀' if avg_score >= 80 else '良好' if avg_score >= 60 else '需加强'}，建议重点复习薄弱环节。""",
-        "next_steps": [
-            f"重点复习：{', '.join(weak_points[:2])}",
-            "完成相关章节的练习题",
-            "观看教学视频加深理解",
-            "进行一次模拟测试检验学习效果",
-        ],
+        "weak_points": weak_points,
+        "completed_topics": [item for item in completed_topics if item],
+        "in_progress_topics": [item for item in in_progress_topics if item],
+        "analysis": analysis,
+        "next_steps": next_steps,
         "dynamic_profile": profile,
     }
 
@@ -1320,6 +1328,8 @@ def finish_quiz(request: SmartEvaluateRequest) -> dict:
         else:
             weak_points.append(q.topic)
     
+    if not quiz["questions"]:
+        raise HTTPException(status_code=400, detail="当前测试没有可用题目")
     accuracy = round((correct_count / len(quiz["questions"])) * 100)
     
     result = {
@@ -1331,13 +1341,16 @@ def finish_quiz(request: SmartEvaluateRequest) -> dict:
             "wrong": len(quiz["questions"]) - correct_count,
             "accuracy": accuracy,
         },
-        "weak_points": weak_points or ["函数依赖", "范式判断"],
+        "weak_points": weak_points,
         "analysis": f"测试完成！您答对了{correct_count}题，正确率{accuracy}%。{'表现优秀！继续保持。' if accuracy >= 80 else '表现良好，还有提升空间。' if accuracy >= 60 else '需要加强练习，建议复习相关知识点。'}",
         "next_steps": [
-            f"复习薄弱知识点：{', '.join(weak_points[:2])}",
-            "完成更多练习题",
-            "观看相关教学视频",
-            "定期进行模拟测试",
+            {
+                "title": f"复习薄弱知识点：{', '.join(weak_points[:2])}" if weak_points else "继续完成进阶练习",
+                "duration": "30分钟",
+                "type": "review" if weak_points else "practice",
+            },
+            {"title": "完成更多针对性练习题", "duration": "20分钟", "type": "practice"},
+            {"title": "定期进行模拟测试", "duration": "10分钟", "type": "test"},
         ],
         "detailed_results": [
             {
@@ -1422,6 +1435,73 @@ def mark_mistake_mastered(user_id: str = Form(...), course: str = Form(...), que
 def get_weak_topics(user_id: str, course: str) -> dict:
     topics = mistake_store.get_weak_topics(user_id, course)
     return {"topics": topics}
+
+
+@router.post("/mistakes/analyze-weak-topics")
+def analyze_mistake_weak_topics(request: MistakeWeaknessRequest) -> dict:
+    mistakes = mistake_store.list_all_mistakes(request.user_id, mastered=False)
+    if request.course:
+        mistakes = [item for item in mistakes if item.get("course_name") == request.course]
+    if not mistakes:
+        return {"courses": [], "provider": "no-mistakes"}
+
+    compact_records = [
+        {
+            "course": item.get("course_name", request.course or "未指定学科"),
+            "question": item.get("question", ""),
+            "student_answer": item.get("student_answer", ""),
+            "correct_answer": item.get("correct_answer", ""),
+            "analysis": item.get("analysis", ""),
+            "chapter": item.get("chapter", ""),
+            "topic": item.get("topic", ""),
+            "mistake_count": item.get("mistake_count", 1),
+        }
+        for item in mistakes[:60]
+    ]
+    prompt = (
+        "请根据以下错题记录识别每门学科真正的知识薄弱点。不要使用学习画像访谈内容，也不要把笼统的学习习惯当成知识点。"
+        "结合题目、错误答案、正确答案、解析和重复错误次数归纳，每门学科输出 2-6 个具体、可出题的知识点。"
+        "只输出合法 JSON，格式："
+        '{"courses":[{"course":"学科名","weak_points":["知识点1","知识点2"]}]}。\n'
+        f"错题记录：{json.dumps(compact_records, ensure_ascii=False)}"
+    )
+    try:
+        content = profile_service.llm.configured_generate(
+            prompt,
+            active_provider=request.active_provider,
+            api_key=request.api_key,
+            base_url=request.base_url,
+            model=request.model,
+            spark_api_password=request.spark_api_password,
+            spark_base_url=request.spark_base_url,
+            spark_model=request.spark_model,
+            system_prompt="你是教育测量与错因诊断专家，只输出要求的 JSON。",
+            temperature=0.15,
+            max_tokens=1200,
+        )
+        match = re.search(r"\{.*\}", content, re.S)
+        data = json.loads(match.group(0) if match else content)
+        known_courses = {str(item.get("course_name") or request.course) for item in mistakes}
+        groups = []
+        for group in data.get("courses", []):
+            if not isinstance(group, dict):
+                continue
+            course = str(group.get("course", "")).strip()
+            if course not in known_courses:
+                continue
+            points = [str(point).strip() for point in group.get("weak_points", []) if str(point).strip()]
+            if points:
+                groups.append({"course": course, "points": list(dict.fromkeys(points))[:6]})
+        if groups:
+            return {"courses": groups, "provider": request.active_provider}
+        raise ValueError("模型未返回有效薄弱点")
+    except (ValueError, json.JSONDecodeError, TypeError, AttributeError):
+        course_names = sorted({str(item.get("course_name") or request.course) for item in mistakes})
+        groups = [
+            {"course": course, "points": mistake_store.get_weak_topics(request.user_id, course, limit=6)}
+            for course in course_names
+        ]
+        return {"courses": [group for group in groups if group["points"]], "provider": "rule-fallback"}
 
 @router.get("/mistakes/all")
 def list_all_mistakes(user_id: str, mastered: bool = False) -> dict:
