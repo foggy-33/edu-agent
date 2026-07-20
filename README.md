@@ -32,6 +32,7 @@ edu-agent-ai/
 ├─ tests/
 ├─ Dockerfile
 ├─ docker-compose.yml
+├─ deploy.bat                   # Windows一键部署与运维脚本
 └─ requirements.txt
 ```
 
@@ -128,39 +129,196 @@ docker compose run --rm backend python scripts/ingest_knowledge_base.py --clear
 
 ## 模型配置
 
-前端模型选择按照 SiliconFlow OpenAI-compatible API 传入：
+模型密钥统一保存在服务器根目录的 `.env` 中，不需要、也不应在个人中心填写。`.env` 已被 `.gitignore` 忽略，请勿提交到 Git 或发送给他人。
 
-```json
-{
-  "api_key": "sk-...",
-  "base_url": "https://api.siliconflow.cn/v1",
-  "model": "deepseek-ai/DeepSeek-V4-Pro"
-}
+项目支持三类模型服务，可按实际情况配置一种或多种：
+
+```dotenv
+# 讯飞星火 X2
+SPARK_API_PASSWORD=替换为讯飞控制台生成的APIPassword
+SPARK_BASE_URL=https://spark-api-open.xf-yun.com/x2
+SPARK_MODEL=spark-x
+
+# 讯飞星火 Lite
+SPARK_LITE_API_PASSWORD=替换为Lite服务APIPassword
+SPARK_LITE_BASE_URL=https://spark-api-open.xf-yun.com/v1
+SPARK_LITE_MODEL=lite
+
+# 硅基流动（OpenAI Chat Completions兼容接口）
+SILICONFLOW_API_KEY=sk-替换为实际密钥
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+SILICONFLOW_MODEL=Pro/deepseek-ai/DeepSeek-V3.2
+
+# 其他OpenAI兼容接口，例如 https://ai.space.cx/v1
+OPENAI_API_KEY=sk-替换为实际密钥
+OPENAI_BASE_URL=https://ai.space.cx/v1
+OPENAI_MODEL=gpt-5.6-sol
 ```
 
-当前首页只展示部分常用模型，例如 DeepSeek V4 Pro、DeepSeek V4 Flash、DeepSeek V3.2 Pro、GLM-5.2。请求中的模型配置不会写入代码仓库。
+`BASE_URL`填写服务端点根地址即可，不要在结尾添加斜杠。后端会自动拼接 `/chat/completions`；如果服务商给出的是完整地址，也可以直接填写以 `/chat/completions` 结尾的URL。
 
-## 启动
-
-本地启动后端：
+修改 `.env` 后必须重新创建后端容器：
 
 ```bash
+docker compose up -d --force-recreate backend
+```
+
+检查密钥是否已经注入容器时，不要直接输出密钥内容，可使用：
+
+```bash
+docker compose exec backend sh -c 'test -n "$SPARK_API_PASSWORD" && echo "Spark X2 已配置"; test -n "$SILICONFLOW_API_KEY" && echo "SiliconFlow 已配置"; test -n "$OPENAI_API_KEY" && echo "OpenAI兼容接口已配置"'
+```
+
+## 使用Docker部署（推荐）
+
+### 环境要求
+
+- Windows 10/11：安装Docker Desktop，并启用Docker Compose v2；
+- Ubuntu/Linux服务器：安装Docker Engine和Docker Compose插件；
+- 建议至少2核CPU、4GB内存，生产环境建议8GB以上；
+- 确保部署机器可以访问所配置的大模型API；
+- 默认对外端口为`8080`，可在`.env`中通过`APP_PORT`修改。
+
+### Windows一键部署
+
+在项目根目录双击 `deploy.bat`，或在PowerShell/CMD中执行：
+
+```bat
+cd /d G:\agentstudy\edu-agent-ai
+deploy.bat
+```
+
+脚本会自动检查Docker、创建`.env`、构建镜像、启动容器并等待健康检查。首次执行后请打开`.env`填入模型密钥，再执行：
+
+```bat
+deploy.bat restart
+```
+
+常用命令：
+
+```bat
+deploy.bat             rem 构建并启动
+deploy.bat restart     rem 读取最新.env并重新创建容器
+deploy.bat status      rem 查看容器状态
+deploy.bat logs        rem 持续查看最近日志，Ctrl+C退出
+deploy.bat stop        rem 停止容器，不删除数据卷
+```
+
+### Ubuntu/Linux服务器部署
+
+注意：`G:\agentstudy\edu-agent-ai`是Windows路径，不能在Ubuntu终端中使用。Linux服务器应进入服务器上的真实目录，例如：
+
+```bash
+cd /home/ubuntu/edu-agent
+cp .env.example .env
+nano .env
+sudo docker compose config --quiet
+sudo docker compose up -d --build
+sudo docker compose ps
+```
+
+如果项目已经部署过，更新代码后执行：
+
+```bash
+cd /home/ubuntu/edu-agent
+git pull
+sudo docker compose up -d --build --remove-orphans
+```
+
+如果出现`permission denied while trying to connect to the Docker daemon socket`，当前账户没有Docker权限。可以临时在Docker命令前添加`sudo`；也可以由服务器管理员执行：
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
+
+重新登录后再运行`docker compose`。不要在Linux终端使用`notepad .env`，请使用`nano .env`或`vim .env`。
+
+### 启动后的访问地址
+
+假设`.env`中的`APP_PORT=8080`：
+
+- 系统首页：`http://服务器IP:8080`
+- API文档：`http://服务器IP:8080/docs`
+- 健康检查：`http://服务器IP:8080/health`
+
+本机部署时，服务器IP替换为`localhost`。云服务器还需要在安全组或防火墙中放行对应端口。正式公网环境建议在前面配置HTTPS反向代理，不要直接暴露后端容器端口。
+
+### 验证部署
+
+```bash
+docker compose ps
+curl -fsS http://127.0.0.1:8080/health
+docker compose logs --tail=100 backend
+docker compose logs --tail=100 frontend
+```
+
+正常情况下，`backend`和`frontend`均显示`healthy`。如果前端一直处于等待状态，应先查看后端日志，因为前端会等待后端健康检查通过后才启动。
+
+### 更新与重建
+
+仅修改`.env`：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+修改后端代码、依赖或前端代码：
+
+```bash
+docker compose up -d --build --remove-orphans
+```
+
+查看实时日志：
+
+```bash
+docker compose logs -f --tail=200
+```
+
+停止服务但保留用户、画像、资料库和向量库数据：
+
+```bash
+docker compose down
+```
+
+不要随意执行`docker compose down -v`，该命令会删除项目的数据卷。
+
+### 数据持久化与备份
+
+生产配置使用以下Docker命名卷：
+
+- `chroma_data`：向量知识库；
+- `profile_data`：学科画像；
+- `resource_data`：上传资料、PDF解析结果和批注；
+- `auth_data`：用户、头像等认证数据。
+
+重新构建镜像或执行普通`docker compose down`不会删除这些数据。迁移服务器前应使用Docker卷备份工具或运维平台对上述数据卷进行备份。
+
+## 不使用Docker的本地开发
+
+后端需要Python 3.11：
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Docker 启动：
+前端需要Node.js 20或更高版本：
 
 ```bash
-docker compose build
-docker compose up -d
+cd frontend
+npm ci
+npm run dev
 ```
 
-访问：
+开发环境也可以直接使用：
 
-- 前端：`http://localhost:8080`
-- API 文档：`http://localhost:8080/docs`
-- 健康检查：`http://localhost:8080/health`
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
 
 ## 测试
 
