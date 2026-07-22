@@ -10,6 +10,19 @@ export interface AuthUser {
   major: string
   grade_level: string
   learning_goal?: string
+  role: 'user' | 'admin'
+}
+
+export interface AdminUser extends AuthUser {
+  last_login_at: string | null
+  active_sessions: number
+}
+
+export interface AdminUserListResponse {
+  total: number
+  onboarding_completed: number
+  active_users: number
+  users: AdminUser[]
 }
 
 export interface UserProfileUpdate {
@@ -96,6 +109,10 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     localStorage.removeItem(TOKEN_KEY)
     return null
   }
+}
+
+export async function getRegisteredUsers(): Promise<AdminUserListResponse> {
+  return authRequest<AdminUserListResponse>('admin/users')
 }
 
 export async function logout(): Promise<void> {

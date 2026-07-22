@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     resource_data_dir: str = "./data/resources"
     user_data_file: str = "./data/auth/users.json"
     avatar_dir: str = "./data/avatars"
+    admin_username: str = "admin"
+    admin_password: str = ""
+    admin_display_name: str = "系统管理员"
     course_source_dir: str = "./sourse"
     course_annotation_dir: str = "./data/course_annotations"
 

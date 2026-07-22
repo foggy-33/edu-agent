@@ -15,13 +15,14 @@ import CollaborativeGeneratePage from './components/CollaborativeGeneratePage.vu
 import LearningPathPage from './components/LearningPathPage.vue'
 import PortraitPage from './components/PortraitPage.vue'
 import ProfileOnboardingDialog from './components/ProfileOnboardingDialog.vue'
+import AdminPage from './components/AdminPage.vue'
 import { getCurrentUser, logout, type AuthUser } from './api/auth'
 import { CONVERSATION_HISTORY_EVENT, loadConversationHistory, type ConversationHistoryItem } from './api/conversationHistory'
 import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait' | 'learning' | 'path'
+type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait' | 'learning' | 'path' | 'admin'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -56,6 +57,7 @@ const navIcons = {
     'M7 5h1a4 4 0 0 1 4 4v1',
     'M14 12h1a4 4 0 0 1 4 4v1',
   ],
+  admin: ['M4 4h16v16H4V4Z', 'M8 9h8', 'M8 13h5', 'M8 17h3', 'M16.5 15.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z'],
 } as const
 
 interface NavItem {
@@ -73,8 +75,12 @@ const navItems: NavItem[] = [
   { key: 'path', label: '学习路线', icon: 'roadmap' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
 ]
+const visibleNavItems = computed<NavItem[]>(() => authUser.value?.role === 'admin'
+  ? [...navItems, { key: 'admin', label: '管理端', icon: 'admin' }]
+  : navItems)
 
 function navigate(page: Page, course?: Course) {
+  if (page === 'admin' && authUser.value?.role !== 'admin') return
   if (course) {
     selectedCourse.value = course
   } else if (page === 'mistakes') {
@@ -215,7 +221,7 @@ onUnmounted(() => {
 
       <nav class="app-nav">
         <button
-          v-for="item in navItems"
+          v-for="item in visibleNavItems"
           :key="item.key"
           @click="handleNavItem(item)"
           :class="[
@@ -307,6 +313,7 @@ onUnmounted(() => {
         <LearningCenterPage v-else-if="currentPage === 'learning'" @navigate="navigate" />
         <LearningPathPage v-else-if="currentPage === 'path'" @navigate="navigate" />
         <PortraitPage v-else-if="currentPage === 'portrait'" @navigate="navigate" />
+        <AdminPage v-else-if="currentPage === 'admin' && authUser?.role === 'admin'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>
     </main>

@@ -35,6 +35,9 @@ services:
       COURSE_ANNOTATION_DIR: /app/data/resources/course_annotations
       USER_DATA_FILE: /app/data/auth/users.json
       AVATAR_DIR: /app/data/auth/avatars
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-系统管理员}
     volumes:
       - chroma_data:/app/chroma_db
       - profile_data:/app/data/profiles

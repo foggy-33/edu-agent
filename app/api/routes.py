@@ -476,6 +476,17 @@ def update_user_profile(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
+@router.get("/auth/admin/users")
+def list_registered_users(authorization: str | None = Header(default=None)) -> dict:
+    try:
+        user = auth_service.authenticate(bearer_token(authorization))
+    except AuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="仅系统管理员可以查看注册用户")
+    return auth_service.list_users()
+
+
 @router.post("/auth/avatar")
 async def upload_user_avatar(
     file: UploadFile = File(...),

@@ -20,15 +20,22 @@ class AuthError(ValueError):
 
 class AuthService:
     def __init__(self) -> None:
-        self.path = Path(get_settings().user_data_file)
+        settings = get_settings()
+        self.path = Path(settings.user_data_file)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = Lock()
+        self.admin_username = settings.admin_username.strip().lower()
+        self.admin_password = settings.admin_password
+        self.admin_display_name = settings.admin_display_name.strip() or "系统管理员"
+        self._ensure_admin_user()
 
     def register(self, username: str, display_name: str, password: str) -> dict[str, Any]:
         normalized = username.strip().lower()
         self._validate_credentials(normalized, password)
         if not display_name.strip():
             raise AuthError("显示名称不能为空")
+        if self.admin_username and normalized == self.admin_username:
+            raise AuthError("该用户名为系统管理员保留账号")
 
         with self._lock:
             data = self._read()
@@ -44,6 +51,7 @@ class AuthService:
                 "sessions": [],
                 "onboarding_completed": False,
                 "onboarding_profile": {},
+                "role": "user",
             }
             data["users"][normalized] = user
             token = self._new_session(user)
@@ -190,16 +198,28 @@ class AuthService:
             if not user or not hmac.compare_digest(user["password_hash"], self._hash_password(password, user["salt"])):
                 raise AuthError("用户名或密码错误")
             token = self._new_session(user)
+            user["last_login_at"] = self._now()
             self._write(data)
         return {"token": token, "user": self._public_user(user)}
 
-    def authenticate(self, token: str) -> dict[str, str]:
+    def authenticate(self, token: str) -> dict[str, Any]:
         token_hash = self._hash_token(token)
         with self._lock:
             for user in self._read()["users"].values():
                 if any(hmac.compare_digest(item, token_hash) for item in user.get("sessions", [])):
                     return self._public_user(user)
         raise AuthError("登录状态已失效，请重新登录")
+
+    def list_users(self) -> dict[str, Any]:
+        with self._lock:
+            users = [self._admin_user_summary(user) for user in self._read()["users"].values()]
+        users.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+        return {
+            "total": len(users),
+            "onboarding_completed": sum(bool(item["onboarding_completed"]) for item in users),
+            "active_users": sum(bool(item["active_sessions"]) for item in users),
+            "users": users,
+        }
 
     def logout(self, token: str) -> None:
         token_hash = self._hash_token(token)
@@ -223,6 +243,32 @@ class AuthService:
         user["sessions"] = [*user.get("sessions", [])[-4:], self._hash_token(token)]
         return token
 
+    def _ensure_admin_user(self) -> None:
+        if not self.admin_username or not self.admin_password:
+            return
+        self._validate_credentials(self.admin_username, self.admin_password)
+        with self._lock:
+            data = self._read()
+            user = data["users"].get(self.admin_username)
+            if user is None:
+                salt = secrets.token_hex(16)
+                user = {
+                    "username": self.admin_username,
+                    "display_name": self.admin_display_name,
+                    "salt": salt,
+                    "password_hash": "",
+                    "created_at": self._now(),
+                    "sessions": [],
+                    "onboarding_completed": True,
+                    "onboarding_profile": {},
+                    "role": "admin",
+                }
+                data["users"][self.admin_username] = user
+            user["display_name"] = self.admin_display_name
+            user["role"] = "admin"
+            user["password_hash"] = self._hash_password(self.admin_password, user["salt"])
+            self._write(data)
+
     @staticmethod
     def _hash_password(password: str, salt: str) -> str:
         return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 210_000).hex()
@@ -245,7 +291,17 @@ class AuthService:
             "major": user.get("major", ""),
             "grade_level": user.get("grade_level", ""),
             "learning_goal": user.get("learning_goal", ""),
+            "role": user.get("role", "user"),
         }
+
+    @classmethod
+    def _admin_user_summary(cls, user: dict[str, Any]) -> dict[str, Any]:
+        public = cls._public_user(user)
+        public.update({
+            "last_login_at": user.get("last_login_at"),
+            "active_sessions": len(user.get("sessions", [])),
+        })
+        return public
 
     def _read(self) -> dict[str, Any]:
         if not self.path.exists():

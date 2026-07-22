@@ -5,6 +5,8 @@ from docx import Document
 from fastapi.testclient import TestClient
 from pptx import Presentation
 
+from app.auth.service import AuthError, AuthService
+from app.core.config import get_settings
 from app.main import app
 
 
@@ -39,6 +41,48 @@ def test_register_login_me_and_logout() -> None:
     logout = client.post("/api/auth/logout", headers=headers)
     assert logout.status_code == 204
     assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_regular_user_cannot_access_admin_users() -> None:
+    username = "pytest_regular_admin_guard"
+    registered = client.post(
+        "/api/auth/register",
+        json={"username": username, "display_name": "普通用户", "password": "test-pass-123"},
+    )
+    auth = registered.json() if registered.status_code == 201 else client.post(
+        "/api/auth/login",
+        json={"username": username, "password": "test-pass-123"},
+    ).json()
+    response = client.get(
+        "/api/auth/admin/users",
+        headers={"Authorization": f"Bearer {auth['token']}"},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_bootstrap_and_safe_user_listing(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("USER_DATA_FILE", str(tmp_path / "users.json"))
+    monkeypatch.setenv("ADMIN_USERNAME", "local_admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", "secure-admin-pass")
+    monkeypatch.setenv("ADMIN_DISPLAY_NAME", "测试管理员")
+    get_settings.cache_clear()
+    try:
+        service = AuthService()
+        admin = service.login("local_admin", "secure-admin-pass")
+        assert admin["user"]["role"] == "admin"
+        service.register("student_001", "学生一", "student-pass-123")
+        listing = service.list_users()
+        assert listing["total"] == 2
+        assert {item["username"] for item in listing["users"]} == {"local_admin", "student_001"}
+        assert all("password_hash" not in item and "sessions" not in item for item in listing["users"])
+        try:
+            service.register("local_admin", "冒用管理员", "another-pass-123")
+        except AuthError as exc:
+            assert "管理员保留账号" in str(exc)
+        else:
+            raise AssertionError("管理员保留账号不应允许公开注册")
+    finally:
+        get_settings.cache_clear()
 
 
 def test_uploaded_avatar_can_be_loaded_from_returned_url() -> None:

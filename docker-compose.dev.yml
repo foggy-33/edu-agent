@@ -18,6 +18,9 @@ services:
       CHROMA_PERSIST_DIR: /app/chroma_db
       KNOWLEDGE_BASE_DIR: /app/knowledge_base
       PROFILE_DATA_DIR: /app/data/profiles
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_DISPLAY_NAME: ${ADMIN_DISPLAY_NAME:-系统管理员}
     volumes:
       - chroma_data:/app/chroma_db
       - profile_data:/app/data/profiles

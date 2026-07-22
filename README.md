@@ -2,6 +2,8 @@
 
 面向个性化学习场景的多 Agent 教育应用。后端使用 FastAPI，资源生成链路优先使用 LangGraph，前端使用 Vue 3，支持直接对话、课程练习、PDF 资料上下文、学生画像和流式资源生成。
 
+本地安装与运行请参阅：[本地部署流程](docs/本地部署流程.md)。Windows用户也可以直接使用项目根目录的`deploy.bat`。
+
 ## 当前代码结构
 
 ```text
@@ -48,6 +50,7 @@ edu-agent-ai/
 | 基础画像分析 | `POST /api/analyze` | `app/api/routes.py` 轻量规则提取 |
 | 学习评估 | `POST /api/evaluate` | `app/api/routes.py` + `DynamicProfileService` |
 | 画像对话 | `POST /api/profiles/chat` | `app/profiles/service.py` |
+| 管理端用户列表 | `GET /api/auth/admin/users` | 管理员鉴权后返回安全用户字段 |
 | 课程目录 | `GET /api/courses` | `app/api/routes.py` |
 | PDF 资源库 | `/api/resources/*` | `app/resources/service.py` |
 | 工作流说明 | `GET /api/workflow` | 当前 `app.learning.workflow.NODES` |
@@ -162,6 +165,18 @@ OPENAI_MODEL=gpt-5.6-sol
 ```bash
 docker compose up -d --force-recreate backend
 ```
+
+### 管理端账号
+
+管理端默认不设置密码，也不会自动开放。需要在`.env`中配置管理员账号：
+
+```dotenv
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=请设置至少8位的高强度密码
+ADMIN_DISPLAY_NAME=系统管理员
+```
+
+保存后执行`docker compose up -d --build --force-recreate backend`。使用该账号登录后，左侧导航会显示“管理端”，可以查看全部注册用户。普通用户既不会看到入口，也无法访问管理接口。管理员密码只保存在服务器环境变量中，请勿提交到Git。
 
 检查密钥是否已经注入容器时，不要直接输出密钥内容，可使用：
 
