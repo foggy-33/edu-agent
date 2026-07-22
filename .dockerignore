@@ -12,3 +12,5 @@ frontend
 docs
 tests
 *.log
+sourse/**/*.ppt
+sourse/**/*.pptx

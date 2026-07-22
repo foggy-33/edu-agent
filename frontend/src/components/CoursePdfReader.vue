@@ -42,9 +42,11 @@ const originalBodyOverflow = document.body.style.overflow
 const pageAnnotations = computed(() =>
   annotations.value.filter((item) => item.page === pageNumber.value)
 )
-const displayTitle = computed(() =>
-  props.material.name.replace(/^\d+\s*/, '').replace(/-\d+$/, '').trim() || props.course
-)
+const displayTitle = computed(() => {
+  if (props.material.chapter == null) return `${props.course}课程资料`
+  const part = props.material.part == null ? '' : ` · 第 ${props.material.part} 部分`
+  return `第 ${props.material.chapter} 章课件${part}`
+})
 
 async function loadDocument() {
   loading.value = true

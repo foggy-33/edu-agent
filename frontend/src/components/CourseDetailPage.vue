@@ -23,8 +23,10 @@ const activeMaterial = ref<CoursePdfMaterial | null>(null)
 const userId = loadUserProfile().userId
 
 function chapterMaterials(chapter: CourseChapter) {
+  const chapterNumber = Number(String(chapter.id).split('-').pop())
   const chapterName = chapter.name.toLowerCase()
   return materials.value.filter((material) => {
+    if (material.chapter != null) return material.chapter === chapterNumber
     const name = material.name.toLowerCase()
     if (name.includes('绪论')) return chapterName.includes('导论') || chapterName.includes('绪论')
     if (name.includes('关系模型')) return chapterName.includes('关系模型')
@@ -41,6 +43,10 @@ function chapterMaterial(chapter: CourseChapter) {
 function openChapterMaterial(chapter: CourseChapter) {
   const material = chapterMaterial(chapter)
   if (material) activeMaterial.value = material
+}
+
+function openMaterial(material: CoursePdfMaterial) {
+  activeMaterial.value = material
 }
 
 function materialTitle(material: CoursePdfMaterial) {
@@ -212,6 +218,17 @@ function chapterStatusLabel(chapter: CourseChapter) {
                 <span v-for="topic in chapter.topics" :key="topic" class="text-xs px-2 py-1 bg-white border border-gray-200 rounded-full text-gray-500">
                   {{ topic }}
                 </span>
+              </div>
+              <div v-if="chapterMaterials(chapter).length > 1" class="flex flex-wrap gap-2 mt-3" @click.stop>
+                <button
+                  v-for="(material, materialIndex) in chapterMaterials(chapter)"
+                  :key="material.id"
+                  type="button"
+                  class="h-8 px-3 rounded-full border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:border-violet-300 hover:text-violet-700 transition-colors"
+                  @click="openMaterial(material)"
+                >
+                  课件 {{ materialIndex + 1 }}
+                </button>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">

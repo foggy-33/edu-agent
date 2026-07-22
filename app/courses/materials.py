@@ -42,6 +42,15 @@ class CourseMaterialService:
     def _material_id(path: Path) -> str:
         return hashlib.sha1(path.name.encode("utf-8")).hexdigest()[:16]
 
+    @staticmethod
+    def _chapter_metadata(path: Path) -> tuple[int | None, int | None]:
+        """Extract textbook chapter and optional volume numbers from courseware names."""
+        chapter_match = re.search(r"第\s*(\d+)\s*章", path.stem, re.IGNORECASE)
+        part_match = re.search(r"[（(]\s*(\d+)\s*[）)]", path.stem)
+        chapter = int(chapter_match.group(1)) if chapter_match else None
+        part = int(part_match.group(1)) if part_match else None
+        return chapter, part
+
     def list_materials(self, course: str) -> list[dict[str, Any]]:
         folder = self._course_folder(course)
         if folder is None:
@@ -50,15 +59,18 @@ class CourseMaterialService:
             (path for path in folder.iterdir() if path.is_file() and path.suffix.lower() == ".pdf"),
             key=lambda path: [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", path.name)],
         )
-        return [
-            {
+        materials: list[dict[str, Any]] = []
+        for path in pdfs:
+            chapter, part = self._chapter_metadata(path)
+            materials.append({
                 "id": self._material_id(path),
                 "name": path.stem,
                 "filename": path.name,
                 "size": path.stat().st_size,
-            }
-            for path in pdfs
-        ]
+                "chapter": chapter,
+                "part": part,
+            })
+        return materials
 
     def material_path(self, course: str, material_id: str) -> Path:
         folder = self._course_folder(course)

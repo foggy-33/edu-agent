@@ -131,6 +131,8 @@ export interface CoursePdfMaterial {
   name: string
   filename: string
   size: number
+  chapter?: number | null
+  part?: number | null
 }
 
 export interface CoursePdfAnnotation {
