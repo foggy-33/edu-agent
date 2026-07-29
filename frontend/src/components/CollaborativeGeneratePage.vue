@@ -7,6 +7,7 @@ import {
 } from '../api/conversationHistory'
 import { addMistake, exportOfficeFile, listCategories, listResources, saveGeneratedResource } from '../api/client'
 import { loadSiliconFlowConfig, saveSiliconFlowConfig } from '../api/settings'
+import { loadSkills, SKILLS_UPDATED_EVENT, type ImportedSkill } from '../api/skills'
 import { loadUserProfile } from '../api/userProfile'
 import type { CollaborativeExerciseItem, CollaborativeLearningRequest, CollaborativeLearningResponse, CollaborativeResourceType, UploadedResource } from '../types'
 import MarkdownRenderer from './MarkdownRenderer.vue'
@@ -14,7 +15,8 @@ import MermaidRenderer from './MermaidRenderer.vue'
 import sparkOfficialLogo from '../assets/spark-official.ico'
 
 type ResultKey = 'lectureDoc' | 'mindmap' | 'exercises' | 'reading' | 'codeCase' | 'learningPath' | 'presentation' | 'wordDocument' | 'review'
-type ProcessState = 'running' | 'done'
+type ProcessState = 'pending' | 'running' | 'done'
+type ProcessKind = 'thought' | 'action' | 'team' | 'result'
 type ResponseSpeed = 'fast' | 'balanced' | 'deep'
 
 const toolIconPaths = {
@@ -27,6 +29,7 @@ const toolIconPaths = {
   path: ['M5 5.2v4.3c0 1.6 1.2 2.7 2.8 2.7h5.8c1.6 0 2.8 1.1 2.8 2.7v3.9m0 0-2.6-2.6m2.6 2.6 2.6-2.6M5 5.2l-2 2m2-2 2 2'],
   ppt: ['M4 4.8h16v10.4H4V4.8Zm8 10.4v4.2m-3.5 0h7M7.2 8h9.6M7.2 11h6.4'],
   word: ['M6 3.8h8l4 4v12.4H6V3.8Zm8 0v4h4M8.8 11h6.4m-6.4 3h6.4m-6.4 3h4.2'],
+  skill: ['M9 4h6v4h4v6h-4v6H9v-6H5V8h4V4Z', 'M9 8h6v6H9Z'],
 } as const
 
 type ToolIconName = keyof typeof toolIconPaths
@@ -47,6 +50,15 @@ interface AgentProcessStep {
   agent: string
   message: string
   detail: string
+  state: ProcessState
+  kind: ProcessKind
+  meta: string[]
+}
+
+interface AgentTaskGroup {
+  agent: string
+  steps: AgentProcessStep[]
+  latest: AgentProcessStep
   state: ProcessState
 }
 
@@ -77,6 +89,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   newConversation: []
+  openSkills: []
 }>()
 
 const resourceOptions: {
@@ -130,6 +143,8 @@ const toolMenuMaxHeight = ref(420)
 const selectedTypes = ref<CollaborativeResourceType[]>([])
 const selectedType = ref<CollaborativeResourceType | 'chat'>('chat')
 const selectedFileIds = ref<string[]>([])
+const skills = ref<ImportedSkill[]>(loadSkills())
+const selectedSkillIds = ref<string[]>(skills.value.filter(skill => skill.enabled).slice(0, 5).map(skill => skill.id))
 const submittedTypes = ref<CollaborativeResourceType[]>([])
 const menuOpen = ref(false)
 const speedMenuOpen = ref(false)
@@ -161,7 +176,7 @@ const processCompleted = ref(false)
 const processElapsedSeconds = ref(0)
 let processTimer: ReturnType<typeof setTimeout> | null = null
 let processClock: ReturnType<typeof setInterval> | null = null
-const PROCESS_STEP_DELAY_MS = 760
+const PROCESS_STEP_DELAY_MS = 620
 const PROCESS_AUTO_COLLAPSE_MS = 1600
 
 const emptyStreamContent = (): Record<ResultKey, string> => ({
@@ -188,6 +203,8 @@ const availableTabs = computed(() => [
 void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
+const enabledSkills = computed(() => skills.value.filter(skill => skill.enabled))
+const selectedSkills = computed(() => enabledSkills.value.filter(skill => selectedSkillIds.value.includes(skill.id)))
 const filteredResources = computed(() => {
   const keyword = fileSearch.value.trim().toLowerCase()
   return resources.value
@@ -216,6 +233,23 @@ function tabsForTurn(turn: ConversationTurn) {
 
 function contentForTurn(turn: ConversationTurn, key: ResultKey) {
   return turn.streamContent[key] || turn.result?.[key] || ''
+}
+
+function toggleSkillForTurn(skillId: string) {
+  if (selectedSkillIds.value.includes(skillId)) {
+    selectedSkillIds.value = selectedSkillIds.value.filter(id => id !== skillId)
+    return
+  }
+  if (selectedSkillIds.value.length >= 5) {
+    error.value = '每次最多应用 5 个 Skill'
+    return
+  }
+  selectedSkillIds.value = [...selectedSkillIds.value, skillId]
+}
+
+function handleSkillsUpdated() {
+  skills.value = loadSkills()
+  selectedSkillIds.value = skills.value.filter(skill => skill.enabled).slice(0, 5).map(skill => skill.id)
 }
 
 function isOfficeTurn(turn: ConversationTurn) {
@@ -420,6 +454,48 @@ function visibleProcessAgents(turn: ConversationTurn) {
   return [...latestByAgent.values()].slice(-6)
 }
 
+function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
+  const groups = new Map<string, AgentProcessStep[]>()
+  turn.processSteps.forEach(step => {
+    const steps = groups.get(step.agent) || []
+    steps.push(step)
+    groups.set(step.agent, steps)
+  })
+  const teamStep = [...turn.processSteps].reverse().find(step => step.kind === 'team')
+  teamStep?.meta.forEach((task, index) => {
+    const [agent, detail = '等待协作调度'] = task.split('：', 2)
+    if (!agent || groups.has(agent)) return
+    groups.set(agent, [{
+      id: `${teamStep.id}-pending-${index}`,
+      agent,
+      message: '已创建，等待调度',
+      detail,
+      state: 'pending',
+      kind: 'action',
+      meta: ['状态：待接收共享上下文', '随后将自动执行专项任务'],
+    }])
+  })
+  return [...groups.entries()].map(([agent, steps]) => {
+    const latest = steps[steps.length - 1]
+    return {
+      agent,
+      steps,
+      latest,
+      state: latest.state,
+    }
+  })
+}
+
+function processKindLabel(kind: ProcessKind) {
+  return kind === 'thought'
+    ? '思考摘要'
+    : kind === 'team'
+      ? '任务编排'
+      : kind === 'result'
+        ? '阶段产物'
+        : '执行动作'
+}
+
 function agentInitial(agent: string) {
   return agent.replace(/\s*Agent$/i, '').slice(0, 2)
 }
@@ -613,6 +689,8 @@ function buildHistoryProcessSteps(steps: string[], prefix: string): AgentProcess
     message: step,
     detail: '历史对话中的执行记录',
     state: 'done',
+    kind: 'result',
+    meta: [],
   }))
 }
 
@@ -725,6 +803,8 @@ function buildProcessStep(data: any): AgentProcessStep | null {
     message: data.message,
     detail: data.detail || '正在推进多 Agent 协作流程',
     state: data.state === 'done' ? 'done' : 'running',
+    kind: ['thought', 'action', 'team', 'result'].includes(data.kind) ? data.kind : 'action',
+    meta: Array.isArray(data.meta) ? data.meta.filter((item: unknown) => typeof item === 'string').slice(0, 8) : [],
   }
 }
 
@@ -760,13 +840,16 @@ function pumpProcessQueue() {
     if (processCompleted.value && processSteps.value.length) collapseCompletedProcess()
     return
   }
+  const adaptiveDelay = processCompleted.value
+    ? 140
+    : Math.max(260, PROCESS_STEP_DELAY_MS - processQueue.value.length * 32)
   processTimer = window.setTimeout(() => {
     const [step, ...rest] = processQueue.value
     processQueue.value = rest
     if (step) showProcessStep(step)
     processTimer = null
     pumpProcessQueue()
-  }, PROCESS_STEP_DELAY_MS)
+  }, adaptiveDelay)
 }
 
 function appendProcessStep(data: any) {
@@ -846,6 +929,10 @@ async function submit() {
     resourceTypes: [...selectedTypes.value],
     fileIds: [...selectedFileIds.value],
     response_speed: responseSpeed.value,
+    skill_names: selectedSkills.value.map(skill => skill.name),
+    skill_instructions: selectedSkills.value
+      .map(skill => `[Skill：${skill.name}]\n${skill.instructions}`)
+      .join('\n\n'),
     ...config,
   }
 
@@ -907,12 +994,14 @@ onMounted(() => {
   hydrateFromHistory(props.historyId)
   resizePromptInput()
   window.addEventListener('resize', updateToolMenuLayout)
+  window.addEventListener(SKILLS_UPDATED_EVENT, handleSkillsUpdated)
 })
 
 onBeforeUnmount(() => {
   stopProcessClock()
   if (processTimer) clearTimeout(processTimer)
   window.removeEventListener('resize', updateToolMenuLayout)
+  window.removeEventListener(SKILLS_UPDATED_EVENT, handleSkillsUpdated)
 })
 
 watch(() => props.historyId, hydrateFromHistory)
@@ -971,17 +1060,61 @@ watch(prompt, resizePromptInput)
                 </div>
                 <div v-if="!turn.processCompleted" class="handoff-wave" aria-label="Agent 正在交接任务"><i></i><i></i><i></i></div>
               </div>
+              <section class="agent-team-panel" aria-label="Agent 执行任务">
+                <header>
+                  <span>Agent 集群</span>
+                  <small>{{ agentTaskGroups(turn).length }} 个协作角色</small>
+                </header>
+                <div class="agent-task-list">
+                  <details
+                    v-for="(group, groupIndex) in agentTaskGroups(turn)"
+                    :key="`${turn.id}-group-${group.agent}`"
+                    class="agent-task-card"
+                    :open="group.state === 'running'"
+                  >
+                    <summary>
+                      <em>{{ agentInitial(group.agent) }}</em>
+                      <span>
+                        <strong>{{ agentLabel(group.agent) }}</strong>
+                        <small>{{ group.latest.message }}</small>
+                      </span>
+                      <b :class="`agent-task-state-${group.state}`">{{ group.state === 'pending' ? '等待调度' : group.state === 'running' ? '执行中' : '已完成' }}</b>
+                      <i>{{ String(groupIndex + 1).padStart(2, '0') }}</i>
+                    </summary>
+                    <div class="agent-task-detail">
+                      <article v-for="step in group.steps" :key="`${step.id}-detail`">
+                        <span>{{ processKindLabel(step.kind) }}</span>
+                        <div>
+                          <strong>{{ step.message }}</strong>
+                          <p>{{ step.detail }}</p>
+                          <ul v-if="step.meta.length">
+                            <li v-for="(item, metaIndex) in step.meta" :key="`${step.id}-detail-${metaIndex}`">{{ item }}</li>
+                          </ul>
+                        </div>
+                      </article>
+                    </div>
+                  </details>
+                </div>
+              </section>
               <ol class="agent-flow">
                 <li
                   v-for="step in turn.processSteps"
                   :key="step.id"
-                  :class="['agent-step', `agent-step-${step.state}`]"
+                  :class="['agent-step', `agent-step-${step.state}`, `agent-step-${step.kind}`]"
                 >
                   <i></i>
                   <div>
-                    <strong>{{ step.agent }}</strong>
+                    <div class="step-heading">
+                      <strong>{{ step.agent }}</strong>
+                      <span>{{ processKindLabel(step.kind) }}</span>
+                    </div>
                     <p>{{ step.message }}</p>
                     <small>{{ step.detail }}</small>
+                    <div v-if="step.meta.length" class="step-meta-tree">
+                      <span v-for="(item, metaIndex) in step.meta" :key="`${step.id}-${metaIndex}`">
+                        <b>{{ metaIndex === step.meta.length - 1 ? '└' : '├' }}</b>{{ item }}
+                      </span>
+                    </div>
                   </div>
                 </li>
               </ol>
@@ -1139,7 +1272,7 @@ watch(prompt, resizePromptInput)
       <div v-if="error" class="composer-error">{{ error }}</div>
 
       <div class="composer">
-        <div v-if="selectedType !== 'chat' || selectedFiles.length" class="selected-tools">
+        <div v-if="selectedType !== 'chat' || selectedFiles.length || selectedSkills.length" class="selected-tools">
           <button
             v-if="selectedType !== 'chat'"
             type="button"
@@ -1160,6 +1293,16 @@ watch(prompt, resizePromptInput)
             @click="toggleFile(file.id)"
           >
             <span>PDF</span>{{ file.name }}<i>×</i>
+          </button>
+          <button
+            v-for="skill in selectedSkills"
+            :key="skill.id"
+            type="button"
+            class="selected-skill"
+            :disabled="loading"
+            @click="toggleSkillForTurn(skill.id)"
+          >
+            <span><ToolGlyph name="skill" /></span>{{ skill.name }}<i>×</i>
           </button>
         </div>
 
@@ -1208,6 +1351,28 @@ watch(prompt, resizePromptInput)
                     <i>{{ selectedType === item.key ? '✓' : '' }}</i>
                   </button>
                 </div>
+
+                <div class="menu-divider"></div>
+                <div class="skill-tools-head">
+                  <div class="menu-title">应用 Skill <span>{{ selectedSkills.length }}/{{ enabledSkills.length }}</span></div>
+                  <button type="button" class="manage-skills" @click="emit('openSkills')">管理 Skill</button>
+                </div>
+                <div v-if="enabledSkills.length" class="skill-options">
+                  <button
+                    v-for="skill in enabledSkills"
+                    :key="skill.id"
+                    type="button"
+                    :class="{ selected: selectedSkillIds.includes(skill.id) }"
+                    @click="toggleSkillForTurn(skill.id)"
+                  >
+                    <span class="tool-icon"><ToolGlyph name="skill" /></span>
+                    <span><b>{{ skill.name }}</b><small>{{ skill.description }}</small></span>
+                    <i>{{ selectedSkillIds.includes(skill.id) ? '✓' : '' }}</i>
+                  </button>
+                </div>
+                <button v-else type="button" class="no-skills" @click="emit('openSkills')">
+                  尚未启用 Skill，前往导入或启用
+                </button>
 
                 <div class="menu-divider"></div>
                 <div class="file-tools-head">
@@ -1388,7 +1553,7 @@ watch(prompt, resizePromptInput)
 .result-tabs button { padding: 11px 14px; border: 0; border-radius: 9px 9px 0 0; color: #6d6d6d; background: transparent; white-space: nowrap; font-weight: 600; }
 .result-tabs button.active { color: #202123; background: #f2f2f2; }
 .result-content { padding: 0; }
-.thinking-trace { width: min(560px, 62vw); max-width: 100%; margin-bottom: 12px; padding: 10px 12px; overflow: hidden; border: 1px solid #e8e8e8; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 9px 30px rgba(0, 0, 0, .045); font-size: 11px; line-height: 1.45; transition: padding .2s ease, box-shadow .2s ease; }
+.thinking-trace { width: min(720px, 74vw); max-width: 100%; margin-bottom: 12px; padding: 10px 12px; overflow: hidden; border: 1px solid #e8e8e8; border-radius: 16px; color: #606060; background: #fff; box-shadow: 0 9px 30px rgba(0, 0, 0, .045); font-size: 11px; line-height: 1.45; transition: width .28s cubic-bezier(.16,1,.3,1), padding .2s ease, box-shadow .2s ease; }
 .thinking-trace-collapsed { padding: 7px 11px; box-shadow: none; }
 .trace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; cursor: pointer; user-select: none; }
 .thinking-trace-collapsed .trace-head { margin-bottom: 0; }
@@ -1413,20 +1578,56 @@ watch(prompt, resizePromptInput)
 .handoff-wave i:nth-child(1) { height: 9px; animation-delay: -.18s; }
 .handoff-wave i:nth-child(2) { height: 17px; animation-delay: -.09s; }
 .handoff-wave i:nth-child(3) { height: 12px; }
-.agent-flow { display: grid; gap: 5px; max-height: 170px; margin: 0; padding: 0 2px 0 0; overflow-y: auto; list-style: none; }
-.agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 6px 8px; border-radius: 10px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
-.agent-step::before { content: ""; position: absolute; left: 17px; top: 28px; bottom: -10px; width: 1px; background: #e7e7e7; }
+.agent-team-panel { margin: 0 0 9px; overflow: hidden; border: 1px solid #e6e6e6; border-radius: 13px; background: #fbfbfb; }
+.agent-team-panel > header { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid #e8e8e8; color: #393939; }
+.agent-team-panel > header span { font-size: 11px; font-weight: 850; }
+.agent-team-panel > header small { color: #999; font-size: 9px; }
+.agent-task-list { display: grid; gap: 6px; padding: 7px; }
+.agent-task-card { overflow: hidden; border: 1px solid transparent; border-radius: 10px; background: #f1f1f1; transition: border-color .22s ease, background .22s ease, box-shadow .22s ease; }
+.agent-task-card[open] { border-color: #dedaf8; background: #fff; box-shadow: 0 7px 22px rgba(35,28,83,.07); }
+.agent-task-card summary { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto 24px; align-items: center; gap: 8px; min-height: 48px; padding: 6px 9px; cursor: pointer; list-style: none; }
+.agent-task-card summary::-webkit-details-marker { display: none; }
+.agent-task-card summary > em { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #d6d6d6; border-radius: 9px; color: #4d43a4; background: #fff; font-size: 9px; font-style: normal; font-weight: 850; }
+.agent-task-card summary > span { display: grid; min-width: 0; gap: 2px; }
+.agent-task-card summary strong { overflow: hidden; color: #292929; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-task-card summary small { overflow: hidden; color: #898989; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-task-card summary > b { padding: 3px 6px; border-radius: 999px; color: #777; background: #e5e5e5; font-size: 8px; white-space: nowrap; }
+.agent-task-card summary > b.agent-task-state-pending { color: #8a8a8a; background: #ececec; }
+.agent-task-card summary > b.agent-task-state-running { color: #5648c9; background: #ebe8ff; animation: taskStatePulse 1.5s ease-in-out infinite; }
+.agent-task-card summary > i { color: #aaa; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; font-style: normal; text-align: right; }
+.agent-task-detail { display: grid; gap: 1px; max-height: 0; overflow: hidden; border-top: 1px solid transparent; opacity: 0; transform: translateY(-5px); transition: max-height .36s cubic-bezier(.16,1,.3,1), opacity .2s ease, transform .3s ease, border-color .2s ease; }
+.agent-task-card[open] .agent-task-detail { max-height: 900px; border-top-color: #eeeeee; opacity: 1; transform: translateY(0); }
+.agent-task-detail article { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; padding: 9px 10px; border-bottom: 1px solid #f1f1f1; }
+.agent-task-detail article:last-child { border-bottom: 0; }
+.agent-task-detail article > span { color: #6256cf; font-size: 8px; font-weight: 800; letter-spacing: .03em; }
+.agent-task-detail article > div { min-width: 0; }
+.agent-task-detail strong { display: block; color: #333; font-size: 10px; }
+.agent-task-detail p { margin: 3px 0 0; color: #777; font-size: 9px; line-height: 1.55; }
+.agent-task-detail ul { display: grid; gap: 2px; margin: 5px 0 0; padding: 0; color: #969696; font-size: 9px; list-style: none; }
+.agent-task-detail li { position: relative; padding-left: 11px; overflow-wrap: anywhere; }
+.agent-task-detail li::before { content: "└"; position: absolute; left: 0; color: #bbb; }
+.agent-flow { display: grid; gap: 3px; max-height: 280px; margin: 0; padding: 10px 8px; overflow-y: auto; border: 1px solid #343434; border-radius: 13px; color: #d7d7d7; background: #242424; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); list-style: none; scrollbar-color: #555 transparent; }
+.agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 9px; padding: 8px 9px; border-radius: 9px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
+.agent-step::before { content: ""; position: absolute; left: 17px; top: 29px; bottom: -8px; width: 1px; background: #444; }
 .agent-step:last-child::before { display: none; }
-.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 2px; border: 1px solid #d5d5d5; border-radius: 50%; background: #fff; }
-.agent-step i::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #b8b8b8; }
-.agent-step strong { display: block; color: #2a2a2a; font-size: 11px; font-weight: 760; }
-.agent-step p { margin: 1px 0 0; color: #555; }
-.agent-step small { display: block; margin-top: 1px; color: #9a9a9a; font-size: 10px; }
-.agent-step-running { background: #f7f7f7; transform: translateX(2px); }
-.agent-step-running i { border-color: #202123; }
-.agent-step-running i::after { background: #202123; animation: tracePulse 1s infinite; }
-.agent-step-done i { color: #fff; border-color: #202123; background: #202123; }
-.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #fff; background: transparent; font-size: 10px; font-weight: 900; line-height: 1; }
+.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 2px; border: 1px solid #656565; border-radius: 50%; background: #303030; }
+.agent-step i::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #aaa; }
+.step-heading { display: flex; align-items: center; gap: 7px; }
+.agent-step strong { display: block; color: #f1f1f1; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 11px; font-weight: 720; }
+.step-heading span { padding: 2px 5px; border: 1px solid #484848; border-radius: 5px; color: #aaa; font-size: 8px; letter-spacing: .04em; }
+.agent-step p { margin: 2px 0 0; color: #d0d0d0; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 11px; }
+.agent-step small { display: block; margin-top: 2px; color: #929292; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; line-height: 1.55; }
+.step-meta-tree { display: grid; gap: 2px; margin-top: 5px; padding-left: 7px; }
+.step-meta-tree span { overflow-wrap: anywhere; color: #aaa; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; line-height: 1.5; }
+.step-meta-tree b { margin-right: 7px; color: #666; font-weight: 400; }
+.agent-step-running { background: #2d2d2d; transform: translateX(2px); }
+.agent-step-running i { border-color: #5ac486; }
+.agent-step-running i::after { background: #5ac486; box-shadow: 0 0 8px rgba(90,196,134,.55); animation: tracePulse 1s infinite; }
+.agent-step-done i { color: #151515; border-color: #5ac486; background: #5ac486; }
+.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #173422; background: transparent; font-size: 9px; font-weight: 900; line-height: 1; }
+.agent-step-thought .step-heading span { color: #c4baff; border-color: #4d466e; background: rgba(109,93,231,.11); }
+.agent-step-team .step-heading span { color: #8ed7ac; border-color: #355943; background: rgba(90,196,134,.08); }
+.agent-step-result .step-heading span { color: #d7d7d7; background: #343434; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
@@ -1461,6 +1662,9 @@ watch(prompt, resizePromptInput)
 .selected-tools button.selected-capability svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .selected-tools button.selected-file { max-width: 260px; border-color: #dedede; color: #555; background: #fafafa; }
 .selected-tools button.selected-file span { font-size: 9px; font-weight: 850; }
+.selected-tools button.selected-skill { max-width: 240px; border-color: #dcd7f6; color: #5548bc; background: #f5f3ff; }
+.selected-tools button.selected-skill > span { display: grid; place-items: center; width: 18px; height: 18px; }
+.selected-tools button.selected-skill svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .composer-actions { display: flex; align-items: center; gap: 8px; }
 .tool-picker { position: relative; }
 .add-button { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%; color: #303030; background: #f0f0f0; line-height: 1; }
@@ -1477,6 +1681,16 @@ watch(prompt, resizePromptInput)
 .tool-menu-head small { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; background: #f2f2f2; }
 .menu-title { color: #777; font-size: 11px; font-weight: 700; }
 .menu-title span { color: #aaa; font-weight: 500; }
+.skill-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 11px 2px 8px; }
+.tool-menu .manage-skills { display: inline-flex; grid-template-columns: none; width: auto; padding: 5px 8px; border-radius: 7px; color: #6254ce; background: #f2f0ff; font-size: 10px; }
+.skill-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; max-height: 122px; overflow-y: auto; scrollbar-width: thin; }
+.skill-options button { grid-template-columns: 32px minmax(0,1fr) 18px; border: 1px solid transparent; }
+.skill-options button.selected { color: #4f43b1; border-color: #ded9f7; background: #f4f2ff; }
+.skill-options .tool-icon { color: #5c50bf; background: #fff; }
+.skill-options .tool-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.skill-options button > span:nth-child(2) { min-width: 0; }
+.skill-options button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-menu .no-skills { display: block; width: 100%; min-height: 48px; padding: 12px; border: 1px dashed #ddd9f2; color: #77718f; background: #faf9ff; text-align: center; font-size: 11px; }
 .file-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 11px 2px 9px; }
 .file-search { width: min(260px, 48%); height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #dedede; border-radius: 999px; background: #f8f8f8; transition: border-color .2s ease, background .2s ease, box-shadow .2s ease; }
 .file-search:focus-within { border-color: #aaa; background: #fff; box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
@@ -1540,6 +1754,7 @@ watch(prompt, resizePromptInput)
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }
 @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
+@keyframes taskStatePulse { 50% { color: #7468e3; background: #f1efff; } }
 @keyframes toolMenuIn {
   from { opacity: 0; transform: translateY(14px) scale(.9); filter: blur(6px); }
   to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
@@ -1589,6 +1804,7 @@ button:disabled { cursor: default; opacity: .65; }
   .tool-menu { width: calc(100vw - 32px); max-height: min(520px, var(--tool-menu-max-height, 72vh)); padding: 12px; }
   .tool-menu-head span { display: none; }
   .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skill-options { grid-template-columns: 1fr; }
   .tool-menu .capability-option { min-width: 0; height: 52px; }
   .file-tools-head { align-items: stretch; flex-direction: column; gap: 8px; }
   .file-search { width: 100%; }

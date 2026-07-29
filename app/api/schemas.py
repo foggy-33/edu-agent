@@ -43,6 +43,8 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     resourceTypes: list[Literal["lecture", "mindmap", "exercise", "reading", "code", "path", "ppt", "word"]]
     fileIds: list[str] = Field(default_factory=list)
     response_speed: Literal["fast", "balanced", "deep"] = "balanced"
+    skill_names: list[str] = Field(default_factory=list, max_length=5)
+    skill_instructions: str = Field(default="", max_length=20000)
 
 
 class OfficeExportRequest(BaseModel):

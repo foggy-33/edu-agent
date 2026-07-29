@@ -194,6 +194,26 @@ def _workflow_description() -> dict[str, Any]:
     }
 
 
+RESOURCE_AGENT_LABELS = {
+    "lecture": ("课程讲解 Agent", "组织概念、原理、示例和易错点"),
+    "mindmap": ("思维导图 Agent", "提炼知识层级与概念关系"),
+    "exercise": ("练习题 Agent", "生成分层题目、答案和解析"),
+    "reading": ("拓展阅读 Agent", "扩展应用场景与递进阅读路径"),
+    "code": ("代码案例 Agent", "设计可运行案例并解释关键步骤"),
+    "path": ("学习路径 Agent", "规划阶段目标、依赖和检验标准"),
+    "ppt": ("PPT讲解 Agent", "组织课堂展示结构并生成演示文稿"),
+    "word": ("Word 文档 Agent", "组织适合打印阅读的完整学习文档"),
+}
+
+
+def _selected_agent_tasks(resource_types: list[str]) -> list[str]:
+    return [
+        f"{RESOURCE_AGENT_LABELS[item][0]}：{RESOURCE_AGENT_LABELS[item][1]}"
+        for item in resource_types
+        if item in RESOURCE_AGENT_LABELS
+    ]
+
+
 def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -558,15 +578,35 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 "agent": "请求接入",
                 "detail": "接收问题、资源类型、PDF 文件 ID 和模型配置",
                 "state": "running",
+                "kind": "action",
+                "meta": [
+                    f"学习问题：{request.weakness[:90]}",
+                    f"目标产物：{len(request.resourceTypes) if request.resourceTypes else 1} 类",
+                    f"模型通道：{request.active_provider} / {request.model}",
+                ],
             })
             payload = _collaborative_payload(request)
             state = LearningState(**payload, agentTrace=[])
+            if request.skill_names:
+                yield _sse("status", {
+                    "message": f"已加载 {len(request.skill_names)} 个 Skill",
+                    "agent": "Skill 路由",
+                    "detail": f"本次应用：{'、'.join(request.skill_names)}",
+                    "state": "done",
+                    "kind": "action",
+                    "meta": [f"Skill {index + 1}：{name}" for index, name in enumerate(request.skill_names)],
+                })
             if payload.get("source_context"):
                 yield _sse("status", {
                     "message": "PDF 上下文整理完成",
                     "agent": "资料检索",
                     "detail": "读取已选 PDF 的解析文本，拼接为 source_context 供后续 Agent 使用",
                     "state": "done",
+                    "kind": "action",
+                    "meta": [
+                        f"已解析资料：{source.get('name', '资料')}"
+                        for source in payload.get("sources", [])[:6]
+                    ],
                 })
             else:
                 yield _sse("status", {
@@ -574,6 +614,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "资料检索",
                     "detail": "后续 Agent 将直接围绕用户问题和学习目标生成内容",
                     "state": "done",
+                    "kind": "action",
+                    "meta": ["资料来源：用户问题", "检索策略：不调用资料库"],
                 })
 
             if not request.resourceTypes:
@@ -582,6 +624,12 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "直接对话 Agent",
                     "detail": "未选择生成内容，跳过资源规划链路，直接组织回答",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": [
+                        "任务：识别核心问题与必要背景",
+                        "策略：先解释关键概念，再给出可执行建议",
+                        "约束：优先依据所选资料，不展示隐藏推理原文",
+                    ],
                 })
                 state["lectureDoc"] = yield from _stream_generated_text(
                     state,
@@ -595,15 +643,45 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "直接对话 Agent",
                     "detail": "回答已写入 lectureDoc，并准备保存为历史记录",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"回答长度：{len(state.get('lectureDoc', ''))} 字", "产物：对话回答"],
                 })
                 yield _sse("done", {"result": _learning_result(state)})
                 return
 
             yield _sse("status", {
+                "message": "拆解学习任务并建立共享约束",
+                "agent": "任务规划 Agent",
+                "detail": "根据问题、学习目标、资料和输出类型形成 Agent 待办清单",
+                "state": "done",
+                "kind": "thought",
+                "meta": [
+                    f"主题：{request.chapter}",
+                    f"薄弱点：{request.weakness[:80]}",
+                    f"目标：{request.goal}",
+                    "协作方式：共享学情与资料上下文，专项 Agent 分工生成",
+                ],
+            })
+            agent_tasks = _selected_agent_tasks(request.resourceTypes)
+            yield _sse("status", {
+                "message": f"创建 {len(agent_tasks)} 个专项 Agent 任务",
+                "agent": "Agent 集群",
+                "detail": "专项 Agent 将读取同一份共享状态，分别完成所选资源任务",
+                "state": "running",
+                "kind": "team",
+                "meta": agent_tasks,
+            })
+            yield _sse("status", {
                 "message": f"调度 {len(request.resourceTypes)} 类资源生成任务",
                 "agent": "协作调度",
                 "detail": "按所选资源类型组织学情分析、任务规划、内容生成、质量审核和资源整合",
                 "state": "running",
+                "kind": "action",
+                "meta": [
+                    "前置：学情分析 → 任务规划",
+                    f"专项：{'、'.join(name.split('：', 1)[0] for name in agent_tasks)}",
+                    "收尾：质量审核 → 资源整合",
+                ],
             })
 
             for node in (profile_agent, planner_agent):
@@ -614,6 +692,11 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": trace.get("agent", ""),
                     "detail": "更新共享状态，后续 Agent 将读取该阶段输出继续生成",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [
+                        f"共享字段：{'studentProfile' if node is profile_agent else 'taskPlan'}",
+                        "后续 Agent 可读取此阶段产物",
+                    ],
                 })
 
             if "lecture" in request.resourceTypes:
@@ -622,6 +705,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "课程讲解 Agent",
                     "detail": "根据学情、目标和资料上下文生成 Markdown 讲义，并逐段输出",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：共享学情、任务计划与资料上下文", "结构：概念 → 原理 → 示例 → 易错点", "产物：Markdown 课程讲义"],
                 })
                 state["lectureDoc"] = yield from _stream_generated_text(
                     state,
@@ -635,6 +720,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "课程讲解 Agent",
                     "detail": "讲义内容已写入 lectureDoc",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"产物字段：lectureDoc", f"内容长度：{len(state.get('lectureDoc', ''))} 字"],
                 })
 
             if "mindmap" in request.resourceTypes:
@@ -643,6 +730,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "思维导图 Agent",
                     "detail": "提炼主题、概念层级和易错点，输出 Mermaid mindmap 源码",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：课程主题与资料关键段落", "动作：抽取概念、归并层级、标注关系", "产物：Mermaid mindmap"],
                 })
                 state["mindmap"] = yield from _stream_generated_text(
                     state,
@@ -656,6 +745,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "思维导图 Agent",
                     "detail": "导图源码已写入 mindmap，可在前端渲染",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"产物字段：mindmap", f"源码长度：{len(state.get('mindmap', ''))} 字"],
                 })
 
             if "exercise" in request.resourceTypes:
@@ -664,6 +755,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "练习题 Agent",
                     "detail": "生成结构化题目 JSON，再转换为可提交、可判题的练习卡片",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：知识短板与学习目标", "动作：匹配难度、设计干扰项、组织解析", "产物：可判题练习卡片"],
                 })
                 items = _generate_exercise_items(state)
                 state["exerciseItems"] = items
@@ -675,6 +768,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "练习题 Agent",
                     "detail": "题目、答案和解析已写入 exerciseItems",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"题目数量：{len(items)}", "产物字段：exerciseItems、exercises"],
                 })
 
             if "reading" in request.resourceTypes:
@@ -683,6 +778,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "拓展阅读 Agent",
                     "detail": "扩展相关知识、应用场景和递进学习路径，并逐段输出",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：核心主题与当前掌握情况", "动作：补充关联知识和真实应用", "产物：递进式拓展阅读"],
                 })
                 state["reading"] = yield from _stream_generated_text(
                     state,
@@ -696,6 +793,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "拓展阅读 Agent",
                     "detail": "拓展阅读已写入 reading",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"产物字段：reading", f"内容长度：{len(state.get('reading', ''))} 字"],
                 })
 
             if "ppt" in request.resourceTypes:
@@ -704,6 +803,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "PPT讲解 Agent",
                     "detail": "组织课堂展示叙事、幻灯片标题与精炼要点，完成后可下载为 PPTX",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：课程内容、学习目标与资料", "动作：规划叙事节奏和逐页要点", "产物：可下载 PPTX"],
                 })
                 state["presentation"] = yield from _stream_generated_text(
                     state,
@@ -720,6 +821,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "PPT讲解 Agent",
                     "detail": "演示文稿大纲已完成，可导出标准 PPTX 文件",
                     "state": "done",
+                    "kind": "result",
+                    "meta": ["产物字段：presentation", "交付方式：仅展示简要介绍与下载按钮"],
                 })
 
             if "word" in request.resourceTypes:
@@ -728,6 +831,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "Word 文档 Agent",
                     "detail": "组织摘要、正文层级、案例、易错点与复习建议，完成后可下载为 DOCX",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：课程内容、资料与个性化目标", "动作：搭建文档层级并补充案例", "产物：可下载 DOCX"],
                 })
                 state["wordDocument"] = yield from _stream_generated_text(
                     state,
@@ -743,6 +848,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "Word 文档 Agent",
                     "detail": "文档正文已完成，可导出标准 DOCX 文件",
                     "state": "done",
+                    "kind": "result",
+                    "meta": ["产物字段：wordDocument", "交付方式：仅展示简要介绍与下载按钮"],
                 })
 
             if "code" in request.resourceTypes:
@@ -751,6 +858,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "代码案例 Agent",
                     "detail": "生成包含完整代码、运行结果和讲解的实操案例，并逐段输出",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：课程知识点与应用目标", "动作：设计场景、代码、结果与讲解", "产物：可运行代码案例"],
                 })
                 state["codeCase"] = yield from _stream_generated_text(
                     state,
@@ -764,6 +873,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "代码案例 Agent",
                     "detail": "代码案例已写入 codeCase",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"产物字段：codeCase", f"内容长度：{len(state.get('codeCase', ''))} 字"],
                 })
 
             if "path" in request.resourceTypes:
@@ -772,6 +883,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "学习路径 Agent",
                     "detail": "生成阶段划分、目标、资源、时长和依赖关系的学习路径，并逐段输出",
                     "state": "running",
+                    "kind": "thought",
+                    "meta": ["输入：当前基础、知识短板与最终目标", "动作：拆分阶段、依赖、时长和检验标准", "产物：个性化学习路径"],
                 })
                 state["learningPath"] = yield from _stream_generated_text(
                     state,
@@ -785,6 +898,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "agent": "学习路径 Agent",
                     "detail": "学习路径已写入 learningPath",
                     "state": "done",
+                    "kind": "result",
+                    "meta": [f"产物字段：learningPath", f"内容长度：{len(state.get('learningPath', ''))} 字"],
                 })
 
             yield _sse("status", {
@@ -792,6 +907,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 "agent": "质量审核 Agent",
                 "detail": "检查资源是否覆盖短板、学习目标、完整性和难度匹配",
                 "state": "running",
+                "kind": "thought",
+                "meta": ["检查：目标覆盖度", "检查：内容完整性与难度匹配", "检查：资源之间的一致性"],
             })
             state.update(review_agent(state))
             yield from _stream_text("review", state.get("review", ""))
@@ -801,6 +918,8 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 "agent": trace.get("agent", ""),
                 "detail": "审核结果已写入 review",
                 "state": "done",
+                "kind": "result",
+                "meta": ["产物字段：review", f"审核摘要长度：{len(state.get('review', ''))} 字"],
             })
 
             state.update(integration_agent(state))
@@ -810,6 +929,12 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 "agent": trace.get("agent", ""),
                 "detail": "合并讲义、导图、练习、阅读、审核与引用来源，返回统一结果",
                 "state": "done",
+                "kind": "result",
+                "meta": [
+                    f"输出类型：{'、'.join(request.resourceTypes)}",
+                    f"引用资料：{len(state.get('sources', []))} 份",
+                    "统一封装：CollaborativeLearningResponse",
+                ],
             })
             yield _sse("done", {"result": _learning_result(state)})
         except ResourceError as exc:

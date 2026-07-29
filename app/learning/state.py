@@ -22,6 +22,8 @@ class LearningState(TypedDict, total=False):
     spark_model: str
     openai_model: str
     response_speed: str
+    skill_names: list[str]
+    skill_instructions: str
     studentProfile: dict[str, Any]
     taskPlan: list[dict[str, str]]
     lectureDoc: str

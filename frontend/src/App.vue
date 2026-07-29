@@ -16,13 +16,14 @@ import LearningPathPage from './components/LearningPathPage.vue'
 import PortraitPage from './components/PortraitPage.vue'
 import ProfileOnboardingDialog from './components/ProfileOnboardingDialog.vue'
 import AdminPage from './components/AdminPage.vue'
+import SkillSettingsPage from './components/SkillSettingsPage.vue'
 import { getCurrentUser, logout, type AuthUser } from './api/auth'
 import { CONVERSATION_HISTORY_EVENT, loadConversationHistory, type ConversationHistoryItem } from './api/conversationHistory'
 import { loadUserProfile, saveUserProfile, USER_PROFILE_EVENT } from './api/userProfile'
 import type { UserProfile } from './types/user'
 import type { Course } from './types'
 
-type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'account' | 'portrait' | 'learning' | 'path' | 'admin'
+type Page = 'home' | 'analyze' | 'collaborative' | 'evaluate' | 'courses' | 'detail' | 'exercise' | 'mistakes' | 'resources' | 'settings' | 'skills' | 'account' | 'portrait' | 'learning' | 'path' | 'admin'
 
 const currentPage = ref<Page>('home')
 const sidebarCollapsed = ref(false)
@@ -58,6 +59,7 @@ const navIcons = {
     'M14 12h1a4 4 0 0 1 4 4v1',
   ],
   admin: ['M4 4h16v16H4V4Z', 'M8 9h8', 'M8 13h5', 'M8 17h3', 'M16.5 15.5a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z'],
+  skill: ['M9 4h6v4h4v6h-4v6H9v-6H5V8h4V4Z', 'M9 8h6v6H9Z'],
 } as const
 
 interface NavItem {
@@ -74,6 +76,7 @@ const navItems: NavItem[] = [
   { key: 'learning', label: '学习中心', icon: 'learning' },
   { key: 'path', label: '学习路线', icon: 'roadmap' },
   { key: 'portrait', label: '画像对话', icon: 'portrait' },
+  { key: 'skills', label: 'Skill 设置', icon: 'skill' },
 ]
 const visibleNavItems = computed<NavItem[]>(() => authUser.value?.role === 'admin'
   ? [...navItems, { key: 'admin', label: '管理端', icon: 'admin' }]
@@ -283,6 +286,7 @@ onUnmounted(() => {
             :history-id="selectedHistoryId"
             :conversation-seed="conversationResetSeed"
             @new-conversation="selectedHistoryId = null"
+            @open-skills="navigate('skills')"
           />
         </div>
         <AnalyzePage 
@@ -290,7 +294,7 @@ onUnmounted(() => {
           :course="selectedCourse"
           @navigate="navigate"
         />
-        <CollaborativeGeneratePage v-else-if="currentPage === 'collaborative'" />
+        <CollaborativeGeneratePage v-else-if="currentPage === 'collaborative'" @open-skills="navigate('skills')" />
         <ResourceLibrary v-else-if="currentPage === 'resources'" @navigate="navigate" />
         <CoursePage v-else-if="currentPage === 'courses'" @navigate="navigate" />
         <CourseDetailPage
@@ -314,6 +318,7 @@ onUnmounted(() => {
         <LearningPathPage v-else-if="currentPage === 'path'" @navigate="navigate" />
         <PortraitPage v-else-if="currentPage === 'portrait'" @navigate="navigate" />
         <AdminPage v-else-if="currentPage === 'admin' && authUser?.role === 'admin'" />
+        <SkillSettingsPage v-else-if="currentPage === 'skills'" />
         <SettingsPage v-else-if="currentPage === 'settings'" />
       </div>
     </main>
