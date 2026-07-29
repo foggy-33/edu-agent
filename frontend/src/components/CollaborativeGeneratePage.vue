@@ -455,7 +455,14 @@ function visibleProcessAgents(turn: ConversationTurn) {
   return agentTaskGroups(turn).map(group => ({
     ...group.latest,
     agent: group.agent,
-  }))
+  })).slice(-6)
+}
+
+function isLongTaskTurn(turn: ConversationTurn) {
+  return turn.processSteps.some(step =>
+    step.agent === '主控 Agent'
+    && (step.kind === 'team' || step.message.includes('长任务') || step.message.includes('并行'))
+  )
 }
 
 function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
@@ -464,6 +471,38 @@ function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
     const [agent, detail = '等待协作调度'] = task.split('：', 2)
     return { agent, detail, index: `${teamStep.id}-${index}` }
   })).filter((item, index, items) => item.agent && items.findIndex(candidate => candidate.agent === item.agent) === index)
+  if (!isLongTaskTurn(turn)) {
+    const normalGroups = new Map<string, AgentProcessStep[]>()
+    turn.processSteps.forEach(step => {
+      const steps = normalGroups.get(step.agent) || []
+      steps.push(step)
+      normalGroups.set(step.agent, steps)
+    })
+    specialistTasks.forEach(({ agent, detail, index }) => {
+      if (normalGroups.has(agent)) return
+      normalGroups.set(agent, [{
+        id: `${turn.id}-pending-${index}`,
+        agent,
+        message: '已创建，等待协作调度',
+        detail,
+        state: 'pending',
+        kind: 'action',
+        meta: ['状态：等待接收共享上下文'],
+        progress: 0,
+      }])
+    })
+    return [...normalGroups.entries()].map(([agent, steps]) => {
+      const latest = steps[steps.length - 1]
+      return {
+        agent,
+        steps,
+        latest,
+        state: latest.state,
+        isMain: false,
+      }
+    })
+  }
+
   const specialistNames = new Set(specialistTasks.map(item => item.agent))
   const mainSteps = turn.processSteps.filter(step => !specialistNames.has(step.agent))
   const groups: AgentTaskGroup[] = []
@@ -501,6 +540,12 @@ function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
     })
   })
   return groups
+}
+
+function agentSequenceLabel(turn: ConversationTurn, group: AgentTaskGroup, index: number) {
+  if (group.isMain) return 'MAIN'
+  const offset = agentTaskGroups(turn)[0]?.isMain ? 0 : 1
+  return String(index + offset).padStart(2, '0')
 }
 
 function processKindLabel(kind: ProcessKind) {
@@ -833,8 +878,11 @@ function buildProcessStep(data: any): AgentProcessStep | null {
 }
 
 function showProcessStep(step: AgentProcessStep) {
+  const parallelMode = processSteps.value.some(existing =>
+    existing.agent === '主控 Agent' && existing.kind === 'team'
+  )
   const next = processSteps.value.map(existing => (
-    existing.state === 'running' && existing.agent === step.agent
+    existing.state === 'running' && (!parallelMode || existing.agent === step.agent)
       ? { ...existing, state: 'done' as ProcessState }
       : existing
   ))
@@ -1076,7 +1124,7 @@ watch(prompt, resizePromptInput)
                   ? activeProcessSummary(turn)
                   : turn.processCompleted
                     ? `协作完成 · ${agentTaskGroups(turn).length} 个 Agent`
-                    : `主控 Agent 正在协调 · ${processElapsedSeconds}s` }}
+                    : `${isLongTaskTurn(turn) ? '主控 Agent 正在协调' : '多 Agent 正在协作'} · ${processElapsedSeconds}s` }}
               </b>
             </div>
             <template v-if="!turn.processCollapsed">
@@ -1096,8 +1144,12 @@ watch(prompt, resizePromptInput)
               </div>
               <section class="agent-team-panel" aria-label="Agent 执行任务">
                 <header>
-                  <span>主控 Agent 协作</span>
-                  <small>调用 {{ Math.max(0, agentTaskGroups(turn).length - 1) }} 个专项 Agent</small>
+                  <span>{{ isLongTaskTurn(turn) ? '主控 Agent 协作' : '多 Agent 执行过程' }}</span>
+                  <small>
+                    {{ isLongTaskTurn(turn)
+                      ? `调用 ${Math.max(0, agentTaskGroups(turn).length - 1)} 个专项 Agent`
+                      : `${agentTaskGroups(turn).length} 个 Agent 参与本次任务` }}
+                  </small>
                 </header>
                 <div class="agent-task-list">
                   <details
@@ -1116,7 +1168,7 @@ watch(prompt, resizePromptInput)
                         </span>
                       </span>
                       <b :class="`agent-task-state-${group.state}`">{{ group.state === 'pending' ? '等待调度' : group.state === 'running' ? '执行中' : '已完成' }}</b>
-                      <i>{{ group.isMain ? 'MAIN' : String(groupIndex).padStart(2, '0') }}</i>
+                      <i>{{ agentSequenceLabel(turn, group, groupIndex) }}</i>
                     </summary>
                     <div class="agent-task-detail">
                       <article v-for="step in group.steps" :key="`${step.id}-detail`">
@@ -1124,6 +1176,7 @@ watch(prompt, resizePromptInput)
                         <div>
                           <strong>{{ step.message }}</strong>
                           <small v-if="group.isMain" class="agent-step-owner">主控阶段 · {{ agentLabel(step.agent) }}</small>
+                          <small v-else class="agent-step-owner">{{ agentLabel(step.agent) }} 执行记录</small>
                           <p>{{ step.detail }}</p>
                           <ul v-if="step.meta.length">
                             <li v-for="(item, metaIndex) in step.meta" :key="`${step.id}-detail-${metaIndex}`">{{ item }}</li>

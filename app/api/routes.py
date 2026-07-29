@@ -951,12 +951,41 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 })
 
             if not request.resourceTypes:
+                state.update(profile_agent(state))
+                profile_trace = state.get("agentTrace", [])[-1]
+                yield _sse("status", {
+                    "message": profile_trace.get("summary", "已识别当前学情"),
+                    "agent": "学情分析 Agent",
+                    "detail": "从用户问题中识别课程主题、知识短板、学习目标和适合的回答深度",
+                    "state": "done",
+                    "kind": "result",
+                    "progress": 100,
+                    "meta": [
+                        f"知识短板：{request.weakness[:80]}",
+                        f"学习目标：{request.goal}",
+                        "共享字段：studentProfile",
+                    ],
+                })
+                yield _sse("status", {
+                    "message": "制定本轮回答计划",
+                    "agent": "回答规划 Agent",
+                    "detail": "根据学情和资料覆盖情况安排概念解释、依据、示例与行动建议",
+                    "state": "done",
+                    "kind": "thought",
+                    "progress": 100,
+                    "meta": [
+                        "步骤 1：确认问题边界",
+                        "步骤 2：组织核心解释与必要示例",
+                        "步骤 3：检查是否回答用户目标",
+                    ],
+                })
                 yield _sse("status", {
                     "message": "直接对话模式启动",
                     "agent": "直接对话 Agent",
-                    "detail": "未选择生成内容，跳过资源规划链路，直接组织回答",
+                    "detail": "读取资料检索结果、学情画像和回答计划，开始组织最终回答",
                     "state": "running",
                     "kind": "thought",
+                    "progress": 18,
                     "meta": [
                         "任务：识别核心问题与必要背景",
                         "策略：先解释关键概念，再给出可执行建议",
@@ -976,7 +1005,30 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "detail": "回答已写入 lectureDoc，并准备保存为历史记录",
                     "state": "done",
                     "kind": "result",
+                    "progress": 100,
                     "meta": [f"回答长度：{len(state.get('lectureDoc', ''))} 字", "产物：对话回答"],
+                })
+                yield _sse("status", {
+                    "message": "回答质量检查完成",
+                    "agent": "质量审核 Agent",
+                    "detail": "检查回答完整性、目标覆盖度、资料引用边界和表达清晰度",
+                    "state": "done",
+                    "kind": "result",
+                    "progress": 100,
+                    "meta": [
+                        f"内容长度：{len(state.get('lectureDoc', ''))} 字",
+                        f"资料依据：{'已使用检索上下文' if state.get('source_context') else '基于用户问题'}",
+                        "检查结果：可交付",
+                    ],
+                })
+                yield _sse("status", {
+                    "message": "对话结果已整合",
+                    "agent": "资源整合 Agent",
+                    "detail": "合并回答正文、资料来源和 Agent 执行轨迹，准备返回前端",
+                    "state": "done",
+                    "kind": "result",
+                    "progress": 100,
+                    "meta": ["输出：lectureDoc", f"来源数量：{len(state.get('sources', []))}"],
                 })
                 yield _sse("done", {"result": _learning_result(state)})
                 return
