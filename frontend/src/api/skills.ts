@@ -151,4 +151,3 @@ export function saveSkills(skills: ImportedSkill[]) {
 export function enabledSkills() {
   return loadSkills().filter(skill => skill.enabled)
 }
-import { loadUserProfile } from './userProfile'
