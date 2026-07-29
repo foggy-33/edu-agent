@@ -53,6 +53,7 @@ interface AgentProcessStep {
   state: ProcessState
   kind: ProcessKind
   meta: string[]
+  progress: number
 }
 
 interface AgentTaskGroup {
@@ -153,8 +154,6 @@ const modelMenuOpen = ref(false)
 const storedSpeed = localStorage.getItem('studyflow_response_speed')
 const responseSpeed = ref<ResponseSpeed>(storedSpeed === 'fast' || storedSpeed === 'deep' ? storedSpeed : 'balanced')
 const longTaskMode = ref(localStorage.getItem('studyflow_long_task_mode') === 'true')
-const storedSubagentCount = Number(localStorage.getItem('studyflow_long_task_subagents') || 6)
-const maxSubagents = ref(Number.isInteger(storedSubagentCount) && storedSubagentCount >= 2 && storedSubagentCount <= 10 ? storedSubagentCount : 6)
 const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
@@ -490,6 +489,7 @@ function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
       state: 'pending',
       kind: 'action',
       meta: ['调用关系：主控 Agent → 专项 Agent', '状态：等待接收共享上下文'],
+      progress: 0,
     }]
     const latest = steps[steps.length - 1]
     groups.push({
@@ -587,11 +587,6 @@ function selectResponseSpeed(speed: ResponseSpeed) {
 function toggleLongTaskMode() {
   longTaskMode.value = !longTaskMode.value
   localStorage.setItem('studyflow_long_task_mode', String(longTaskMode.value))
-}
-
-function adjustSubagentCount(delta: number) {
-  maxSubagents.value = Math.min(10, Math.max(2, maxSubagents.value + delta))
-  localStorage.setItem('studyflow_long_task_subagents', String(maxSubagents.value))
 }
 
 function toggleModelSpeedMenu() {
@@ -718,6 +713,7 @@ function buildHistoryProcessSteps(steps: string[], prefix: string): AgentProcess
     state: 'done',
     kind: 'result',
     meta: [],
+    progress: 100,
   }))
 }
 
@@ -832,6 +828,7 @@ function buildProcessStep(data: any): AgentProcessStep | null {
     state: data.state === 'done' ? 'done' : 'running',
     kind: ['thought', 'action', 'team', 'result'].includes(data.kind) ? data.kind : 'action',
     meta: Array.isArray(data.meta) ? data.meta.filter((item: unknown) => typeof item === 'string').slice(0, 8) : [],
+    progress: data.state === 'done' ? 100 : Math.min(95, Math.max(0, Number(data.progress) || 12)),
   }
 }
 
@@ -841,9 +838,15 @@ function showProcessStep(step: AgentProcessStep) {
       ? { ...existing, state: 'done' as ProcessState }
       : existing
   ))
-  const last = next[next.length - 1]
-  if (last && last.agent === step.agent && last.message === step.message) {
-    processSteps.value = [...next.slice(0, -1), step]
+  let matchingIndex = -1
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    if (next[index].agent === step.agent && next[index].message === step.message) {
+      matchingIndex = index
+      break
+    }
+  }
+  if (matchingIndex >= 0) {
+    processSteps.value = next.map((existing, index) => index === matchingIndex ? step : existing)
     syncActiveTurn()
     return
   }
@@ -959,7 +962,6 @@ async function submit() {
     fileIds: [...selectedFileIds.value],
     response_speed: responseSpeed.value,
     long_task_mode: longTaskMode.value,
-    max_subagents: maxSubagents.value,
     skill_names: selectedSkills.value.map(skill => skill.name),
     skill_instructions: selectedSkills.value
       .map(skill => `[Skill：${skill.name}]\n${skill.instructions}`)
@@ -1108,6 +1110,9 @@ watch(prompt, resizePromptInput)
                       <span>
                         <strong>{{ agentLabel(group.agent) }}</strong>
                         <small>{{ group.latest.message }}</small>
+                        <span :class="['agent-progress', { active: group.state === 'running' }]">
+                          <i :style="{ width: `${group.latest.progress}%` }"></i>
+                        </span>
                       </span>
                       <b :class="`agent-task-state-${group.state}`">{{ group.state === 'pending' ? '等待调度' : group.state === 'running' ? '执行中' : '已完成' }}</b>
                       <i>{{ group.isMain ? 'MAIN' : String(groupIndex).padStart(2, '0') }}</i>
@@ -1446,14 +1451,7 @@ watch(prompt, resizePromptInput)
                 </span>
                 <b>{{ longTaskMode ? '✓' : '' }}</b>
               </button>
-              <div v-if="longTaskMode" class="subagent-count-control">
-                <span>并行 Sub-Agent</span>
-                <div>
-                  <button type="button" :disabled="maxSubagents <= 2" @click.stop="adjustSubagentCount(-1)">−</button>
-                  <b>{{ maxSubagents }}</b>
-                  <button type="button" :disabled="maxSubagents >= 10" @click.stop="adjustSubagentCount(1)">＋</button>
-                </div>
-              </div>
+              <div v-if="longTaskMode" class="long-task-auto-note">主控 Agent 将按任务复杂度自主创建 2–8 个 Sub-Agent</div>
               <div class="combined-divider"></div>
               <button
                 v-for="speed in speedOptions"
@@ -1623,6 +1621,9 @@ watch(prompt, resizePromptInput)
 .agent-task-card summary > span { display: grid; min-width: 0; gap: 2px; }
 .agent-task-card summary strong { overflow: hidden; color: #292929; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .agent-task-card summary small { overflow: hidden; color: #898989; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-progress { position: relative; width: min(230px, 100%); height: 3px; margin-top: 3px; overflow: hidden; border-radius: 99px; background: #dedede; }
+.agent-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #7062e8, #a99fff); transition: width .45s cubic-bezier(.16,1,.3,1); }
+.agent-progress.active::after { content: ""; position: absolute; inset: 0; width: 38%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.8), transparent); animation: agentProgressSweep 1.35s ease-in-out infinite; }
 .agent-task-card summary > b { padding: 3px 6px; border-radius: 999px; color: #777; background: #e5e5e5; font-size: 8px; white-space: nowrap; }
 .agent-task-card summary > b.agent-task-state-pending { color: #8a8a8a; background: #ececec; }
 .agent-task-card summary > b.agent-task-state-running { color: #5648c9; background: #ebe8ff; animation: taskStatePulse 1.5s ease-in-out infinite; }
@@ -1748,10 +1749,7 @@ watch(prompt, resizePromptInput)
 .long-task-choice strong { font-size: 14px; font-weight: 700; }
 .long-task-choice small { color: #8b8b8b; font-size: 9px; }
 .long-task-choice.active { color: #4f43bd; border-color: #ddd8ff; background: #f5f3ff; }
-.subagent-count-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 5px 3px 7px; padding: 7px 9px; border-radius: 10px; color: #777; background: #f5f5f5; font-size: 10px; }
-.subagent-count-control > div { display: flex; align-items: center; gap: 6px; }
-.subagent-count-control button { display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 1px solid #ddd; border-radius: 7px; color: #333; background: #fff; font-size: 14px; }
-.subagent-count-control b { min-width: 14px; color: #4f43bd; text-align: center; font-size: 12px; }
+.long-task-auto-note { margin: 5px 3px 7px; padding: 7px 9px; border-radius: 9px; color: #6559c9; background: #f5f3ff; font-size: 9px; line-height: 1.5; }
 .combined-menu .speed-choice { min-height: 42px; font-size: 16px; }
 .combined-menu .speed-choice b { font-size: 20px; }
 .combined-divider { height: 1px; margin: 6px 12px 7px; background: #e4e4e4; }
@@ -1775,6 +1773,10 @@ button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .65; }
 @keyframes pulse { 50% { transform: scale(.94); opacity: .65; } }
 @keyframes taskStatePulse { 50% { color: #7468e3; background: #f1efff; } }
+@keyframes agentProgressSweep {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(330%); }
+}
 @keyframes toolMenuIn {
   from { opacity: 0; transform: translateY(14px) scale(.9); filter: blur(6px); }
   to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
@@ -1814,7 +1816,7 @@ button:disabled { cursor: default; opacity: .65; }
   50% { transform: scaleY(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .collab-live-dot, .agent-handoff::before, .agent-chip + .agent-chip::before, .agent-chip-running em, .handoff-wave i { animation: none; }
+  .collab-live-dot, .agent-handoff::before, .agent-chip + .agent-chip::before, .agent-chip-running em, .handoff-wave i, .agent-progress.active::after { animation: none; }
 }
 @media (max-width: 620px) {
   .generate-page { min-height: calc(100vh - 64px); }

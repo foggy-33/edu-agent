@@ -44,7 +44,7 @@ class CollaborativeLearningRequest(SiliconFlowConfig):
     fileIds: list[str] = Field(default_factory=list)
     response_speed: Literal["fast", "balanced", "deep"] = "balanced"
     long_task_mode: bool = False
-    max_subagents: int = Field(default=6, ge=2, le=10)
+    max_subagents: int = Field(default=8, ge=2, le=10)
     skill_names: list[str] = Field(default_factory=list, max_length=5)
     skill_instructions: str = Field(default="", max_length=20000)
 

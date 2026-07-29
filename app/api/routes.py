@@ -1,8 +1,9 @@
 ﻿import json
 import re
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, Iterator
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from queue import Empty, Queue
+from typing import Any, Callable, Iterator
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
@@ -215,44 +216,133 @@ def _selected_agent_tasks(resource_types: list[str]) -> list[str]:
     ]
 
 
-LONG_TASK_ROLES = [
-    ("概念研究", "梳理核心概念、必要背景、术语边界和知识依赖"),
-    ("资料分析", "提取现有资料中的关键事实、证据、定义和可引用观点"),
-    ("方法设计", "提出解决步骤、学习方法、技术路线和可执行方案"),
-    ("案例验证", "设计代表性案例、示例或实验，验证主要结论"),
-    ("反例审查", "寻找易错点、反例、限制条件、风险和可能遗漏"),
-    ("结构编辑", "规划最终答案结构、信息层级和重点表达方式"),
-    ("迁移应用", "分析知识在相邻主题和真实场景中的迁移方式"),
-    ("质量核验", "检查事实一致性、目标覆盖度和结论可靠性"),
-    ("学习评估", "设计检验理解程度的标准、问题和反馈方法"),
-    ("资源规划", "整理后续阅读、练习和实践资源的使用顺序"),
-]
-
-
-def _long_task_specs(request: CollaborativeLearningRequest) -> list[dict[str, str]]:
-    count = min(max(request.max_subagents, 2), len(LONG_TASK_ROLES))
+def _fallback_long_task_specs(request: CollaborativeLearningRequest) -> list[dict[str, str]]:
+    prompt = f"{request.weakness} {request.goal}".lower()
+    if any(word in prompt for word in ("论文", "文献", "arxiv", "参考资料", "研究报告")):
+        roles = [
+            ("主资料解析", "解析核心资料的主题、方法、结论和参考线索", "核心资料结构化摘要"),
+            ("文献分组研究", "按主题或编号分组研究参考文献并提取关系", "分组文献研究表"),
+            ("证据核验", "核对关键论断、出处、限制条件和相互矛盾之处", "证据与风险清单"),
+            ("关系建模", "分析各资料与核心主题之间的支持、扩展或对比关系", "资料关系说明"),
+            ("报告设计", "规划最终报告的信息架构和可读性表达", "报告大纲"),
+        ]
+    elif any(word in prompt for word in ("代码", "程序", "开发", "系统", "api", "bug")):
+        roles = [
+            ("需求分析", "提取功能目标、输入输出、约束和验收条件", "需求与验收清单"),
+            ("架构设计", "设计模块边界、数据流、接口和关键技术方案", "技术方案"),
+            ("实现研究", "给出核心实现步骤、关键代码思路和依赖", "实现建议"),
+            ("测试设计", "设计正常、边界、异常和回归测试", "测试清单"),
+            ("安全审查", "检查安全、性能、兼容性和维护风险", "风险审查报告"),
+        ]
+    elif any(word in prompt for word in ("ppt", "汇报", "演示", "文档", "报告")):
+        roles = [
+            ("内容研究", "整理主题事实、概念、案例和受众需求", "内容素材清单"),
+            ("结构策划", "设计叙事主线、章节层次和重点顺序", "结构大纲"),
+            ("案例设计", "选择能支撑主要观点的案例和数据表达", "案例建议"),
+            ("视觉规划", "规划图表、流程图和页面信息密度", "视觉表达建议"),
+            ("质量校对", "检查逻辑、事实、重复和表达一致性", "校对清单"),
+        ]
+    else:
+        roles = [
+            ("问题解析", "界定问题范围、关键概念和必要前提", "问题定义"),
+            ("资料研究", "整理相关知识、事实依据和上下文", "研究摘要"),
+            ("方案设计", "提出可执行的方法、步骤和选择依据", "解决方案"),
+            ("案例验证", "使用示例、反例或应用场景检验方案", "验证记录"),
+            ("质量审查", "检查遗漏、风险、冲突和目标覆盖度", "审查报告"),
+        ]
     return [
         {
             "id": f"sub-{index + 1:02d}",
             "agent": f"{role} Sub-Agent {index + 1:02d}",
             "role": role,
             "task": task,
+            "deliverable": deliverable,
         }
-        for index, (role, task) in enumerate(LONG_TASK_ROLES[:count])
+        for index, (role, task, deliverable) in enumerate(roles[:request.max_subagents])
     ]
 
 
-def _call_long_task_subagent(state: LearningState, spec: dict[str, str]) -> str:
+def _parse_long_task_plan(raw: str, limit: int) -> list[dict[str, str]]:
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.IGNORECASE)
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("主控 Agent 未返回有效任务计划")
+    payload = json.loads(cleaned[start:end + 1])
+    tasks = payload.get("tasks", [])
+    if not isinstance(tasks, list):
+        raise ValueError("主控 Agent 的 tasks 字段无效")
+    specs: list[dict[str, str]] = []
+    for item in tasks[:limit]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or item.get("name") or "").strip()[:32]
+        task = str(item.get("task") or "").strip()[:500]
+        deliverable = str(item.get("deliverable") or "阶段研究报告").strip()[:120]
+        if not role or not task:
+            continue
+        index = len(specs) + 1
+        specs.append({
+            "id": f"sub-{index:02d}",
+            "agent": f"{role} Sub-Agent {index:02d}",
+            "role": role,
+            "task": task,
+            "deliverable": deliverable,
+        })
+    if len(specs) < 2:
+        raise ValueError("主控 Agent 至少需要规划 2 个有效子任务")
+    return specs
+
+
+def _plan_long_task_specs(state: LearningState, request: CollaborativeLearningRequest) -> list[dict[str, str]]:
+    planning_prompt = (
+        f"用户任务：{request.weakness}\n"
+        f"目标：{request.goal}\n"
+        f"课程/章节：{request.course} / {request.chapter}\n"
+        f"可用资料概况：{state.get('source_context', '')[:1800] or '无额外资料'}\n"
+        f"目标输出类型：{', '.join(request.resourceTypes) or '综合回答'}\n\n"
+        "你是长任务主控 Agent。请先判断任务复杂度与可并行边界，自主决定创建 2 到 "
+        f"{request.max_subagents} 个 Sub-Agent。不同任务必须设计不同的专业角色，避免使用固定通用模板；"
+        "子任务之间应尽量独立并可并行，覆盖研究、实现、验证或表达中真正需要的方面。\n"
+        "只输出 JSON："
+        '{"summary":"拆解摘要","tasks":[{"role":"动态角色名","task":"明确工作范围","deliverable":"具体交付物"}]}'
+    )
+    try:
+        raw = call_llm(
+            planning_prompt,
+            api_key=state.get("api_key", ""),
+            base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
+            model=state.get("model", "Pro/deepseek-ai/DeepSeek-V3.2"),
+            active_provider=state.get("active_provider", "siliconflow"),
+            spark_api_password=state.get("spark_api_password", ""),
+            spark_base_url=state.get("spark_base_url", ""),
+            spark_model=state.get("spark_model", ""),
+            openai_model=state.get("openai_model", "gpt-5.6-sol"),
+            system_prompt="你是负责复杂任务拆解和 Agent 集群编排的主控 Agent，只返回严格 JSON 计划。",
+        )
+        return _parse_long_task_plan(raw, request.max_subagents)
+    except (ValueError, json.JSONDecodeError):
+        return _fallback_long_task_specs(request)
+
+
+def _call_long_task_subagent(
+    state: LearningState,
+    spec: dict[str, str],
+    on_progress: Callable[[int], None] | None = None,
+) -> str:
     prompt = (
         f"用户长任务：{state.get('weakness', '')}\n"
         f"学习目标：{state.get('goal', '')}\n"
         f"课程与章节：{state.get('course', '')} / {state.get('chapter', '')}\n"
         f"可用资料：{state.get('source_context', '')[:6000] or '未提供额外资料'}\n\n"
         f"你是“{spec['role']} Sub-Agent”，只负责以下子任务：{spec['task']}。\n"
+        f"你需要交付：{spec.get('deliverable', '阶段研究报告')}。\n"
         "请输出一份可供主控 Agent 合并的阶段报告，包含：完成的工作、关键发现、依据或示例、"
         "仍需主控 Agent 注意的问题。不要假装访问未提供的网站，不要输出隐藏思维过程，控制在 800 字以内。"
     )
-    return call_llm(
+    collected: list[str] = []
+    reported_chars = 0
+    current_chars = 0
+    for chunk in stream_llm(
         prompt,
         api_key=state.get("api_key", ""),
         base_url=state.get("base_url", "https://api.siliconflow.cn/v1"),
@@ -262,8 +352,22 @@ def _call_long_task_subagent(state: LearningState, spec: dict[str, str]) -> str:
         spark_base_url=state.get("spark_base_url", ""),
         spark_model=state.get("spark_model", ""),
         openai_model=state.get("openai_model", "gpt-5.6-sol"),
+        response_speed=state.get("response_speed", "balanced"),
         system_prompt="你是主控 Agent 创建的专项研究 Sub-Agent。只完成分配任务，并提交简洁、可核验的阶段产物。",
-    )
+    ):
+        if chunk["type"] != "content":
+            continue
+        collected.append(chunk["text"])
+        current_chars += len(chunk["text"])
+        if on_progress and current_chars - reported_chars >= 120:
+            reported_chars = current_chars
+            on_progress(current_chars)
+    report = "".join(collected).strip()
+    if not report:
+        raise ValueError("Sub-Agent 返回内容为空")
+    if on_progress:
+        on_progress(len(report))
+    return report
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -671,14 +775,31 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                 })
 
             if request.long_task_mode:
-                specs = _long_task_specs(request)
                 yield _sse("status", {
-                    "message": f"将长任务拆解为 {len(specs)} 个可并行子任务",
+                    "message": "正在分析任务复杂度与并行边界",
                     "agent": "主控 Agent",
-                    "detail": "根据用户目标、资料和输出要求创建本次专用 Agent 集群",
+                    "detail": "读取提示词、资料范围和目标产物，判断需要哪些专业角色",
                     "state": "running",
                     "kind": "thought",
-                    "meta": [f"{spec['id']}：{spec['role']} — {spec['task']}" for spec in specs],
+                    "progress": 8,
+                    "meta": [
+                        "分析：任务目标与约束",
+                        "识别：可并行子问题",
+                        "规划：角色、任务边界和交付物",
+                    ],
+                })
+                specs = _plan_long_task_specs(state, request)
+                yield _sse("status", {
+                    "message": f"已自主规划 {len(specs)} 个并行子任务",
+                    "agent": "主控 Agent",
+                    "detail": "主控 Agent 已生成本次专用待办清单，并完成任务依赖检查",
+                    "state": "running",
+                    "kind": "thought",
+                    "progress": 18,
+                    "meta": [
+                        f"{spec['id']}：{spec['role']} → {spec['deliverable']}"
+                        for spec in specs
+                    ],
                 })
                 yield _sse("status", {
                     "message": f"启动 {len(specs)} 个并行 Sub-Agent",
@@ -686,13 +807,20 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "detail": "各 Sub-Agent 共享任务目标和资料上下文，但只处理各自被分配的专项任务",
                     "state": "running",
                     "kind": "team",
+                    "progress": 24,
                     "meta": [f"{spec['agent']}：{spec['task']}" for spec in specs],
                 })
 
                 reports: list[dict[str, str]] = []
+                progress_updates: Queue[tuple[dict[str, str], int]] = Queue()
                 with ThreadPoolExecutor(max_workers=len(specs), thread_name_prefix="long-task-agent") as executor:
                     futures = {
-                        executor.submit(_call_long_task_subagent, state, spec): spec
+                        executor.submit(
+                            _call_long_task_subagent,
+                            state,
+                            spec,
+                            lambda chars, current=spec: progress_updates.put((current, chars)),
+                        ): spec
                         for spec in specs
                     }
                     for spec in specs:
@@ -702,40 +830,68 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                             "detail": f"主控 Agent 已分配 {spec['id']}，正在后台独立生成阶段报告",
                             "state": "running",
                             "kind": "action",
+                            "progress": 12,
                             "meta": [
                                 f"角色：{spec['role']}",
                                 f"任务编号：{spec['id']}",
+                                f"交付物：{spec['deliverable']}",
                                 "执行方式：并行后台任务",
                             ],
                         })
 
-                    for future in as_completed(futures):
-                        spec = futures[future]
-                        try:
-                            report = future.result()
-                            reports.append({**spec, "report": report})
+                    pending = set(futures)
+                    while pending:
+                        done, pending = wait(pending, timeout=0.35, return_when=FIRST_COMPLETED)
+                        while True:
+                            try:
+                                progress_spec, generated_chars = progress_updates.get_nowait()
+                            except Empty:
+                                break
+                            progress = min(90, 12 + int(min(generated_chars, 800) / 800 * 78))
                             yield _sse("status", {
-                                "message": "阶段报告已提交给主控 Agent",
-                                "agent": spec["agent"],
-                                "detail": report[:180].replace("\n", " "),
-                                "state": "done",
-                                "kind": "result",
+                                "message": f"并行执行：{progress_spec['task']}",
+                                "agent": progress_spec["agent"],
+                                "detail": f"正在生成“{progress_spec['deliverable']}”，已形成约 {generated_chars} 字阶段内容",
+                                "state": "running",
+                                "kind": "action",
+                                "progress": progress,
                                 "meta": [
-                                    f"任务编号：{spec['id']}",
-                                    f"阶段产物：{len(report)} 字",
-                                    "下一步：等待主控 Agent 审核与合并",
+                                    f"角色：{progress_spec['role']}",
+                                    f"任务编号：{progress_spec['id']}",
+                                    f"当前产出：{generated_chars} 字",
+                                    "状态：后台并行执行中",
                                 ],
                             })
-                        except Exception as exc:
-                            reports.append({**spec, "report": f"该子任务执行失败：{exc}"})
-                            yield _sse("status", {
-                                "message": "子任务执行失败，交由主控 Agent 降级处理",
-                                "agent": spec["agent"],
-                                "detail": str(exc),
-                                "state": "done",
-                                "kind": "result",
-                                "meta": [f"任务编号：{spec['id']}", "状态：失败但不中断其他并行任务"],
-                            })
+                        for future in done:
+                            spec = futures[future]
+                            try:
+                                report = future.result()
+                                reports.append({**spec, "report": report})
+                                yield _sse("status", {
+                                    "message": "阶段报告已提交给主控 Agent",
+                                    "agent": spec["agent"],
+                                    "detail": report[:180].replace("\n", " "),
+                                    "state": "done",
+                                    "kind": "result",
+                                    "progress": 100,
+                                    "meta": [
+                                        f"任务编号：{spec['id']}",
+                                        f"交付物：{spec['deliverable']}",
+                                        f"阶段产物：{len(report)} 字",
+                                        "下一步：等待主控 Agent 审核与合并",
+                                    ],
+                                })
+                            except Exception as exc:
+                                reports.append({**spec, "report": f"该子任务执行失败：{exc}"})
+                                yield _sse("status", {
+                                    "message": "子任务执行失败，交由主控 Agent 降级处理",
+                                    "agent": spec["agent"],
+                                    "detail": str(exc),
+                                    "state": "done",
+                                    "kind": "result",
+                                    "progress": 100,
+                                    "meta": [f"任务编号：{spec['id']}", "状态：失败但不中断其他并行任务"],
+                                })
 
                 successful_reports = [item for item in reports if not item["report"].startswith("该子任务执行失败")]
                 if not successful_reports:
@@ -756,6 +912,7 @@ def stream_collaborative_learning_resources(request: CollaborativeLearningReques
                     "detail": "正在统一核对观点、消除重复与冲突，并将结果注入后续生成上下文",
                     "state": "done",
                     "kind": "result",
+                    "progress": 100,
                     "meta": [
                         f"成功报告：{len(successful_reports)}",
                         f"共享上下文：{len(report_context)} 字",
