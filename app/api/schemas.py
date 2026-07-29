@@ -54,6 +54,8 @@ class OfficeExportRequest(BaseModel):
     subtitle: str = Field(default="AI 生成学习资料", max_length=180)
     content: str = Field(..., min_length=1, max_length=120000)
     format: Literal["pptx", "docx"]
+    skill_names: list[str] = Field(default_factory=list, max_length=5)
+    skill_instructions: str = Field(default="", max_length=20000)
 
 
 class CoursePdfAnnotationRequest(BaseModel):

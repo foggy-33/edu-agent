@@ -129,6 +129,8 @@ export async function exportOfficeFile(payload: {
   subtitle: string
   content: string
   format: 'pptx' | 'docx'
+  skill_names?: string[]
+  skill_instructions?: string
 }): Promise<Blob> {
   const response = await fetch(`${API_BASE}/exports/office`, {
     method: 'POST',

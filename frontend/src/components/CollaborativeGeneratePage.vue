@@ -337,6 +337,11 @@ async function downloadOffice(turn: ConversationTurn, key: ResultKey) {
       subtitle: '智学 AI · 根据学习任务生成',
       content,
       format,
+      skill_names: selectedSkills.value.map(skill => skill.name),
+      skill_instructions: selectedSkills.value
+        .map(skill => `# ${skill.name}\n${skill.instructions}`)
+        .join('\n\n')
+        .slice(0, 20000),
     })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')

@@ -741,10 +741,22 @@ def generate_collaborative_learning_resources(request: CollaborativeLearningRequ
 def export_office_file(request: OfficeExportRequest) -> StreamingResponse:
     safe_stem = re.sub(r'[\\/:*?"<>|]+', "-", request.title).strip(" .-") or "AI学习资料"
     if request.format == "pptx":
-        stream = build_pptx(request.title, request.subtitle, request.content)
+        stream = build_pptx(
+            request.title,
+            request.subtitle,
+            request.content,
+            skill_names=request.skill_names,
+            style_instructions=request.skill_instructions,
+        )
         media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     else:
-        stream = build_docx(request.title, request.subtitle, request.content)
+        stream = build_docx(
+            request.title,
+            request.subtitle,
+            request.content,
+            skill_names=request.skill_names,
+            style_instructions=request.skill_instructions,
+        )
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     filename = f"{safe_stem}.{request.format}"
     disposition = f"attachment; filename=ai-learning.{request.format}; filename*=UTF-8''{quote(filename)}"
