@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { loadSkills, parseSkillText, saveSkills, type ImportedSkill } from '../api/skills'
+import { computed, onMounted, ref } from 'vue'
+import {
+  getAnthropicSkill,
+  listAnthropicSkills,
+  loadSkills,
+  parseSkillText,
+  saveSkills,
+  type ImportedSkill,
+  type OfficialSkillSummary,
+} from '../api/skills'
 
 const skills = ref<ImportedSkill[]>(loadSkills())
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -8,8 +16,24 @@ const importUrl = ref('')
 const importing = ref(false)
 const message = ref('')
 const error = ref('')
+const officialSkills = ref<OfficialSkillSummary[]>([])
+const officialSearch = ref('')
+const officialCategory = ref('全部')
+const officialLoading = ref(false)
+const officialDetailLoading = ref(false)
+const selectedOfficial = ref<OfficialSkillSummary | null>(null)
+const officialPreview = ref<ImportedSkill | null>(null)
+const officialRepository = ref('https://github.com/anthropics/skills')
 
 const enabledCount = computed(() => skills.value.filter(skill => skill.enabled).length)
+const officialCategories = computed(() => ['全部', ...new Set(officialSkills.value.map(skill => skill.category))])
+const filteredOfficialSkills = computed(() => {
+  const keyword = officialSearch.value.trim().toLowerCase()
+  return officialSkills.value.filter(skill =>
+    (officialCategory.value === '全部' || skill.category === officialCategory.value)
+    && (!keyword || skill.name.toLowerCase().includes(keyword) || skill.slug.includes(keyword))
+  )
+})
 
 function persist(next: ImportedSkill[]) {
   skills.value = next
@@ -37,6 +61,48 @@ function addImportedSkill(skill: ImportedSkill) {
   persist(next)
   message.value = duplicate ? `已更新 ${skill.name}` : `已导入 ${skill.name}`
   error.value = ''
+}
+
+function isOfficialImported(slug: string) {
+  return skills.value.some(skill => skill.officialSlug === slug)
+}
+
+async function loadOfficialSkills() {
+  officialLoading.value = true
+  error.value = ''
+  try {
+    const result = await listAnthropicSkills()
+    officialSkills.value = result.skills
+    officialRepository.value = result.repository
+    if (result.skills.length) await previewOfficialSkill(result.skills[0])
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '官方 Skill 目录加载失败'
+  } finally {
+    officialLoading.value = false
+  }
+}
+
+async function previewOfficialSkill(skill: OfficialSkillSummary) {
+  selectedOfficial.value = skill
+  officialPreview.value = null
+  officialDetailLoading.value = true
+  error.value = ''
+  try {
+    const detail = await getAnthropicSkill(skill.slug)
+    officialPreview.value = {
+      ...parseSkillText(detail.content, `Anthropic 官方 · ${skill.slug}`),
+      officialSlug: skill.slug,
+    }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : '官方 Skill 预览失败'
+  } finally {
+    officialDetailLoading.value = false
+  }
+}
+
+function importOfficialSkill() {
+  if (!officialPreview.value) return
+  addImportedSkill({ ...officialPreview.value, enabled: true })
 }
 
 async function importFiles(event: Event) {
@@ -82,6 +148,8 @@ async function importFromUrl() {
     importing.value = false
   }
 }
+
+onMounted(loadOfficialSkills)
 </script>
 
 <template>
@@ -97,6 +165,81 @@ async function importFromUrl() {
         <span>个 Skill 已启用</span>
       </div>
     </header>
+
+    <section class="official-market">
+      <div class="official-heading">
+        <div>
+          <span class="official-badge">ANTHROPIC OFFICIAL</span>
+          <h2>官方 Skill 市场</h2>
+          <p>连接 anthropics/skills，浏览并一键导入标准 SKILL.md 指令。</p>
+        </div>
+        <a :href="officialRepository" target="_blank" rel="noreferrer">查看 GitHub 仓库 ↗</a>
+      </div>
+
+      <div class="official-toolbar">
+        <label>
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+          <input v-model="officialSearch" type="search" placeholder="搜索官方 Skill" />
+        </label>
+        <div class="official-categories">
+          <button
+            v-for="category in officialCategories"
+            :key="category"
+            :class="{ active: officialCategory === category }"
+            @click="officialCategory = category"
+          >
+            {{ category }}
+          </button>
+        </div>
+      </div>
+
+      <div class="official-browser">
+        <div class="official-list">
+          <div v-if="officialLoading" class="official-empty">正在连接 Anthropic Skills 仓库…</div>
+          <template v-else>
+            <button
+              v-for="skill in filteredOfficialSkills"
+              :key="skill.slug"
+              :class="['official-item', { active: selectedOfficial?.slug === skill.slug }]"
+              @click="previewOfficialSkill(skill)"
+            >
+              <span>{{ skill.name.slice(0, 2).toUpperCase() }}</span>
+              <div>
+                <strong>{{ skill.name }}</strong>
+                <small>{{ skill.category }}</small>
+              </div>
+              <b v-if="isOfficialImported(skill.slug)">已导入</b>
+              <i>›</i>
+            </button>
+          </template>
+          <div v-if="!officialLoading && !filteredOfficialSkills.length" class="official-empty">没有匹配的官方 Skill</div>
+        </div>
+
+        <article class="official-preview">
+          <div v-if="officialDetailLoading" class="official-empty">正在读取 SKILL.md…</div>
+          <template v-else-if="officialPreview && selectedOfficial">
+            <header>
+              <span class="skill-mark">
+                <svg viewBox="0 0 24 24"><path d="M9 4h6v4h4v6h-4v6H9v-6H5V8h4V4Z" /><path d="M9 8h6v6H9z" /></svg>
+              </span>
+              <div>
+                <small>{{ selectedOfficial.category }} · anthropics/skills</small>
+                <h3>{{ officialPreview.name }}</h3>
+              </div>
+            </header>
+            <p>{{ officialPreview.description }}</p>
+            <div class="official-instructions">{{ officialPreview.instructions }}</div>
+            <footer>
+              <span>仅导入 SKILL.md；不会执行第三方脚本</span>
+              <button @click="importOfficialSkill">
+                {{ isOfficialImported(selectedOfficial.slug) ? '更新并启用' : '导入并启用' }}
+              </button>
+            </footer>
+          </template>
+          <div v-else class="official-empty">选择一个 Skill 查看说明</div>
+        </article>
+      </div>
+    </section>
 
     <section class="import-panel">
       <div class="import-copy">
@@ -164,6 +307,38 @@ async function importFromUrl() {
 .skill-summary { display: flex; align-items: baseline; gap: 7px; min-width: 150px; padding: 14px 17px; border: 1px solid rgba(109,93,231,.15); border-radius: 15px; background: rgba(255,255,255,.8); }
 .skill-summary strong { color: #5b4bcc; font-size: 26px; }
 .skill-summary span { color: #777785; font-size: 11px; }
+.official-market { margin-bottom: 18px; padding: 22px; border: 1px solid #dfdbf6; border-radius: 21px; background: linear-gradient(145deg,#fff,#faf9ff); box-shadow: 0 12px 36px rgba(48,39,103,.05); }
+.official-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.official-badge { display: inline-flex; padding: 4px 7px; border-radius: 999px; color: #5f50cc; background: #efedff; font-size: 8px; font-weight: 800; letter-spacing: .1em; }
+.official-heading h2 { margin: 7px 0 4px; font-size: 18px; }
+.official-heading p { margin: 0; color: #777785; font-size: 11px; }
+.official-heading a { color: #5f50cc; font-size: 10px; text-decoration: none; }
+.official-toolbar { display: grid; grid-template-columns: minmax(220px,320px) 1fr; align-items: center; gap: 12px; margin: 17px 0 12px; }
+.official-toolbar label { display: flex; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #dedde6; border-radius: 11px; background: #fff; }
+.official-toolbar label svg { width: 16px; height: 16px; fill: none; stroke: #8b8996; stroke-width: 1.7; }
+.official-toolbar input { width: 100%; padding: 10px 0; border: 0; outline: none; background: transparent; font-size: 11px; }
+.official-categories { display: flex; gap: 6px; overflow-x: auto; }
+.official-categories button { padding: 7px 10px; border: 1px solid #e2e1e8; border-radius: 999px; color: #73717e; background: #fff; font-size: 9px; white-space: nowrap; }
+.official-categories button.active { color: #fff; border-color: #5d50c8; background: #5d50c8; }
+.official-browser { display: grid; grid-template-columns: minmax(260px, .86fr) minmax(0, 1.4fr); min-height: 390px; overflow: hidden; border: 1px solid #e4e3ea; border-radius: 16px; background: #fff; }
+.official-list { display: grid; align-content: start; gap: 5px; max-height: 430px; padding: 9px; overflow-y: auto; border-right: 1px solid #e8e7ed; background: #f8f8fa; }
+.official-item { display: grid; grid-template-columns: 35px minmax(0,1fr) auto 12px; align-items: center; gap: 9px; min-height: 54px; padding: 7px 9px; border: 1px solid transparent; border-radius: 11px; color: #28272d; background: transparent; text-align: left; }
+.official-item:hover,.official-item.active { border-color: #ddd8fb; background: #fff; box-shadow: 0 5px 15px rgba(48,39,103,.05); }
+.official-item > span { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #dedde5; border-radius: 10px; color: #5d50c8; background: #fff; font-size: 9px; font-weight: 850; }
+.official-item div { display: grid; min-width: 0; gap: 2px; }
+.official-item strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.official-item small { color: #9997a3; font-size: 8px; }
+.official-item b { padding: 3px 6px; border-radius: 999px; color: #4e8b64; background: #edf8f1; font-size: 8px; }
+.official-item i { color: #aaa8b2; font-size: 16px; font-style: normal; }
+.official-preview { display: grid; grid-template-rows: auto auto minmax(120px,1fr) auto; min-width: 0; padding: 20px; }
+.official-preview > header { display: flex; align-items: center; gap: 11px; }
+.official-preview header small { color: #8d8a99; font-size: 8px; }
+.official-preview h3 { margin: 3px 0 0; font-size: 17px; }
+.official-preview > p { margin: 14px 0 10px; color: #666471; font-size: 11px; line-height: 1.6; }
+.official-instructions { max-height: 225px; padding: 13px; overflow: auto; border: 1px solid #ebeaf0; border-radius: 11px; color: #62606d; background: #f8f8f9; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; line-height: 1.65; white-space: pre-wrap; }
+.official-preview > footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 13px; color: #9997a3; font-size: 8px; }
+.official-preview footer button { padding: 9px 13px; border: 0; border-radius: 10px; color: #fff; background: #202123; font-size: 10px; font-weight: 700; }
+.official-empty { display: grid; place-items: center; min-height: 90px; padding: 20px; color: #9997a3; font-size: 10px; text-align: center; }
 .import-panel { padding: 22px; border: 1px solid #e7e7eb; border-radius: 20px; background: #fff; box-shadow: 0 9px 30px rgba(31,31,35,.04); }
 .import-copy { display: flex; align-items: center; gap: 13px; }
 .import-icon,.skill-mark { display: grid; place-items: center; flex: 0 0 auto; color: #5b4bcc; background: #f1efff; }
@@ -204,5 +379,5 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .instruction-preview { height: 54px; padding: 10px; overflow: hidden; border-radius: 10px; color: #62616d; background: #f7f7f8; font-size: 10px; line-height: 1.65; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .skill-card footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; color: #9a99a4; font-size: 9px; }
 .skill-card footer button { padding: 3px 7px; border: 0; border-radius: 6px; color: #8b5555; background: #fff2f2; font-size: 9px; }
-@media (max-width:720px) { .skill-header { align-items: stretch; flex-direction: column; } .skill-summary { min-width: 0; } .import-actions { grid-template-columns: 1fr; } .file-button { min-height: 40px; } .skill-grid { grid-template-columns: 1fr; } }
+@media (max-width:720px) { .skill-header,.official-heading { align-items: stretch; flex-direction: column; } .skill-summary { min-width: 0; } .official-toolbar,.official-browser { grid-template-columns: 1fr; } .official-list { max-height: 270px; border-right: 0; border-bottom: 1px solid #e8e7ed; } .official-preview { min-height: 360px; } .official-preview > footer { align-items: stretch; flex-direction: column; } .official-preview footer button { min-height: 40px; } .import-actions { grid-template-columns: 1fr; } .file-button { min-height: 40px; } .skill-grid { grid-template-columns: 1fr; } }
 </style>

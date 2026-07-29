@@ -6,6 +6,7 @@ from queue import Empty, Queue
 from typing import Any, Callable, Iterator
 from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
@@ -58,6 +59,35 @@ profile_service = DynamicProfileService()
 auth_service = AuthService()
 resource_service = ResourceService()
 course_material_service = CourseMaterialService()
+
+ANTHROPIC_SKILLS_REPOSITORY = "https://github.com/anthropics/skills"
+ANTHROPIC_SKILLS_API = "https://api.github.com/repos/anthropics/skills/contents/skills"
+ANTHROPIC_SKILL_RAW = "https://raw.githubusercontent.com/anthropics/skills/main/skills/{slug}/SKILL.md"
+ANTHROPIC_SKILL_FALLBACK = [
+    "algorithmic-art", "brand-guidelines", "canvas-design", "claude-api",
+    "doc-coauthoring", "docx", "frontend-design", "internal-comms",
+    "mcp-builder", "pdf", "pptx", "skill-creator", "slack-gif-creator",
+    "theme-factory", "web-artifacts-builder", "webapp-testing", "xlsx",
+]
+
+
+def _official_skill_category(slug: str) -> str:
+    if slug in {"docx", "pdf", "pptx", "xlsx", "doc-coauthoring"}:
+        return "文档与办公"
+    if slug in {"frontend-design", "web-artifacts-builder", "webapp-testing", "mcp-builder", "claude-api"}:
+        return "开发与技术"
+    if slug in {"algorithmic-art", "canvas-design", "theme-factory", "slack-gif-creator", "brand-guidelines"}:
+        return "创意与设计"
+    return "通用与协作"
+
+
+def _official_skill_summary(slug: str) -> dict[str, str]:
+    return {
+        "slug": slug,
+        "name": slug.replace("-", " ").title(),
+        "category": _official_skill_category(slug),
+        "repository_url": f"{ANTHROPIC_SKILLS_REPOSITORY}/tree/main/skills/{slug}",
+    }
 
 
 def bearer_token(authorization: str | None) -> str:
@@ -1646,6 +1676,64 @@ def evaluate(request: EvaluateRequest) -> dict:
 @router.get("/workflow")
 def workflow() -> dict:
     return _workflow_description()
+
+
+@router.get("/skills/anthropic")
+def list_anthropic_skills() -> dict:
+    slugs = ANTHROPIC_SKILL_FALLBACK
+    source = "fallback"
+    try:
+        response = httpx.get(
+            ANTHROPIC_SKILLS_API,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "edu-agent-ai"},
+            timeout=12.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        live_slugs = [
+            str(item.get("name", "")).strip()
+            for item in payload
+            if isinstance(item, dict) and item.get("type") == "dir"
+        ]
+        if live_slugs:
+            slugs = live_slugs
+            source = "github"
+    except (httpx.HTTPError, ValueError, TypeError):
+        pass
+    return {
+        "repository": ANTHROPIC_SKILLS_REPOSITORY,
+        "source": source,
+        "skills": [_official_skill_summary(slug) for slug in sorted(slugs)],
+    }
+
+
+@router.get("/skills/anthropic/{slug}")
+def get_anthropic_skill(slug: str) -> dict:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug):
+        raise HTTPException(status_code=400, detail="Skill 标识无效")
+    url = ANTHROPIC_SKILL_RAW.format(slug=slug)
+    try:
+        response = httpx.get(
+            url,
+            headers={"Accept": "text/plain", "User-Agent": "edu-agent-ai"},
+            timeout=15.0,
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        status = 404 if exc.response.status_code == 404 else 502
+        detail = "未找到该官方 Skill" if status == 404 else "GitHub Skill 下载失败"
+        raise HTTPException(status_code=status, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="无法连接 Anthropic Skills 仓库") from exc
+    content = response.text
+    if not content.strip() or len(content.encode("utf-8")) > 300_000:
+        raise HTTPException(status_code=502, detail="官方 Skill 内容为空或文件过大")
+    return {
+        **_official_skill_summary(slug),
+        "source_url": url,
+        "content": content,
+    }
 
 
 @router.get("/profiles/{user_id}/subjects")

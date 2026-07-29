@@ -8,13 +8,26 @@ export interface ImportedSkill {
   source: string
   enabled: boolean
   builtin?: boolean
+  officialSlug?: string
   createdAt: string
+}
+
+export interface OfficialSkillSummary {
+  slug: string
+  name: string
+  category: string
+  repository_url: string
+}
+
+export interface OfficialSkillDetail extends OfficialSkillSummary {
+  source_url: string
+  content: string
 }
 
 export const SKILLS_UPDATED_EVENT = 'studyflow-skills-updated'
 const STORAGE_KEY = 'studyflow_imported_skills_v1'
-const MAX_SKILL_SIZE = 120_000
-const MAX_INSTRUCTIONS = 20_000
+const MAX_SKILL_SIZE = 300_000
+const MAX_INSTRUCTIONS = 120_000
 
 const builtinSkills: ImportedSkill[] = [
   {
@@ -150,4 +163,25 @@ export function saveSkills(skills: ImportedSkill[]) {
 
 export function enabledSkills() {
   return loadSkills().filter(skill => skill.enabled)
+}
+
+async function officialRequest<T>(path: string): Promise<T> {
+  const response = await fetch(`/api/skills/anthropic${path}`)
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null)
+    throw new Error(payload?.detail || `官方 Skill 请求失败：HTTP ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function listAnthropicSkills(): Promise<{
+  repository: string
+  source: 'github' | 'fallback'
+  skills: OfficialSkillSummary[]
+}> {
+  return officialRequest('')
+}
+
+export async function getAnthropicSkill(slug: string): Promise<OfficialSkillDetail> {
+  return officialRequest(`/${encodeURIComponent(slug)}`)
 }

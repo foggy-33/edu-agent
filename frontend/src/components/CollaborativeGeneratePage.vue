@@ -965,7 +965,8 @@ async function submit() {
     skill_names: selectedSkills.value.map(skill => skill.name),
     skill_instructions: selectedSkills.value
       .map(skill => `[Skill：${skill.name}]\n${skill.instructions}`)
-      .join('\n\n'),
+      .join('\n\n')
+      .slice(0, 20000),
     ...config,
   }
 
