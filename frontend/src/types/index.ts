@@ -164,6 +164,8 @@ export interface CollaborativeLearningRequest {
   spark_model: string
   openai_model: string
   response_speed?: 'fast' | 'balanced' | 'deep'
+  long_task_mode?: boolean
+  max_subagents?: number
   skill_names?: string[]
   skill_instructions?: string
 }

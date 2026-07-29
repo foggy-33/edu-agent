@@ -60,6 +60,7 @@ interface AgentTaskGroup {
   steps: AgentProcessStep[]
   latest: AgentProcessStep
   state: ProcessState
+  isMain: boolean
 }
 
 interface ConversationTurn {
@@ -151,6 +152,9 @@ const speedMenuOpen = ref(false)
 const modelMenuOpen = ref(false)
 const storedSpeed = localStorage.getItem('studyflow_response_speed')
 const responseSpeed = ref<ResponseSpeed>(storedSpeed === 'fast' || storedSpeed === 'deep' ? storedSpeed : 'balanced')
+const longTaskMode = ref(localStorage.getItem('studyflow_long_task_mode') === 'true')
+const storedSubagentCount = Number(localStorage.getItem('studyflow_long_task_subagents') || 6)
+const maxSubagents = ref(Number.isInteger(storedSubagentCount) && storedSubagentCount >= 2 && storedSubagentCount <= 10 ? storedSubagentCount : 6)
 const loading = ref(false)
 const error = ref('')
 const result = ref<CollaborativeLearningResponse | null>(null)
@@ -449,41 +453,54 @@ function toggleResource(key: CollaborativeResourceType | 'chat') {
 }
 
 function visibleProcessAgents(turn: ConversationTurn) {
-  const latestByAgent = new Map<string, AgentProcessStep>()
-  turn.processSteps.forEach(step => latestByAgent.set(step.agent, step))
-  return [...latestByAgent.values()].slice(-6)
+  return agentTaskGroups(turn).map(group => ({
+    ...group.latest,
+    agent: group.agent,
+  }))
 }
 
 function agentTaskGroups(turn: ConversationTurn): AgentTaskGroup[] {
-  const groups = new Map<string, AgentProcessStep[]>()
-  turn.processSteps.forEach(step => {
-    const steps = groups.get(step.agent) || []
-    steps.push(step)
-    groups.set(step.agent, steps)
-  })
-  const teamStep = [...turn.processSteps].reverse().find(step => step.kind === 'team')
-  teamStep?.meta.forEach((task, index) => {
+  const teamSteps = turn.processSteps.filter(step => step.kind === 'team')
+  const specialistTasks = teamSteps.flatMap(teamStep => teamStep.meta.map((task, index) => {
     const [agent, detail = '等待协作调度'] = task.split('：', 2)
-    if (!agent || groups.has(agent)) return
-    groups.set(agent, [{
-      id: `${teamStep.id}-pending-${index}`,
+    return { agent, detail, index: `${teamStep.id}-${index}` }
+  })).filter((item, index, items) => item.agent && items.findIndex(candidate => candidate.agent === item.agent) === index)
+  const specialistNames = new Set(specialistTasks.map(item => item.agent))
+  const mainSteps = turn.processSteps.filter(step => !specialistNames.has(step.agent))
+  const groups: AgentTaskGroup[] = []
+
+  if (mainSteps.length) {
+    const latest = mainSteps[mainSteps.length - 1]
+    groups.push({
+      agent: '主控 Agent',
+      steps: mainSteps,
+      latest,
+      state: turn.processCompleted ? 'done' : 'running',
+      isMain: true,
+    })
+  }
+
+  specialistTasks.forEach(({ agent, detail, index }) => {
+    const actualSteps = turn.processSteps.filter(step => step.agent === agent)
+    const steps: AgentProcessStep[] = actualSteps.length ? actualSteps : [{
+      id: `${turn.id}-pending-${index}`,
       agent,
-      message: '已创建，等待调度',
+      message: '已创建，等待主控 Agent 调用',
       detail,
       state: 'pending',
       kind: 'action',
-      meta: ['状态：待接收共享上下文', '随后将自动执行专项任务'],
-    }])
-  })
-  return [...groups.entries()].map(([agent, steps]) => {
+      meta: ['调用关系：主控 Agent → 专项 Agent', '状态：等待接收共享上下文'],
+    }]
     const latest = steps[steps.length - 1]
-    return {
+    groups.push({
       agent,
       steps,
       latest,
       state: latest.state,
-    }
+      isMain: false,
+    })
   })
+  return groups
 }
 
 function processKindLabel(kind: ProcessKind) {
@@ -565,6 +582,16 @@ function selectResponseSpeed(speed: ResponseSpeed) {
   responseSpeed.value = speed
   localStorage.setItem('studyflow_response_speed', speed)
   speedMenuOpen.value = false
+}
+
+function toggleLongTaskMode() {
+  longTaskMode.value = !longTaskMode.value
+  localStorage.setItem('studyflow_long_task_mode', String(longTaskMode.value))
+}
+
+function adjustSubagentCount(delta: number) {
+  maxSubagents.value = Math.min(10, Math.max(2, maxSubagents.value + delta))
+  localStorage.setItem('studyflow_long_task_subagents', String(maxSubagents.value))
 }
 
 function toggleModelSpeedMenu() {
@@ -809,8 +836,10 @@ function buildProcessStep(data: any): AgentProcessStep | null {
 }
 
 function showProcessStep(step: AgentProcessStep) {
-  const next = processSteps.value.map(step => (
-    step.state === 'running' ? { ...step, state: 'done' as ProcessState } : step
+  const next = processSteps.value.map(existing => (
+    existing.state === 'running' && existing.agent === step.agent
+      ? { ...existing, state: 'done' as ProcessState }
+      : existing
   ))
   const last = next[next.length - 1]
   if (last && last.agent === step.agent && last.message === step.message) {
@@ -929,6 +958,8 @@ async function submit() {
     resourceTypes: [...selectedTypes.value],
     fileIds: [...selectedFileIds.value],
     response_speed: responseSpeed.value,
+    long_task_mode: longTaskMode.value,
+    max_subagents: maxSubagents.value,
     skill_names: selectedSkills.value.map(skill => skill.name),
     skill_instructions: selectedSkills.value
       .map(skill => `[Skill：${skill.name}]\n${skill.instructions}`)
@@ -1041,8 +1072,8 @@ watch(prompt, resizePromptInput)
                 {{ turn.processCollapsed
                   ? activeProcessSummary(turn)
                   : turn.processCompleted
-                    ? `已完成 ${turn.processSteps.filter(step => step.state === 'done').length} 个阶段`
-                    : `${turn.processSteps.filter(step => step.state === 'done').length} 个阶段 · ${processElapsedSeconds}s` }}
+                    ? `协作完成 · ${agentTaskGroups(turn).length} 个 Agent`
+                    : `主控 Agent 正在协调 · ${processElapsedSeconds}s` }}
               </b>
             </div>
             <template v-if="!turn.processCollapsed">
@@ -1062,14 +1093,14 @@ watch(prompt, resizePromptInput)
               </div>
               <section class="agent-team-panel" aria-label="Agent 执行任务">
                 <header>
-                  <span>Agent 集群</span>
-                  <small>{{ agentTaskGroups(turn).length }} 个协作角色</small>
+                  <span>主控 Agent 协作</span>
+                  <small>调用 {{ Math.max(0, agentTaskGroups(turn).length - 1) }} 个专项 Agent</small>
                 </header>
                 <div class="agent-task-list">
                   <details
                     v-for="(group, groupIndex) in agentTaskGroups(turn)"
                     :key="`${turn.id}-group-${group.agent}`"
-                    class="agent-task-card"
+                    :class="['agent-task-card', { 'agent-task-main': group.isMain }]"
                     :open="group.state === 'running'"
                   >
                     <summary>
@@ -1079,13 +1110,14 @@ watch(prompt, resizePromptInput)
                         <small>{{ group.latest.message }}</small>
                       </span>
                       <b :class="`agent-task-state-${group.state}`">{{ group.state === 'pending' ? '等待调度' : group.state === 'running' ? '执行中' : '已完成' }}</b>
-                      <i>{{ String(groupIndex + 1).padStart(2, '0') }}</i>
+                      <i>{{ group.isMain ? 'MAIN' : String(groupIndex).padStart(2, '0') }}</i>
                     </summary>
                     <div class="agent-task-detail">
                       <article v-for="step in group.steps" :key="`${step.id}-detail`">
                         <span>{{ processKindLabel(step.kind) }}</span>
                         <div>
                           <strong>{{ step.message }}</strong>
+                          <small v-if="group.isMain" class="agent-step-owner">主控阶段 · {{ agentLabel(step.agent) }}</small>
                           <p>{{ step.detail }}</p>
                           <ul v-if="step.meta.length">
                             <li v-for="(item, metaIndex) in step.meta" :key="`${step.id}-detail-${metaIndex}`">{{ item }}</li>
@@ -1096,28 +1128,6 @@ watch(prompt, resizePromptInput)
                   </details>
                 </div>
               </section>
-              <ol class="agent-flow">
-                <li
-                  v-for="step in turn.processSteps"
-                  :key="step.id"
-                  :class="['agent-step', `agent-step-${step.state}`, `agent-step-${step.kind}`]"
-                >
-                  <i></i>
-                  <div>
-                    <div class="step-heading">
-                      <strong>{{ step.agent }}</strong>
-                      <span>{{ processKindLabel(step.kind) }}</span>
-                    </div>
-                    <p>{{ step.message }}</p>
-                    <small>{{ step.detail }}</small>
-                    <div v-if="step.meta.length" class="step-meta-tree">
-                      <span v-for="(item, metaIndex) in step.meta" :key="`${step.id}-${metaIndex}`">
-                        <b>{{ metaIndex === step.meta.length - 1 ? '└' : '├' }}</b>{{ item }}
-                      </span>
-                    </div>
-                  </div>
-                </li>
-              </ol>
             </template>
           </div>
 
@@ -1419,12 +1429,32 @@ watch(prompt, resizePromptInput)
               :disabled="loading"
               @click="toggleModelSpeedMenu"
             >
-              {{ activeSpeed.label }}
+              {{ longTaskMode ? '长任务' : activeSpeed.label }}
               <span>⌄</span>
             </button>
 
             <div v-if="speedMenuOpen" class="model-menu combined-menu">
               <div class="combined-menu-title">智能</div>
+              <button
+                type="button"
+                :class="['model-menu-item', 'long-task-choice', { active: longTaskMode }]"
+                @click.stop="toggleLongTaskMode"
+              >
+                <span>
+                  <strong>长任务模式</strong>
+                  <small>主控 Agent 调用并行集群</small>
+                </span>
+                <b>{{ longTaskMode ? '✓' : '' }}</b>
+              </button>
+              <div v-if="longTaskMode" class="subagent-count-control">
+                <span>并行 Sub-Agent</span>
+                <div>
+                  <button type="button" :disabled="maxSubagents <= 2" @click.stop="adjustSubagentCount(-1)">−</button>
+                  <b>{{ maxSubagents }}</b>
+                  <button type="button" :disabled="maxSubagents >= 10" @click.stop="adjustSubagentCount(1)">＋</button>
+                </div>
+              </div>
+              <div class="combined-divider"></div>
               <button
                 v-for="speed in speedOptions"
                 :key="speed.key"
@@ -1585,6 +1615,8 @@ watch(prompt, resizePromptInput)
 .agent-task-list { display: grid; gap: 6px; padding: 7px; }
 .agent-task-card { overflow: hidden; border: 1px solid transparent; border-radius: 10px; background: #f1f1f1; transition: border-color .22s ease, background .22s ease, box-shadow .22s ease; }
 .agent-task-card[open] { border-color: #dedaf8; background: #fff; box-shadow: 0 7px 22px rgba(35,28,83,.07); }
+.agent-task-main { border-color: #dedaf8; background: linear-gradient(105deg, #f5f3ff, #fafafa 62%); }
+.agent-task-main summary > em { color: #fff; border-color: #5c4fd0; background: #5c4fd0; }
 .agent-task-card summary { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto 24px; align-items: center; gap: 8px; min-height: 48px; padding: 6px 9px; cursor: pointer; list-style: none; }
 .agent-task-card summary::-webkit-details-marker { display: none; }
 .agent-task-card summary > em { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #d6d6d6; border-radius: 9px; color: #4d43a4; background: #fff; font-size: 9px; font-style: normal; font-weight: 850; }
@@ -1602,32 +1634,11 @@ watch(prompt, resizePromptInput)
 .agent-task-detail article > span { color: #6256cf; font-size: 8px; font-weight: 800; letter-spacing: .03em; }
 .agent-task-detail article > div { min-width: 0; }
 .agent-task-detail strong { display: block; color: #333; font-size: 10px; }
+.agent-step-owner { display: block; margin-top: 2px; color: #6559c9; font-size: 8px; font-weight: 700; }
 .agent-task-detail p { margin: 3px 0 0; color: #777; font-size: 9px; line-height: 1.55; }
 .agent-task-detail ul { display: grid; gap: 2px; margin: 5px 0 0; padding: 0; color: #969696; font-size: 9px; list-style: none; }
 .agent-task-detail li { position: relative; padding-left: 11px; overflow-wrap: anywhere; }
 .agent-task-detail li::before { content: "└"; position: absolute; left: 0; color: #bbb; }
-.agent-flow { display: grid; gap: 3px; max-height: 280px; margin: 0; padding: 10px 8px; overflow-y: auto; border: 1px solid #343434; border-radius: 13px; color: #d7d7d7; background: #242424; box-shadow: inset 0 1px 0 rgba(255,255,255,.035); list-style: none; scrollbar-color: #555 transparent; }
-.agent-step { position: relative; display: grid; grid-template-columns: 16px 1fr; gap: 9px; padding: 8px 9px; border-radius: 9px; animation: traceStepIn .32s ease both; transition: background .2s ease, transform .2s ease; }
-.agent-step::before { content: ""; position: absolute; left: 17px; top: 29px; bottom: -8px; width: 1px; background: #444; }
-.agent-step:last-child::before { display: none; }
-.agent-step i { position: relative; z-index: 1; display: grid; place-items: center; width: 16px; height: 16px; margin-top: 2px; border: 1px solid #656565; border-radius: 50%; background: #303030; }
-.agent-step i::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: #aaa; }
-.step-heading { display: flex; align-items: center; gap: 7px; }
-.agent-step strong { display: block; color: #f1f1f1; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 11px; font-weight: 720; }
-.step-heading span { padding: 2px 5px; border: 1px solid #484848; border-radius: 5px; color: #aaa; font-size: 8px; letter-spacing: .04em; }
-.agent-step p { margin: 2px 0 0; color: #d0d0d0; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 11px; }
-.agent-step small { display: block; margin-top: 2px; color: #929292; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; line-height: 1.55; }
-.step-meta-tree { display: grid; gap: 2px; margin-top: 5px; padding-left: 7px; }
-.step-meta-tree span { overflow-wrap: anywhere; color: #aaa; font-family: ui-monospace,SFMono-Regular,Consolas,monospace; font-size: 9px; line-height: 1.5; }
-.step-meta-tree b { margin-right: 7px; color: #666; font-weight: 400; }
-.agent-step-running { background: #2d2d2d; transform: translateX(2px); }
-.agent-step-running i { border-color: #5ac486; }
-.agent-step-running i::after { background: #5ac486; box-shadow: 0 0 8px rgba(90,196,134,.55); animation: tracePulse 1s infinite; }
-.agent-step-done i { color: #151515; border-color: #5ac486; background: #5ac486; }
-.agent-step-done i::after { content: "✓"; width: auto; height: auto; color: #173422; background: transparent; font-size: 9px; font-weight: 900; line-height: 1; }
-.agent-step-thought .step-heading span { color: #c4baff; border-color: #4d466e; background: rgba(109,93,231,.11); }
-.agent-step-team .step-heading span { color: #8ed7ac; border-color: #355943; background: rgba(90,196,134,.08); }
-.agent-step-result .step-heading span { color: #d7d7d7; background: #343434; }
 .practice-list { display: grid; gap: 16px; }
 .practice-card { display: grid; gap: 14px; padding: 18px; border: 1px solid #ececec; border-radius: 14px; background: #fff; }
 .practice-card.practice-correct { border-color: #b8e6ca; background: #fbfffc; }
@@ -1732,6 +1743,15 @@ watch(prompt, resizePromptInput)
 .combined-trigger { min-width: 64px; color: #5f5f5f; font-size: 16px; font-weight: 500; }
 .combined-menu { width: 202px; padding: 10px; }
 .combined-menu-title { padding: 5px 12px 7px; color: #999; font-size: 14px; }
+.long-task-choice { min-height: 58px; border: 1px solid transparent; }
+.long-task-choice > span { display: grid; gap: 2px; }
+.long-task-choice strong { font-size: 14px; font-weight: 700; }
+.long-task-choice small { color: #8b8b8b; font-size: 9px; }
+.long-task-choice.active { color: #4f43bd; border-color: #ddd8ff; background: #f5f3ff; }
+.subagent-count-control { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 5px 3px 7px; padding: 7px 9px; border-radius: 10px; color: #777; background: #f5f5f5; font-size: 10px; }
+.subagent-count-control > div { display: flex; align-items: center; gap: 6px; }
+.subagent-count-control button { display: grid; place-items: center; width: 23px; height: 23px; padding: 0; border: 1px solid #ddd; border-radius: 7px; color: #333; background: #fff; font-size: 14px; }
+.subagent-count-control b { min-width: 14px; color: #4f43bd; text-align: center; font-size: 12px; }
 .combined-menu .speed-choice { min-height: 42px; font-size: 16px; }
 .combined-menu .speed-choice b { font-size: 20px; }
 .combined-divider { height: 1px; margin: 6px 12px 7px; background: #e4e4e4; }
