@@ -602,9 +602,9 @@ function updateToolMenuLayout() {
   const menuGap = 12
   const availableAbove = Math.max(0, rect.top - viewportGap - menuGap)
   const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportGap - menuGap)
-  const openDown = availableAbove < 340 && availableBelow > availableAbove
+  const openDown = availableAbove < 430 && availableBelow > availableAbove
   toolMenuPlacement.value = openDown ? 'down' : 'up'
-  toolMenuMaxHeight.value = Math.max(180, Math.min(520, openDown ? availableBelow : availableAbove))
+  toolMenuMaxHeight.value = Math.max(260, Math.min(680, openDown ? availableBelow : availableAbove))
 }
 
 const toolMenuStyle = computed(() => ({
@@ -1743,7 +1743,7 @@ watch(prompt, resizePromptInput)
 .add-button:hover { background: #e6e6e6; }
 .add-button.open { color: #fff; background: #202123; box-shadow: 0 7px 20px rgba(0, 0, 0, .2); }
 .add-button.open svg { transform: rotate(45deg); }
-.tool-menu { position: absolute; left: 0; bottom: 48px; display: flex; flex-direction: column; width: min(720px, calc(100vw - 40px)); max-height: min(520px, var(--tool-menu-max-height, 420px)); padding: 16px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); scrollbar-width: thin; will-change: transform, opacity, filter; }
+.tool-menu { position: absolute; left: 0; bottom: 48px; display: flex; flex-direction: column; width: min(780px, calc(100vw - 40px)); max-height: min(calc(100vh - 28px), 680px, var(--tool-menu-max-height, 520px)); padding: 16px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #dadada; border-radius: 20px; background: rgba(255, 255, 255, .985); box-shadow: 0 24px 70px rgba(0, 0, 0, .16); z-index: 20; transform-origin: left bottom; backdrop-filter: blur(18px); scrollbar-width: thin; scrollbar-gutter: stable; will-change: transform, opacity, filter; }
 .tool-menu-down { top: 48px; bottom: auto; transform-origin: left top; }
 .tool-menu-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
 .tool-menu-head > div { display: grid; gap: 2px; }
@@ -1752,15 +1752,17 @@ watch(prompt, resizePromptInput)
 .tool-menu-head small { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; background: #f2f2f2; }
 .menu-title { color: #777; font-size: 11px; font-weight: 700; }
 .menu-title span { color: #aaa; font-weight: 500; }
-.skill-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 11px 2px 8px; }
+.skill-tools-head { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; margin: 13px 2px 9px; }
 .tool-menu .manage-skills { display: inline-flex; grid-template-columns: none; width: auto; padding: 5px 8px; border-radius: 7px; color: #6254ce; background: #f2f0ff; font-size: 10px; }
-.skill-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 5px; max-height: 122px; overflow-y: auto; scrollbar-width: thin; }
-.skill-options button { grid-template-columns: 32px minmax(0,1fr) 18px; border: 1px solid transparent; }
+.skill-options { display: grid; flex: 0 0 auto; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; min-height: 72px; max-height: 232px; padding: 2px 4px 3px 2px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; scroll-behavior: smooth; }
+.skill-options button { grid-template-columns: 36px minmax(0,1fr) 18px; min-height: 66px; padding: 9px 11px; border: 1px solid #e8e8eb; border-radius: 14px; background: #fafafa; }
+.skill-options button:hover { border-color: #d9d5ef; background: #f8f7ff; transform: translateY(-1px); }
 .skill-options button.selected { color: #4f43b1; border-color: #ded9f7; background: #f4f2ff; }
-.skill-options .tool-icon { color: #5c50bf; background: #fff; }
+.skill-options .tool-icon { width: 34px; height: 34px; color: #5c50bf; background: #fff; }
 .skill-options .tool-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .skill-options button > span:nth-child(2) { min-width: 0; }
-.skill-options button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-options button b { line-height: 1.3; }
+.skill-options button small { display: -webkit-box; overflow: hidden; color: #87848f; line-height: 1.45; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .tool-menu .no-skills { display: block; width: 100%; min-height: 48px; padding: 12px; border: 1px dashed #ddd9f2; color: #77718f; background: #faf9ff; text-align: center; font-size: 11px; }
 .file-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 11px 2px 9px; }
 .file-search { width: min(260px, 48%); height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #dedede; border-radius: 999px; background: #f8f8f8; transition: border-color .2s ease, background .2s ease, box-shadow .2s ease; }
@@ -1882,10 +1884,10 @@ button:disabled { cursor: default; opacity: .65; }
   .chat-thread { padding-top: 10px; }
   .message-bubble { max-width: 88%; }
   .thinking-trace { width: min(320px, 88vw); }
-  .tool-menu { width: calc(100vw - 32px); max-height: min(520px, var(--tool-menu-max-height, 72vh)); padding: 12px; }
+  .tool-menu { width: calc(100vw - 32px); max-height: min(78vh, 680px, var(--tool-menu-max-height, 520px)); padding: 12px; }
   .tool-menu-head span { display: none; }
   .capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .skill-options { grid-template-columns: 1fr; }
+  .skill-options { grid-template-columns: 1fr; min-height: 70px; max-height: 214px; }
   .tool-menu .capability-option { min-width: 0; height: 52px; }
   .file-tools-head { align-items: stretch; flex-direction: column; gap: 8px; }
   .file-search { width: 100%; }
