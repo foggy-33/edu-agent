@@ -111,6 +111,25 @@ const courses = computed(() => {
   return Array.from(set).filter(Boolean)
 })
 
+const instructionLabelPattern = /(?:出|生成|来|做|给|帮).{0,8}(?:题|练习|测试)|(?:根据|按照|参考).{0,18}(?:页|内容|资料)|\d+\s*(?:到|至|-|~)\s*\d+\s*页/
+const invalidWeakPointLabels = new Set(['综合', '提高', '挑战', '基础', '练习', '练习题'])
+const invalidCourseLabels = new Set(['未分类画像', '自定义学习', '自定义学习主题', '用户当前问题', '综合'])
+
+function isValidCourseLabel(value: string) {
+  const label = value.trim()
+  return Boolean(label) && label.length <= 24 && !invalidCourseLabels.has(label) && !instructionLabelPattern.test(label)
+}
+
+function isValidWeakPoint(value: string) {
+  const label = value.trim()
+  return label.length >= 2 && label.length <= 48 && !invalidWeakPointLabels.has(label) && !instructionLabelPattern.test(label)
+}
+
+const weakPointHeadline = computed(() => {
+  if (weaknessAnalyzing.value) return '正在识别你的具体知识薄弱点'
+  return selectedWeakPoint.value || '尚未发现可验证的知识薄弱点'
+})
+
 async function loadWeaknessGroups() {
   const user = loadUserProfile()
   weaknessAnalyzing.value = true
@@ -124,15 +143,19 @@ async function loadWeaknessGroups() {
     const grouped = new Map<string, string[]>()
     result.courses.forEach(group => {
       const course = group.course.trim()
-      if (!course || course === '未分类画像' || !group.points.length) return
+      if (!isValidCourseLabel(course) || !group.points.length) return
+      const validPoints = group.points.map(point => point.trim()).filter(isValidWeakPoint)
+      if (!validPoints.length) return
       const points = grouped.get(course) || []
-      grouped.set(course, [...new Set([...points, ...group.points.map(point => point.trim()).filter(Boolean)])])
+      grouped.set(course, [...new Set([...points, ...validPoints])])
     })
     weaknessGroups.value = Array.from(grouped, ([course, points]) => ({ course, points }))
       .sort((left, right) => left.course.localeCompare(right.course, 'zh-CN'))
-    if (weaknessGroups.value.length && !weaknessGroups.value.some(group => group.course === selectedWeakCourse.value)) {
-      selectedWeakCourse.value = weaknessGroups.value[0].course
-      selectedWeakPoint.value = weaknessGroups.value[0].points[0] || ''
+    const selectedGroup = weaknessGroups.value.find(group => group.course === selectedWeakCourse.value)
+    if (weaknessGroups.value.length && (!selectedGroup || !selectedGroup.points.includes(selectedWeakPoint.value))) {
+      const firstGroup = selectedGroup || weaknessGroups.value[0]
+      selectedWeakCourse.value = firstGroup.course
+      selectedWeakPoint.value = firstGroup.points[0] || ''
     } else if (!weaknessGroups.value.length) {
       selectedWeakCourse.value = ''
       selectedWeakPoint.value = ''
@@ -515,9 +538,10 @@ onMounted(() => {
         <section class="weak-practice-panel">
           <div class="weak-practice-head">
             <div>
-              <span>薄弱点练习</span>
-              <h2>按学科薄弱点出题</h2>
-              <p>AI 分析错题本中的错误答案与解析，生成针对性练习。</p>
+              <span>我的知识薄弱点</span>
+              <h2>{{ weakPointHeadline }}</h2>
+              <p v-if="selectedWeakPoint">来自《{{ selectedWeakCourse }}》错题中的错误答案、正确答案与解析证据。</p>
+              <p v-else>AI 仅依据错题证据识别具体知识点，不把练习指令当作薄弱点。</p>
             </div>
             <button
               type="button"

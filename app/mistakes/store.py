@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Any
 
 from app.core.config import get_settings
+
+
+_INSTRUCTION_LABEL_RE = re.compile(
+    r"(?:出|生成|来|做|给|帮).{0,8}(?:题|练习|测试)|"
+    r"(?:根据|按照|参考).{0,18}(?:页|内容|资料)|"
+    r"\d+\s*(?:到|至|-|~)\s*\d+\s*页"
+)
+
+
+def _is_knowledge_label(value: Any) -> bool:
+    """Only accept concise knowledge labels, never an exercise instruction."""
+    label = str(value or "").strip()
+    return bool(label) and len(label) <= 48 and not _INSTRUCTION_LABEL_RE.search(label)
 
 
 class MistakeStore:
@@ -85,7 +99,10 @@ class MistakeStore:
         mistakes = self.list_mistakes(user_id, course)
         topic_counts = {}
         for m in mistakes:
-            topic = m.get("chapter") or m.get("topic") or "综合"
+            candidates = (m.get("topic"), m.get("chapter"))
+            topic = next((str(item).strip() for item in candidates if _is_knowledge_label(item)), "")
+            if not topic or topic in {"综合", "用户当前问题", "自定义学习"}:
+                continue
             topic_counts[topic] = topic_counts.get(topic, 0) + m.get("mistake_count", 1)
         
         return [topic for topic, _ in sorted(topic_counts.items(), key=lambda x: -x[1])][:limit]

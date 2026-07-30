@@ -2138,6 +2138,77 @@ def get_weak_topics(user_id: str, course: str) -> dict:
     return {"topics": topics}
 
 
+_WEAKNESS_INSTRUCTION_RE = re.compile(
+    r"(?:出|生成|来|做|给|帮).{0,8}(?:题|练习|测试)|"
+    r"(?:根据|按照|参考).{0,18}(?:页|内容|资料)|"
+    r"\d+\s*(?:到|至|-|~)\s*\d+\s*页"
+)
+
+
+def _valid_subject_label(value: object) -> bool:
+    label = str(value or "").strip()
+    return (
+        bool(label)
+        and len(label) <= 24
+        and label not in {"未分类画像", "自定义学习", "自定义学习主题", "用户当前问题", "综合"}
+        and not _WEAKNESS_INSTRUCTION_RE.search(label)
+    )
+
+
+def _valid_weak_point(value: object) -> bool:
+    label = str(value or "").strip()
+    return (
+        bool(label)
+        and 2 <= len(label) <= 48
+        and label not in {"综合", "提高", "挑战", "基础", "练习", "练习题"}
+        and not _WEAKNESS_INSTRUCTION_RE.search(label)
+    )
+
+
+_SUBJECT_TOPIC_RULES: dict[str, tuple[str, ...]] = {
+    "数据库系统": ("关系代数", "选择与投影", "SQL子查询", "函数依赖", "候选码", "范式", "事务", "并发控制", "索引"),
+    "数据结构": ("线性表", "栈", "队列", "二叉树", "图遍历", "查找", "排序", "时间复杂度"),
+    "操作系统": ("进程调度", "线程同步", "死锁", "内存管理", "页面置换", "文件系统", "I/O"),
+    "计算机网络": ("TCP/IP", "子网划分", "路由", "可靠传输", "拥塞控制", "HTTP", "DNS"),
+    "算法设计": ("分治", "贪心", "动态规划", "回溯", "复杂度分析"),
+}
+
+
+def _rule_based_weakness_groups(mistakes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Recover concrete weak points from historical records with polluted course names."""
+    counters: dict[str, Counter[str]] = {}
+    for item in mistakes:
+        evidence = " ".join(
+            str(item.get(field, "") or "")
+            for field in ("topic", "chapter", "question", "analysis", "correct_answer")
+        )
+        weight = max(1, int(item.get("mistake_count", 1) or 1))
+        raw_course = str(item.get("course_name", "") or "").strip()
+        direct_topics = [
+            str(item.get(field, "") or "").strip()
+            for field in ("topic", "chapter")
+            if _valid_weak_point(item.get(field))
+        ]
+        matched = False
+        for course, topics in _SUBJECT_TOPIC_RULES.items():
+            hits = [topic for topic in topics if topic.lower() in evidence.lower()]
+            if not hits:
+                continue
+            matched = True
+            counter = counters.setdefault(course, Counter())
+            for topic in hits:
+                counter[topic] += weight
+        if not matched and _valid_subject_label(raw_course):
+            counter = counters.setdefault(raw_course, Counter())
+            for topic in direct_topics:
+                counter[topic] += weight
+    return [
+        {"course": course, "points": [topic for topic, _ in counter.most_common(6)]}
+        for course, counter in sorted(counters.items())
+        if counter
+    ]
+
+
 @router.post("/mistakes/analyze-weak-topics")
 def analyze_mistake_weak_topics(request: MistakeWeaknessRequest) -> dict:
     mistakes = mistake_store.list_all_mistakes(request.user_id, mastered=False)
@@ -2162,6 +2233,9 @@ def analyze_mistake_weak_topics(request: MistakeWeaknessRequest) -> dict:
     prompt = (
         "请根据以下错题记录识别每门学科真正的知识薄弱点。不要使用学习画像访谈内容，也不要把笼统的学习习惯当成知识点。"
         "结合题目、错误答案、正确答案、解析和重复错误次数归纳，每门学科输出 2-6 个具体、可出题的知识点。"
+        "course 必须是简短、规范的学科名称；如果记录中的 course 是“出几道题”“根据第几页内容”等用户指令，"
+        "必须根据题目与解析重新判断真实学科，严禁原样输出该指令。weak_points 必须是具体知识点，"
+        "严禁输出练习要求、页码范围、难度词或“综合”。"
         "只输出合法 JSON，格式："
         '{"courses":[{"course":"学科名","weak_points":["知识点1","知识点2"]}]}。\n'
         f"错题记录：{json.dumps(compact_records, ensure_ascii=False)}"
@@ -2183,27 +2257,25 @@ def analyze_mistake_weak_topics(request: MistakeWeaknessRequest) -> dict:
         )
         match = re.search(r"\{.*\}", content, re.S)
         data = json.loads(match.group(0) if match else content)
-        known_courses = {str(item.get("course_name") or request.course) for item in mistakes}
         groups = []
         for group in data.get("courses", []):
             if not isinstance(group, dict):
                 continue
             course = str(group.get("course", "")).strip()
-            if course not in known_courses:
+            if not _valid_subject_label(course):
                 continue
-            points = [str(point).strip() for point in group.get("weak_points", []) if str(point).strip()]
+            points = [
+                str(point).strip()
+                for point in group.get("weak_points", [])
+                if _valid_weak_point(point)
+            ]
             if points:
                 groups.append({"course": course, "points": list(dict.fromkeys(points))[:6]})
         if groups:
             return {"courses": groups, "provider": request.active_provider}
         raise ValueError("模型未返回有效薄弱点")
-    except (ValueError, json.JSONDecodeError, TypeError, AttributeError):
-        course_names = sorted({str(item.get("course_name") or request.course) for item in mistakes})
-        groups = [
-            {"course": course, "points": mistake_store.get_weak_topics(request.user_id, course, limit=6)}
-            for course in course_names
-        ]
-        return {"courses": [group for group in groups if group["points"]], "provider": "rule-fallback"}
+    except Exception:
+        return {"courses": _rule_based_weakness_groups(mistakes), "provider": "rule-fallback"}
 
 @router.get("/mistakes/all")
 def list_all_mistakes(user_id: str, mastered: bool = False) -> dict:

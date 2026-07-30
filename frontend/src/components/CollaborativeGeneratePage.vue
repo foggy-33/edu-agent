@@ -206,6 +206,12 @@ const availableTabs = computed(() => [
 void availableTabs.value
 
 const selectedFiles = computed(() => resources.value.filter(item => selectedFileIds.value.includes(item.id)))
+const exerciseCourseName = computed(() => {
+  const courseFolder = selectedFiles.value
+    .map(item => item.course_folder?.trim())
+    .find(folder => folder && !['AI生成', '全部资料', '未分类'].includes(folder))
+  return courseFolder || '自定义学习'
+})
 const enabledSkills = computed(() => skills.value.filter(skill => skill.enabled))
 const selectedSkills = computed(() => enabledSkills.value.filter(skill => selectedSkillIds.value.includes(skill.id)))
 const filteredResources = computed(() => {
@@ -675,17 +681,17 @@ async function saveMistakeToServer(item: CollaborativeExerciseItem, studentAnswe
   try {
     await addMistake({
       user_id: userProfile.value.userId,
-      course: currentQuestion.value || '自定义学习',
+      course: exerciseCourseName.value,
       question_id: String(item.id),
       question: item.question,
       type: item.type,
-      chapter: '综合',
+      chapter: '',
       level: item.level || '',
       options: item.options || null,
       answer: studentAnswer,
       correct_answer: String(item.answer),
       analysis: item.explanation || '',
-      topic: item.level || '综合',
+      topic: '',
     })
   } catch (e) {
     console.error('保存错题失败:', e)
